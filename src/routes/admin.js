@@ -19,7 +19,6 @@ admin.get('/admin', async (c) => {
     }
 
     const body = html`
-    <div class="divider">★ everyone who's ever signed in ★</div>
     <p>we totally log your ip, fyi, lol. (hidden here — only kept around in case of fraud shenanigans.)</p>
     <table>
       <tr><th>name</th><th>email?</th><th>joined</th><th>last seen</th><th>last location</th><th>last device</th></tr>

@@ -1,12 +1,25 @@
 import { Hono } from 'hono';
-import { html } from 'hono/html';
+import { html, raw } from 'hono/html';
 import { renderPage } from '../render/layout.js';
 import { loadFestival } from '../lib/festival.js';
 import { logAction } from '../lib/audit.js';
-import { getEmojiForItem } from '../lib/emoji.js';
+import { getItemMeta } from '../lib/emoji.js';
 import { notify } from '../lib/notify.js';
+import { needsSignin, signinModalResponse } from '../lib/guard.js';
+import { msnChat, escapeHtml } from '../render/msn.js';
 
 export const items = new Hono();
+
+// Turns freeform "how many" text like "2 cases" or "a dozen" into a qty + unit pair.
+// Leading integer becomes the qty, whatever's left (if anything) becomes the unit.
+function parseQtyText(text) {
+    const trimmed = (text || '').toString().trim();
+    const match = trimmed.match(/^(\d+)\s*(.*)$/);
+    if (match) {
+        return { qty: Math.max(1, parseInt(match[1], 10)), unit: match[2].trim() || null };
+    }
+    return { qty: 1, unit: trimmed || null };
+}
 
 async function itemStats(db, item) {
     const pledges = (await db.prepare(`
@@ -25,73 +38,143 @@ async function itemStats(db, item) {
         WHERE c.target_type = 'item' AND c.target_id = ? AND c.deleted_at IS NULL ORDER BY c.created_at
     `).bind(item.id).all()).results;
 
-    return { pledges, pledgedQty, voteCount: votes.length, voterIds: votes.map((v) => v.person_id), comments };
+    const adder = item.added_by
+        ? await db.prepare('SELECT display_name FROM people WHERE id = ?').bind(item.added_by).first()
+        : null;
+
+    return { pledges, pledgedQty, voteCount: votes.length, voterIds: votes.map((v) => v.person_id), comments, adderName: adder ? adder.display_name : null };
 }
 
-function itemRow(festival, item, stats, person) {
-    const { pledges, pledgedQty, voteCount, voterIds, comments } = stats;
+function itemRow(festival, item, stats, person, expanded = false, chatOpen = false) {
+    const { pledges, pledgedQty, voteCount, voterIds, comments, adderName } = stats;
     const pct = item.needed_qty > 0 ? Math.min(100, Math.round((pledgedQty / item.needed_qty) * 100)) : 0;
     const unclaimed = pledgedQty === 0;
     const iVoted = person && voterIds.includes(person.id);
     const myPledge = person && pledges.find((p) => p.person_id === person.id);
+    const remaining = Math.max(1, item.needed_qty - pledgedQty);
+    const requestedBy = item.is_seed ? (item.seed_label || '') : `requested by ${adderName || 'someone'}`;
 
     return html`
-    <details class="card ${unclaimed ? 'unclaimed' : ''}" id="item-${item.id}">
-      <summary>
-        <span style="font-size:1.3em">${item.emoji}</span>
-        <b>${item.name}</b>
-        ${item.is_seed ? html`<span class="rainbow"> ~ cush's 2026 forest must have list ~</span>` : ''}
-        <span style="float:right">👍 ${voteCount}</span><br>
-        <div class="progress-bar"><div class="progress-fill" style="width:${pct}%"></div></div>
-        ${pledgedQty}/${item.needed_qty} ${item.unit || ''} ${unclaimed ? html`<b style="color:#ff0000">UNCLAIMED!</b>` : ''}
-        ${pledges.length ? html` — ${pledges.map((p) => `${p.display_name} (${p.qty})`).join(', ')}` : ''}
-      </summary>
+    <div class="card item-card ${unclaimed ? 'unclaimed' : ''}" id="item-${item.id}">
+      <details class="item-details" ${expanded ? 'open' : ''}>
+        <summary class="item-summary">
+          <div class="item-top-row">
+            <span class="item-emoji">${item.emoji}</span>
+            <div class="item-headline">
+              <div class="item-name">${item.name}</div>
+              ${item.description ? html`<div class="item-description">${item.description}</div>` : ''}
+              <div class="progress-bar"><div class="progress-fill" style="width:${pct}%"></div></div>
+              <div class="item-tally">
+                ${pledgedQty}/${item.needed_qty} ${item.unit || ''}
+                ${pledges.length ? html` — ${pledges.map((p) => `${p.display_name} (${p.qty})`).join(', ')}` : ''}
+              </div>
+            </div>
+            <button type="button" class="vote-thumb ${iVoted ? 'voted' : ''}"
+              hx-post="/items/${item.id}/vote" hx-target="#item-${item.id}" hx-swap="outerHTML"
+              hx-vals='js:{expanded: document.getElementById("item-${item.id}").querySelector(".item-details").open ? "1" : "0"}'
+              onclick="event.stopPropagation(); if (!this.classList.contains('voted')) campConfetti(this);">
+              👍<span class="vote-count">${voteCount}</span>
+            </button>
+          </div>
+        </summary>
 
-      <div style="padding:8px 0">
-        <form hx-post="/items/${item.id}/vote" hx-target="#item-${item.id}" hx-swap="outerHTML" style="display:inline">
-          <button class="btn" type="submit">${iVoted ? '👍 unvote' : '👍 vote'}</button>
-        </form>
+        <div class="item-actions">
+          <div class="action-buttons">
+            ${person
+                ? html`<button type="button" class="btn btn-primary pledge-btn" onclick="document.getElementById('pledge-modal-${item.id}').style.display='flex'">
+                    ${myPledge ? `bringing ${myPledge.qty} ${item.unit || ''}`.trim() : "i'll bring this"}
+                  </button>`
+                : html`<button type="button" class="btn btn-primary pledge-btn"
+                    hx-get="/signin/modal?next=${encodeURIComponent(`/f/${festival.id}/stuff?expand=item-${item.id}&pledge=${item.id}`)}"
+                    hx-target="#signin-modal-overlay" hx-swap="innerHTML">
+                    i'll bring this
+                  </button>`}
 
-        <form hx-post="/items/${item.id}/pledge" hx-target="#item-${item.id}" hx-swap="outerHTML" style="display:inline">
-          <input type="number" name="qty" value="1" min="1" style="width:50px">
-          <button class="btn" type="submit">i got one!!</button>
-        </form>
+            <details class="edit-toggle">
+              <summary class="btn btn-like">edit</summary>
+              <form class="edit-panel" hx-post="/items/${item.id}/edit" hx-target="#item-${item.id}" hx-swap="outerHTML">
+                <div class="edit-panel-title">edit item</div>
+                <div class="edit-requester">${requestedBy}</div>
+                <div class="edit-field">
+                  <label>emoji</label>
+                  <input type="text" name="emoji" value="${item.emoji}" class="edit-emoji-input">
+                </div>
+                <div class="edit-field">
+                  <label>name</label>
+                  <input type="text" name="name" value="${item.name}" placeholder="item name">
+                </div>
+                <div class="edit-field">
+                  <label>details</label>
+                  <input type="text" name="description" value="${item.description || ''}" placeholder="optional">
+                </div>
+                <div class="edit-field">
+                  <label>need</label>
+                  <div class="edit-need">
+                    <input type="number" name="needed_qty" value="${item.needed_qty}">
+                    <input type="text" name="unit" value="${item.unit || ''}" placeholder="unit">
+                  </div>
+                </div>
+                <div class="edit-panel-buttons">
+                  <button class="btn btn-primary" type="submit">save</button>
+                  <button class="btn btn-danger" type="submit" formaction="/items/${item.id}/delete" hx-post="/items/${item.id}/delete" hx-confirm="delete this item?">delete</button>
+                </div>
+              </form>
+            </details>
 
-        ${myPledge ? html`
-          <form hx-post="/pledges/${myPledge.id}/withdraw" hx-target="#item-${item.id}" hx-swap="outerHTML" style="display:inline">
-            <button class="btn" type="submit">withdraw mine</button>
-          </form>` : ''}
+            ${msnChat({
+                title: `Chat (${comments.length} message${comments.length === 1 ? '' : 's'})`,
+                dpEmoji: item.emoji,
+                toLabel: `To: <b>${escapeHtml(item.name)}</b> &lt;everyone@camp&gt;`,
+                comments,
+                postUrl: `/items/${item.id}/comments`,
+                target: `#item-${item.id}`,
+                chatOpen,
+            })}
+          </div>
 
-        <details style="margin-top:6px">
-          <summary>edit</summary>
-          <form hx-post="/items/${item.id}/edit" hx-target="#item-${item.id}" hx-swap="outerHTML">
-            <input type="text" name="emoji" value="${item.emoji}" style="width:40px">
-            <input type="text" name="name" value="${item.name}">
-            need: <input type="number" name="needed_qty" value="${item.needed_qty}" style="width:60px">
-            <input type="text" name="unit" value="${item.unit || ''}" placeholder="unit" style="width:70px">
-            <input type="text" name="category" value="${item.category || ''}" placeholder="category" style="width:90px">
-            <button class="btn" type="submit">save</button>
-          </form>
-          <form hx-post="/items/${item.id}/delete" hx-target="#item-${item.id}" hx-swap="outerHTML" hx-confirm="delete this item?">
-            <button class="btn" type="submit">delete</button>
-          </form>
-        </details>
+          ${myPledge ? html`
+            <form class="withdraw-form" hx-post="/pledges/${myPledge.id}/withdraw" hx-target="#item-${item.id}" hx-swap="outerHTML">
+              <button class="btn" type="submit">withdraw my pledge</button>
+            </form>` : ''}
+        </div>
+      </details>
 
-        <div style="margin-top:6px">
-          ${comments.map((cm) => html`<div class="comment"><b>${cm.display_name}:</b> ${cm.body}</div>`)}
-          <form hx-post="/items/${item.id}/comments" hx-target="#item-${item.id}" hx-swap="outerHTML">
-            <input type="text" name="body" placeholder="say something..." style="width:70%">
-            <button class="btn" type="submit">post</button>
-          </form>
+      <div class="modal-backdrop" id="pledge-modal-${item.id}" style="display:none;" onclick="if(event.target===this) this.style.display='none'">
+        <div class="modal-box xp-dialog">
+          <div class="xp-dialog-title">
+            <span class="xp-dialog-title-text">${item.emoji} ${item.name}</span>
+            <button type="button" class="xp-dialog-close" onclick="document.getElementById('pledge-modal-${item.id}').style.display='none'">✕</button>
+          </div>
+          <div class="xp-dialog-body">
+            <form hx-post="/items/${item.id}/pledge" hx-target="#item-${item.id}" hx-swap="outerHTML">
+              <div class="pledge-prompt">
+                <img class="xp-dialog-icon" src="/question.png" alt="" aria-hidden="true">
+                <div class="pledge-field-col">
+                  <label class="pledge-label">how many are you bringing?</label>
+                  <div class="pledge-input-row">
+                    <input type="number" name="qty" value="${myPledge ? myPledge.qty : remaining}" min="1" class="pledge-modal-input" autofocus>
+                    ${item.unit ? html`<span class="pledge-unit">${item.unit}</span>` : ''}
+                  </div>
+                </div>
+              </div>
+              <div class="dialog-buttons">
+                <button class="btn btn-primary" type="submit">confirm</button>
+                <button class="btn" type="button" onclick="document.getElementById('pledge-modal-${item.id}').style.display='none'">cancel</button>
+              </div>
+            </form>
+          </div>
         </div>
       </div>
-    </details>`;
+    </div>`;
 }
 
-async function renderStuffBody(c, festival) {
+// Just the item rows — this is what #stuff-list actually contains, and the only
+// thing mutation endpoints targeting #stuff-list should ever return.
+async function itemListFragment(c, festival) {
     const db = c.env.DB;
     const person = c.get('person');
     const sort = c.req.query('sort') || 'votes';
+    const expand = c.req.query('expand') || '';
 
     const rows = (await db.prepare('SELECT * FROM items WHERE festival_id = ? AND deleted_at IS NULL').bind(festival.id).all()).results;
 
@@ -100,31 +183,77 @@ async function renderStuffBody(c, festival) {
         withStats.push({ item, stats: await itemStats(db, item) });
     }
 
-    withStats.sort((a, b) => {
-        const aUnclaimed = a.stats.pledgedQty === 0 ? 1 : 0;
-        const bUnclaimed = b.stats.pledgedQty === 0 ? 1 : 0;
-        if (aUnclaimed !== bUnclaimed) return bUnclaimed - aUnclaimed;
-        if (sort === 'name') return a.item.name.localeCompare(b.item.name);
-        return b.stats.voteCount - a.stats.voteCount;
-    });
+    const bySort = (a, b) => (sort === 'name'
+        ? a.item.name.localeCompare(b.item.name)
+        : b.stats.voteCount - a.stats.voteCount);
+    const incomplete = withStats.filter((x) => x.stats.pledgedQty < x.item.needed_qty).sort(bySort);
+    const complete = withStats.filter((x) => x.stats.pledgedQty >= x.item.needed_qty).sort(bySort);
+
+    // "expand" carries the id of an item that should open (e.g. after a sign-in
+    // redirect replays a comment that was blocked mid-action) — and opens its chat.
+    const row = ({ item, stats }) => itemRow(festival, item, stats, person, expand === `item-${item.id}`, expand === `item-${item.id}`);
+
+    if (!withStats.length) return html`<p class="stuff-empty">nothing on the list yet — add the first thing!</p>`;
+
+    // XP Explorer "show in groups" style: two grouped sections with a header rule.
+    return html`
+      ${incomplete.length ? html`
+        <div class="stuff-section">
+          <div class="stuff-section-header">still need these <span class="section-count">${incomplete.length}</span></div>
+          ${incomplete.map(row)}
+        </div>` : ''}
+      ${complete.length ? html`
+        <div class="stuff-section">
+          <div class="stuff-section-header done">all covered <span class="section-count">${complete.length}</span></div>
+          ${complete.map(row)}
+        </div>` : ''}
+    `;
+}
+
+async function renderStuffBody(c, festival) {
+    const list = await itemListFragment(c, festival);
+    const sort = c.req.query('sort') || 'votes';
 
     return html`
-    <div class="divider">★ whos bringing what ★</div>
-    <p><a href="?sort=votes">sort by votes</a> | <a href="?sort=name">sort by name</a></p>
+    <div class="stuff-controls">
+      <div class="sort-toggle">
+        <span class="sort-label">sort by:</span>
+        <a href="?sort=votes" class="${sort === 'votes' ? 'active' : ''}">votes</a>
+        <a href="?sort=name" class="${sort === 'name' ? 'active' : ''}">name</a>
+      </div>
+      <button type="button" class="btn expand-all-btn" onclick="campToggleExpandAll(this)">⊞ expand all</button>
+    </div>
 
-    <details class="card">
-      <summary><b>+ add stuff</b></summary>
-      <form hx-post="/f/${festival.id}/items" hx-target="#stuff-list" hx-swap="innerHTML">
-        <input type="text" name="name" placeholder="item name (e.g. water)" required>
-        need: <input type="number" name="needed_qty" value="1" min="1" style="width:60px">
-        <input type="text" name="unit" placeholder="unit (e.g. packs)" style="width:90px">
-        <input type="text" name="category" placeholder="category (optional)" style="width:110px">
-        <button class="btn" type="submit">add it</button>
-      </form>
-    </details>
+    <div class="add-stuff-bar">
+      <button type="button" class="btn btn-primary add-stuff-btn"
+        onclick="var m=document.getElementById('add-stuff-modal'); m.style.display='flex'; var i=m.querySelector('input[name=name]'); if(i) i.focus();">
+        ➕ add an item…
+      </button>
+    </div>
+
+    <div class="modal-backdrop" id="add-stuff-modal" style="display:none;" onclick="if(event.target===this) this.style.display='none'">
+      <div class="modal-box xp-dialog">
+        <div class="xp-dialog-title">
+          <span class="xp-dialog-title-text">Add Item</span>
+          <button type="button" class="xp-dialog-close" onclick="document.getElementById('add-stuff-modal').style.display='none'">✕</button>
+        </div>
+        <div class="xp-dialog-body">
+          <form hx-post="/f/${festival.id}/items" hx-target="#stuff-list" hx-swap="innerHTML"
+            hx-on::after-request="if(event.detail.successful){this.reset(); document.getElementById('add-stuff-modal').style.display='none';}">
+            <div class="edit-field"><label>item</label><input type="text" name="name" placeholder="e.g. water" required></div>
+            <div class="edit-field"><label>how many</label><input type="text" name="qty_text" placeholder="e.g. 2 cases"></div>
+            <div class="edit-field"><label>details</label><input type="text" name="description" placeholder="optional"></div>
+            <div class="dialog-buttons">
+              <button class="btn btn-primary" type="submit">add it</button>
+              <button class="btn" type="button" onclick="document.getElementById('add-stuff-modal').style.display='none'">cancel</button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
 
     <div id="stuff-list">
-      ${withStats.map(({ item, stats }) => itemRow(festival, item, stats, person))}
+      ${list}
     </div>
   `;
 }
@@ -139,22 +268,24 @@ items.get('/f/:id/stuff', async (c) => {
 items.post('/f/:id/items', async (c) => {
     const festival = await loadFestival(c);
     if (!festival) return c.notFound();
+    if (needsSignin(c)) return signinModalResponse(c);
     const db = c.env.DB;
     const person = c.get('person');
     const body = await c.req.parseBody();
     const name = (body.name || '').toString().trim();
-    if (!name) return c.html(await renderStuffBody(c, festival));
+    const description = (body.description || '').toString().trim() || null;
+    if (!name) return c.html(await itemListFragment(c, festival));
 
-    const emoji = await getEmojiForItem(c.env, name);
+    const { emoji, unit: guessedUnit } = await getItemMeta(c.env, name);
+    const { qty, unit: typedUnit } = parseQtyText(body.qty_text);
 
     const result = await db.prepare(`
-        INSERT INTO items (festival_id, name, emoji, needed_qty, unit, category, added_by)
+        INSERT INTO items (festival_id, name, description, emoji, needed_qty, unit, added_by)
         VALUES (?, ?, ?, ?, ?, ?, ?)
     `).bind(
-        festival.id, name, emoji,
-        Number(body.needed_qty) || 1,
-        (body.unit || '').toString() || null,
-        (body.category || '').toString() || null,
+        festival.id, name, description, emoji,
+        qty,
+        typedUnit || guessedUnit || null,
         person ? person.id : null,
     ).run();
 
@@ -164,7 +295,8 @@ items.post('/f/:id/items', async (c) => {
         summary: `${person ? person.display_name : 'someone'} added ${emoji} ${name}`,
     });
 
-    return c.html(await renderStuffBody(c, festival));
+    const list = await itemListFragment(c, festival);
+    return c.html(html`<div id="toast" hx-swap-oob="true">✅ added ${emoji} ${name}!</div>${list}`);
 });
 
 async function loadItem(c) {
@@ -176,34 +308,35 @@ async function loadItem(c) {
     return { item, festival };
 }
 
-async function itemRowResponse(c, festival, itemId) {
+async function itemRowResponse(c, festival, itemId, expanded = false, chatOpen = false) {
     const db = c.env.DB;
     const person = c.get('person');
     const item = await db.prepare('SELECT * FROM items WHERE id = ?').bind(itemId).first();
     if (!item || item.deleted_at) return c.html('');
     const stats = await itemStats(db, item);
-    return c.html(itemRow(festival, item, stats, person));
+    return c.html(itemRow(festival, item, stats, person, expanded, chatOpen));
 }
 
 items.post('/items/:itemId/edit', async (c) => {
     const loaded = await loadItem(c);
     if (!loaded) return c.notFound();
+    if (needsSignin(c)) return signinModalResponse(c, { expandId: `item-${loaded.item.id}` });
     const { item, festival } = loaded;
     const db = c.env.DB;
     const person = c.get('person');
     const body = await c.req.parseBody();
 
-    const before = { name: item.name, emoji: item.emoji, needed_qty: item.needed_qty, unit: item.unit, category: item.category };
+    const before = { name: item.name, emoji: item.emoji, needed_qty: item.needed_qty, unit: item.unit, description: item.description };
     const after = {
         name: (body.name || '').toString().trim() || item.name,
         emoji: (body.emoji || '').toString().trim() || item.emoji,
         needed_qty: Number(body.needed_qty) || item.needed_qty,
         unit: (body.unit || '').toString() || null,
-        category: (body.category || '').toString() || null,
+        description: (body.description || '').toString().trim() || null,
     };
 
-    await db.prepare('UPDATE items SET name=?, emoji=?, needed_qty=?, unit=?, category=? WHERE id=?')
-        .bind(after.name, after.emoji, after.needed_qty, after.unit, after.category, item.id).run();
+    await db.prepare('UPDATE items SET name=?, emoji=?, needed_qty=?, unit=?, description=? WHERE id=?')
+        .bind(after.name, after.emoji, after.needed_qty, after.unit, after.description, item.id).run();
 
     await logAction(c, {
         festivalId: festival.id, action: 'update', entityType: 'items', entityId: item.id,
@@ -211,12 +344,32 @@ items.post('/items/:itemId/edit', async (c) => {
         summary: `${person ? person.display_name : 'someone'} changed ${after.name}`,
     });
 
-    return itemRowResponse(c, festival, item.id);
+    // Leave a trail in the comments so "why does this need 4 now?" is self-answering.
+    const who = person ? person.display_name : 'someone';
+    const changes = [];
+    if (before.name !== after.name) changes.push(`renamed it from "${before.name}" to "${after.name}"`);
+    if (before.emoji !== after.emoji) changes.push(`changed the emoji to ${after.emoji}`);
+    if (before.needed_qty !== after.needed_qty) changes.push(`changed how many are needed from ${before.needed_qty} to ${after.needed_qty}`);
+    if (before.unit !== after.unit) changes.push(`changed the unit to "${after.unit || '(none)'}"`);
+
+    if (changes.length) {
+        const noteBody = changes.join(', ');
+        const commentResult = await db.prepare("INSERT INTO comments (target_type, target_id, person_id, body) VALUES ('item', ?, ?, ?)")
+            .bind(item.id, person ? person.id : null, noteBody).run();
+        await logAction(c, {
+            festivalId: festival.id, action: 'create', entityType: 'comments', entityId: commentResult.meta.last_row_id,
+            reversible: true,
+            summary: `${who} left a note on ${after.name}: ${changes.join(', ')}`,
+        });
+    }
+
+    return itemRowResponse(c, festival, item.id, true);
 });
 
 items.post('/items/:itemId/delete', async (c) => {
     const loaded = await loadItem(c);
     if (!loaded) return c.notFound();
+    if (needsSignin(c)) return signinModalResponse(c, { expandId: `item-${loaded.item.id}` });
     const { item, festival } = loaded;
     const db = c.env.DB;
     const person = c.get('person');
@@ -236,9 +389,13 @@ items.post('/items/:itemId/vote', async (c) => {
     const loaded = await loadItem(c);
     if (!loaded) return c.notFound();
     const { item, festival } = loaded;
+    if (needsSignin(c)) return signinModalResponse(c, { expandId: `item-${item.id}` });
     const db = c.env.DB;
     const person = c.get('person');
-    if (!person) return itemRowResponse(c, festival, item.id);
+    // The vote button sends the card's current open state so voting doesn't
+    // collapse a card you'd expanded (or expand one you'd left collapsed).
+    const voteBody = await c.req.parseBody().catch(() => ({}));
+    const expanded = voteBody.expanded === '1';
 
     const existing = await db.prepare('SELECT * FROM votes WHERE item_id = ? AND person_id = ?').bind(item.id, person.id).first();
 
@@ -253,27 +410,39 @@ items.post('/items/:itemId/vote', async (c) => {
         await logAction(c, { festivalId: festival.id, action: 'create', entityType: 'votes', entityId: result.meta.last_row_id, summary: `${person.display_name} voted for ${item.name}` });
     }
 
-    return itemRowResponse(c, festival, item.id);
+    return itemRowResponse(c, festival, item.id, expanded);
 });
 
 items.post('/items/:itemId/pledge', async (c) => {
     const loaded = await loadItem(c);
     if (!loaded) return c.notFound();
     const { item, festival } = loaded;
+    if (needsSignin(c)) return signinModalResponse(c, { expandId: `item-${item.id}` });
     const db = c.env.DB;
     const person = c.get('person');
-    if (!person) return itemRowResponse(c, festival, item.id);
     const body = await c.req.parseBody();
     const qty = Math.max(1, Number(body.qty) || 1);
 
-    const result = await db.prepare('INSERT INTO pledges (item_id, person_id, qty) VALUES (?, ?, ?)')
-        .bind(item.id, person.id, qty).run();
+    // Re-pledging changes the amount on your existing pledge instead of stacking a second row.
+    const existing = await db.prepare('SELECT * FROM pledges WHERE item_id = ? AND person_id = ? AND deleted_at IS NULL').bind(item.id, person.id).first();
 
-    await logAction(c, {
-        festivalId: festival.id, action: 'create', entityType: 'pledges', entityId: result.meta.last_row_id,
-        reversible: true,
-        summary: `${person.display_name} pledged ${qty} ${item.unit || ''} of ${item.emoji} ${item.name}`,
-    });
+    if (existing) {
+        const newQty = qty;
+        await db.prepare('UPDATE pledges SET qty = ? WHERE id = ?').bind(newQty, existing.id).run();
+        await logAction(c, {
+            festivalId: festival.id, action: 'update', entityType: 'pledges', entityId: existing.id,
+            before: { qty: existing.qty }, after: { qty: newQty }, reversible: true,
+            summary: `${person.display_name} changed their pledge on ${item.emoji} ${item.name} to ${newQty}`,
+        });
+    } else {
+        const result = await db.prepare('INSERT INTO pledges (item_id, person_id, qty) VALUES (?, ?, ?)')
+            .bind(item.id, person.id, qty).run();
+        await logAction(c, {
+            festivalId: festival.id, action: 'create', entityType: 'pledges', entityId: result.meta.last_row_id,
+            reversible: true,
+            summary: `${person.display_name} pledged ${qty} ${item.unit || ''} of ${item.emoji} ${item.name}`,
+        });
+    }
 
     await notify(c.env, {
         festivalId: festival.id, targetPersonId: item.added_by, actorPersonId: person.id,
@@ -281,15 +450,16 @@ items.post('/items/:itemId/pledge', async (c) => {
         body: `${person.display_name} pledged ${qty} of ${item.name} on ${festival.name}.`,
     });
 
-    return itemRowResponse(c, festival, item.id);
+    return itemRowResponse(c, festival, item.id, true);
 });
 
 items.post('/pledges/:pledgeId/withdraw', async (c) => {
     const id = Number(c.req.param('pledgeId'));
     const db = c.env.DB;
-    const person = c.get('person');
     const pledge = await db.prepare('SELECT * FROM pledges WHERE id = ?').bind(id).first();
     if (!pledge) return c.notFound();
+    if (needsSignin(c)) return signinModalResponse(c, { expandId: `item-${pledge.item_id}` });
+    const person = c.get('person');
     const item = await db.prepare('SELECT * FROM items WHERE id = ?').bind(pledge.item_id).first();
     const festival = await db.prepare('SELECT * FROM festivals WHERE id = ?').bind(item.festival_id).first();
 
@@ -301,19 +471,19 @@ items.post('/pledges/:pledgeId/withdraw', async (c) => {
         summary: `${person ? person.display_name : 'someone'} withdrew their pledge on ${item.name}`,
     });
 
-    return itemRowResponse(c, festival, item.id);
+    return itemRowResponse(c, festival, item.id, true);
 });
 
 items.post('/items/:itemId/comments', async (c) => {
     const loaded = await loadItem(c);
     if (!loaded) return c.notFound();
     const { item, festival } = loaded;
+    if (needsSignin(c)) return signinModalResponse(c, { expandId: `item-${item.id}` });
     const db = c.env.DB;
     const person = c.get('person');
-    if (!person) return itemRowResponse(c, festival, item.id);
     const body = await c.req.parseBody();
     const text = (body.body || '').toString().trim();
-    if (!text) return itemRowResponse(c, festival, item.id);
+    if (!text) return itemRowResponse(c, festival, item.id, true, true);
 
     const result = await db.prepare("INSERT INTO comments (target_type, target_id, person_id, body) VALUES ('item', ?, ?, ?)")
         .bind(item.id, person.id, text).run();
@@ -330,5 +500,5 @@ items.post('/items/:itemId/comments', async (c) => {
         body: `${person.display_name} said "${text}" on ${item.name} (${festival.name}).`,
     });
 
-    return itemRowResponse(c, festival, item.id);
+    return itemRowResponse(c, festival, item.id, true, true);
 });

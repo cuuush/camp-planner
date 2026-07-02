@@ -52,6 +52,7 @@ CREATE TABLE IF NOT EXISTS items (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     festival_id INTEGER NOT NULL REFERENCES festivals(id),
     name TEXT NOT NULL,
+    description TEXT,
     emoji TEXT NOT NULL DEFAULT '📦',
     needed_qty INTEGER NOT NULL DEFAULT 1,
     unit TEXT,
@@ -143,6 +144,7 @@ CREATE INDEX IF NOT EXISTS idx_checklist_checks_task ON checklist_checks(task_id
 CREATE TABLE IF NOT EXISTS emoji_cache (
     normalized_name TEXT PRIMARY KEY,
     emoji TEXT NOT NULL,
+    unit TEXT NOT NULL DEFAULT '',
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 

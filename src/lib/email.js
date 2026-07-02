@@ -5,7 +5,7 @@ function retroTemplate({ heading, body, unsubscribeUrl }) {
 <!DOCTYPE html>
 <html>
 <head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"></head>
-<body style="margin:0;padding:0;font-family:'Comic Sans MS',cursive,sans-serif;background:#000080;color:#00ff00;">
+<body style="margin:0;padding:0;font-family:'Comic Sans MS','Chalkboard SE',cursive,sans-serif;background:#000080;color:#00ff00;">
   <div style="max-width:600px;margin:0 auto;padding:24px;border:4px dashed #ffff00;background:#000000;">
     <div style="text-align:center;font-size:20px;letter-spacing:2px;color:#ff00ff;">★ ★ ★ CAMP PLANNER ★ ★ ★</div>
     <h1 style="font-size:22px;color:#ffff00;">${heading}</h1>

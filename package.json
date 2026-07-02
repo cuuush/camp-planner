@@ -4,7 +4,7 @@
   "description": "",
   "main": "src/index.js",
   "scripts": {
-    "dev": "wrangler dev",
+    "dev": "wrangler dev --ip 0.0.0.0",
     "deploy": "wrangler deploy",
     "db:migrate:local": "wrangler d1 execute camp-planner-db --local --file=schema.sql",
     "db:migrate:remote": "wrangler d1 execute camp-planner-db --remote --file=schema.sql",

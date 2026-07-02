@@ -1,4 +1,5 @@
-// Every mutation goes through here. Soft deletes only; undo is itself audited.
+// Every mutation goes through here. Soft deletes only; undo is itself audited —
+// and undo-ing an undo (redo) works too, indefinitely back and forth.
 
 export async function logAction(c, { festivalId = null, action, entityType, entityId = null, before = null, after = null, summary, reversible = false }) {
     const db = c.env.DB;
@@ -28,7 +29,7 @@ export async function logAction(c, { festivalId = null, action, entityType, enti
     return result.meta.last_row_id;
 }
 
-// Table -> which column marks a soft delete, for generic undo of deletes.
+// Table -> which column marks a soft delete, for generic revert/reapply of creates/deletes.
 const SOFT_DELETE_TABLES = {
     items: 'deleted_at',
     pledges: 'deleted_at',
@@ -40,47 +41,82 @@ const SOFT_DELETE_TABLES = {
     festivals: 'deleted_at',
 };
 
-export async function undoAction(c, auditId) {
-    const db = c.env.DB;
-    const entry = await db.prepare('SELECT * FROM audit_log WHERE id = ?').bind(auditId).first();
-    if (!entry) return { error: 'not_found' };
-    if (!entry.reversible) return { error: 'not_reversible' };
-    if (entry.undone_at) return { error: 'already_undone' };
-
-    const before = entry.before_json ? JSON.parse(entry.before_json) : null;
-    const after = entry.after_json ? JSON.parse(entry.after_json) : null;
-
+async function revertEffect(db, entry, before) {
     if (entry.action === 'delete') {
         const col = SOFT_DELETE_TABLES[entry.entity_type];
-        if (col) {
-            await db.prepare(`UPDATE ${entry.entity_type} SET ${col} = NULL WHERE id = ?`).bind(entry.entity_id).run();
-        }
-    } else if (entry.action === 'bail') {
-        // Restore membership (un-bail) — pledges/seats stay released, that's fine, they were unclaimed anyway.
-        await db.prepare('UPDATE memberships SET bailed_at = NULL WHERE id = ?').bind(entry.entity_id).run();
+        if (col) await db.prepare(`UPDATE ${entry.entity_type} SET ${col} = NULL WHERE id = ?`).bind(entry.entity_id).run();
+    } else if (entry.action === 'create') {
+        const col = SOFT_DELETE_TABLES[entry.entity_type];
+        if (col) await db.prepare(`UPDATE ${entry.entity_type} SET ${col} = datetime('now') WHERE id = ?`).bind(entry.entity_id).run();
     } else if (entry.action === 'update' && before) {
-        const cols = Object.keys(before).filter((k) => k !== 'id');
+        const cols = Object.keys(before);
         if (cols.length) {
             const setClause = cols.map((k) => `${k} = ?`).join(', ');
             await db.prepare(`UPDATE ${entry.entity_type} SET ${setClause} WHERE id = ?`)
                 .bind(...cols.map((k) => before[k]), entry.entity_id).run();
         }
-    } else if (entry.action === 'create') {
-        // Undo a create = soft delete it (or hard delete for tables without soft-delete, e.g. checklist_checks/votes toggle).
+    } else if (entry.action === 'bail') {
+        await db.prepare('UPDATE memberships SET bailed_at = NULL WHERE id = ?').bind(entry.entity_id).run();
+    }
+}
+
+async function reapplyEffect(db, entry, after) {
+    if (entry.action === 'delete') {
         const col = SOFT_DELETE_TABLES[entry.entity_type];
-        if (col) {
-            await db.prepare(`UPDATE ${entry.entity_type} SET ${col} = datetime('now') WHERE id = ?`).bind(entry.entity_id).run();
+        if (col) await db.prepare(`UPDATE ${entry.entity_type} SET ${col} = datetime('now') WHERE id = ?`).bind(entry.entity_id).run();
+    } else if (entry.action === 'create') {
+        const col = SOFT_DELETE_TABLES[entry.entity_type];
+        if (col) await db.prepare(`UPDATE ${entry.entity_type} SET ${col} = NULL WHERE id = ?`).bind(entry.entity_id).run();
+    } else if (entry.action === 'update' && after) {
+        const cols = Object.keys(after);
+        if (cols.length) {
+            const setClause = cols.map((k) => `${k} = ?`).join(', ');
+            await db.prepare(`UPDATE ${entry.entity_type} SET ${setClause} WHERE id = ?`)
+                .bind(...cols.map((k) => after[k]), entry.entity_id).run();
         }
+    } else if (entry.action === 'bail') {
+        await db.prepare("UPDATE memberships SET bailed_at = datetime('now') WHERE id = ?").bind(entry.entity_id).run();
+    }
+}
+
+export async function undoAction(c, auditId) {
+    const db = c.env.DB;
+    const clicked = await db.prepare('SELECT * FROM audit_log WHERE id = ?').bind(auditId).first();
+    if (!clicked) return { error: 'not_found' };
+    if (!clicked.reversible) return { error: 'not_reversible' };
+
+    // If they clicked an "undo" row, we're toggling the ORIGINAL entry it points to
+    // (this is what makes undo-ing an undo work — it just redoes the original).
+    const orig = clicked.action === 'undo'
+        ? await db.prepare('SELECT * FROM audit_log WHERE id = ?').bind(clicked.undo_of_id).first()
+        : clicked;
+    if (!orig) return { error: 'not_found' };
+
+    const wasReverted = !!orig.undone_at;
+    const before = orig.before_json ? JSON.parse(orig.before_json) : null;
+    const after = orig.after_json ? JSON.parse(orig.after_json) : null;
+
+    if (wasReverted) {
+        await reapplyEffect(db, orig, after);
+        await db.prepare('UPDATE audit_log SET undone_at = NULL WHERE id = ?').bind(orig.id).run();
+    } else {
+        await revertEffect(db, orig, before);
+        await db.prepare("UPDATE audit_log SET undone_at = datetime('now') WHERE id = ?").bind(orig.id).run();
     }
 
-    await db.prepare("UPDATE audit_log SET undone_at = datetime('now') WHERE id = ?").bind(auditId).run();
+    // The row they clicked is now "spent" so its own button disappears — a fresh
+    // toggle entry (below) takes over as the next thing that can be clicked.
+    if (clicked.id !== orig.id) {
+        await db.prepare("UPDATE audit_log SET undone_at = datetime('now') WHERE id = ?").bind(clicked.id).run();
+    }
 
     const person = c.get('person');
+    const verb = wasReverted ? 'redid' : 'undid';
     await db.prepare(`
         INSERT INTO audit_log (festival_id, person_id, action, entity_type, entity_id, summary, reversible, undo_of_id)
-        VALUES (?, ?, 'undo', ?, ?, ?, 0, ?)
-    `).bind(entry.festival_id, person ? person.id : null, entry.entity_type, entry.entity_id,
-        `${person ? person.display_name : 'someone'} undid: ${entry.summary}`, auditId).run();
+        VALUES (?, ?, 'undo', ?, ?, ?, 1, ?)
+    `).bind(orig.festival_id, person ? person.id : null, orig.entity_type, orig.entity_id,
+        `${person ? person.display_name : 'someone'} ${verb}: ${orig.summary}`, orig.id).run();
 
-    return { success: true, festivalId: entry.festival_id };
+    return { success: true, festivalId: orig.festival_id };
 }

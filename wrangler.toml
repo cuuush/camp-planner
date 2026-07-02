@@ -8,10 +8,15 @@ routes = [
   { pattern = "camp.cuuush.com/*", zone_name = "cuuush.com" }
 ]
 
+# Static assets (wallpaper, badges, etc). Files here are served directly;
+# anything that doesn't match a file falls through to the worker.
+[assets]
+directory = "./public"
+
 [[d1_databases]]
 binding = "DB"
 database_name = "camp-planner-db"
-database_id = "REPLACE_WITH_D1_DATABASE_ID"
+database_id = "2b906fa5-e18b-45ff-aa92-77e75a4aec7b"
 
 [observability]
 [observability.logs]

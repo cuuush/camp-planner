@@ -3,6 +3,7 @@ import { html } from 'hono/html';
 import { renderPage } from '../render/layout.js';
 import { loadFestival } from '../lib/festival.js';
 import { logAction } from '../lib/audit.js';
+import { needsSignin, signinModalResponse } from '../lib/guard.js';
 
 export const people = new Hono();
 
@@ -29,46 +30,17 @@ async function renderPplBody(c, festival) {
     const isChecked = (taskId, personId) => checks.some((ch) => ch.task_id === taskId && ch.person_id === personId && !ch.unchecked_at);
 
     return html`
-    <div class="divider">★ who's coming ★</div>
-
-    <table>
-      <tr>
-        <th>name</th><th>arrival</th>
-        ${tasks.map((t) => html`<th>${t.label}</th>`)}
-        <th></th>
-      </tr>
+    <p class="ppl-count">${members.length} ${members.length === 1 ? 'person' : 'people'} going</p>
+    <div class="ppl-list">
       ${members.map((m) => html`
-        <tr>
-          <td>${m.display_name}</td>
-          <td>
-            <form hx-post="/f/${festival.id}/people/${m.person_id}/arrival" hx-target="#main" hx-swap="innerHTML">
-              <select name="arrival_day" onchange="this.form.requestSubmit()">
-                <option value="">?</option>
-                ${ARRIVAL_DAYS.map((d) => html`<option value="${d}" ${m.arrival_day === d ? 'selected' : ''}>${d}</option>`)}
-              </select>
-            </form>
-          </td>
-          ${tasks.map((t) => html`
-            <td style="text-align:center">
-              <form hx-post="/checklist/${t.id}/toggle/${m.person_id}" hx-target="#main" hx-swap="innerHTML">
-                <button class="btn" type="submit" style="padding:2px 8px">${isChecked(t.id, m.person_id) ? '✅' : '⬜'}</button>
-              </form>
-            </td>`)}
-          <td>
-            <form hx-post="/f/${festival.id}/people/${m.person_id}/bail" hx-target="#main" hx-swap="innerHTML" hx-confirm="${m.display_name} is bailing?! this releases their pledges and seats back to unclaimed. sure?">
-              <button class="btn" type="submit">not going anymore 😢</button>
-            </form>
-          </td>
-        </tr>`)}
-    </table>
-
-    <details style="margin-top:12px">
-      <summary>+ add a checklist column</summary>
-      <form hx-post="/f/${festival.id}/checklist/tasks" hx-target="#main" hx-swap="innerHTML">
-        <input type="text" name="label" placeholder="e.g. rideshare app installed" required>
-        <button class="btn" type="submit">add column</button>
-      </form>
-    </details>
+        <div class="ppl-row">
+          <span class="ppl-name">${m.display_name}</span>
+          ${tasks.length ? html`<span class="ppl-tasks">${tasks.map((t) => {
+              const done = isChecked(t.id, m.person_id);
+              return html`<span class="ppl-task ${done ? 'done' : ''}">${done ? '✅' : '⬜'} ${t.label}</span>`;
+          })}</span>` : ''}
+        </div>`)}
+    </div>
   `;
 }
 
@@ -82,6 +54,7 @@ people.get('/f/:id/ppl', async (c) => {
 people.post('/f/:id/people/:personId/arrival', async (c) => {
     const festival = await loadFestival(c);
     if (!festival) return c.notFound();
+    if (needsSignin(c)) return signinModalResponse(c);
     const db = c.env.DB;
     const person = c.get('person');
     const personId = Number(c.req.param('personId'));
@@ -103,6 +76,7 @@ people.post('/f/:id/people/:personId/arrival', async (c) => {
 });
 
 people.post('/checklist/:taskId/toggle/:personId', async (c) => {
+    if (needsSignin(c)) return signinModalResponse(c);
     const taskId = Number(c.req.param('taskId'));
     const personId = Number(c.req.param('personId'));
     const db = c.env.DB;
@@ -138,6 +112,7 @@ people.post('/checklist/:taskId/toggle/:personId', async (c) => {
 people.post('/f/:id/checklist/tasks', async (c) => {
     const festival = await loadFestival(c);
     if (!festival) return c.notFound();
+    if (needsSignin(c)) return signinModalResponse(c);
     const db = c.env.DB;
     const person = c.get('person');
     const body = await c.req.parseBody();
@@ -155,9 +130,32 @@ people.post('/f/:id/checklist/tasks', async (c) => {
     return c.html(await renderPplBody(c, festival));
 });
 
+people.post('/checklist/:taskId/delete', async (c) => {
+    if (needsSignin(c)) return signinModalResponse(c);
+    const taskId = Number(c.req.param('taskId'));
+    const db = c.env.DB;
+    const person = c.get('person');
+
+    const task = await db.prepare('SELECT * FROM checklist_tasks WHERE id = ? AND deleted_at IS NULL').bind(taskId).first();
+    if (!task) return c.notFound();
+    if (task.is_default) return c.notFound();
+    const festival = await db.prepare('SELECT * FROM festivals WHERE id = ?').bind(task.festival_id).first();
+
+    await db.prepare("UPDATE checklist_tasks SET deleted_at = datetime('now') WHERE id = ?").bind(taskId).run();
+
+    await logAction(c, {
+        festivalId: festival.id, action: 'delete', entityType: 'checklist_tasks', entityId: taskId,
+        reversible: true,
+        summary: `${person ? person.display_name : 'someone'} removed checklist column "${task.label}"`,
+    });
+
+    return c.html(await renderPplBody(c, festival));
+});
+
 people.post('/f/:id/people/:personId/bail', async (c) => {
     const festival = await loadFestival(c);
     if (!festival) return c.notFound();
+    if (needsSignin(c)) return signinModalResponse(c);
     const db = c.env.DB;
     const personId = Number(c.req.param('personId'));
     const actor = c.get('person');

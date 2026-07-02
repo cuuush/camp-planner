@@ -4,6 +4,8 @@ import { renderPage } from '../render/layout.js';
 import { loadFestival } from '../lib/festival.js';
 import { logAction } from '../lib/audit.js';
 import { notify } from '../lib/notify.js';
+import { needsSignin, signinModalResponse } from '../lib/guard.js';
+import { msnChat, escapeHtml } from '../render/msn.js';
 
 export const rides = new Hono();
 
@@ -23,49 +25,63 @@ async function carStats(db, car) {
     return { seats, comments };
 }
 
-function carCard(car, driverName, stats, person) {
+function carCard(car, driverName, stats, person, expanded = false, chatOpen = false) {
     const { seats, comments } = stats;
-    const open = car.seats_total - seats.length;
+    const openSeats = car.seats_total - seats.length;
     const myTakenSeat = person && seats.find((s) => s.person_id === person.id);
 
     return html`
-    <details class="card ${open > 0 ? '' : ''}" id="car-${car.id}">
-      <summary>
-        🚗 <b>${driverName}'s car</b> — ${seats.length}/${car.seats_total} seats taken
-        ${open > 0 ? html`<b style="color:#00ff00"> (${open} open!)</b>` : html`<span style="color:#888"> (full)</span>`}
-        <br>leaving from ${car.leaving_from || '?'} on ${car.depart_day || '?'} ${car.depart_time || ''}
+    <details class="card car-details" id="car-${car.id}" ${expanded ? 'open' : ''}>
+      <summary class="item-summary">
+        <div class="item-top-row">
+          <span class="item-emoji">🚗</span>
+          <div class="item-headline">
+            <div class="item-name">${driverName}'s car</div>
+            <div class="item-tally">
+              ${seats.length}/${car.seats_total} seats taken
+              ${openSeats > 0 ? html`<span class="tally-covered">· ${openSeats} open!</span>` : html`<span style="color:#888">· full</span>`}
+            </div>
+            <div class="item-description">leaving from ${car.leaving_from || '?'} on ${car.depart_day || '?'} ${car.depart_time || ''}</div>
+          </div>
+        </div>
       </summary>
-      <div style="padding:8px 0">
-        <p>riders: ${seats.length ? seats.map((s) => s.display_name).join(', ') : '(none yet)'}</p>
 
-        ${!myTakenSeat ? html`
-          <form hx-post="/cars/${car.id}/seats/claim" hx-target="#car-${car.id}" hx-swap="outerHTML" style="display:inline">
-            <button class="btn" type="submit">tap an open seat</button>
-          </form>` : html`
-          <form hx-post="/seats/${myTakenSeat.id}/leave" hx-target="#car-${car.id}" hx-swap="outerHTML" style="display:inline">
-            <button class="btn" type="submit">leave this car</button>
-          </form>`}
+      <div class="item-actions">
+        <p class="car-riders"><b>riders:</b> ${seats.length ? seats.map((s) => s.display_name).join(', ') : '(none yet)'}</p>
 
-        <details style="margin-top:6px">
-          <summary>edit / delete car</summary>
-          <form hx-post="/cars/${car.id}/edit" hx-target="#car-${car.id}" hx-swap="outerHTML">
-            seats: <input type="number" name="seats_total" value="${car.seats_total}" min="1" style="width:60px">
-            from: <input type="text" name="leaving_from" value="${car.leaving_from || ''}">
-            day: <input type="text" name="depart_day" value="${car.depart_day || ''}" style="width:60px">
-            time: <input type="text" name="depart_time" value="${car.depart_time || ''}" style="width:80px">
-            <button class="btn" type="submit">save</button>
-          </form>
-          <form hx-post="/cars/${car.id}/delete" hx-target="#car-${car.id}" hx-swap="outerHTML" hx-confirm="delete this car?">
-            <button class="btn" type="submit">delete car</button>
-          </form>
-        </details>
+        <div class="action-buttons">
+          ${!myTakenSeat ? html`
+            <form class="car-seat-form" hx-post="/cars/${car.id}/seats/claim" hx-target="#car-${car.id}" hx-swap="outerHTML">
+              <button class="btn btn-primary" type="submit">grab an open seat</button>
+            </form>` : html`
+            <form class="car-seat-form" hx-post="/seats/${myTakenSeat.id}/leave" hx-target="#car-${car.id}" hx-swap="outerHTML">
+              <button class="btn" type="submit">leave this car</button>
+            </form>`}
 
-        <div style="margin-top:6px">
-          ${comments.map((cm) => html`<div class="comment"><b>${cm.display_name}:</b> ${cm.body}</div>`)}
-          <form hx-post="/cars/${car.id}/comments" hx-target="#car-${car.id}" hx-swap="outerHTML">
-            <input type="text" name="body" placeholder="say something..." style="width:70%">
-            <button class="btn" type="submit">post</button>
-          </form>
+          <details class="edit-toggle">
+            <summary class="btn btn-like">edit</summary>
+            <form class="edit-panel" hx-post="/cars/${car.id}/edit" hx-target="#car-${car.id}" hx-swap="outerHTML">
+              <div class="edit-panel-title">edit car</div>
+              <div class="edit-field"><label>seats</label><input type="number" name="seats_total" value="${car.seats_total}" min="1"></div>
+              <div class="edit-field"><label>from</label><input type="text" name="leaving_from" value="${car.leaving_from || ''}" placeholder="e.g. oakland"></div>
+              <div class="edit-field"><label>day</label><input type="text" name="depart_day" value="${car.depart_day || ''}" placeholder="thu"></div>
+              <div class="edit-field"><label>time</label><input type="text" name="depart_time" value="${car.depart_time || ''}" placeholder="9am"></div>
+              <div class="edit-panel-buttons">
+                <button class="btn btn-primary" type="submit">save</button>
+                <button class="btn btn-danger" type="submit" formaction="/cars/${car.id}/delete" hx-post="/cars/${car.id}/delete" hx-confirm="delete this car?">delete</button>
+              </div>
+            </form>
+          </details>
+
+          ${msnChat({
+              title: `Chat (${comments.length} message${comments.length === 1 ? '' : 's'})`,
+              dpEmoji: '🚗',
+              toLabel: `To: <b>${escapeHtml(driverName)}'s car</b> &lt;riders@camp&gt;`,
+              comments,
+              postUrl: `/cars/${car.id}/comments`,
+              target: `#car-${car.id}`,
+              chatOpen,
+          })}
         </div>
       </div>
     </details>`;
@@ -74,6 +90,7 @@ function carCard(car, driverName, stats, person) {
 async function renderRidesBody(c, festival) {
     const db = c.env.DB;
     const person = c.get('person');
+    const expand = c.req.query('expand') || '';
 
     const cars = (await db.prepare(`
         SELECT c.*, pe.display_name FROM cars c
@@ -82,22 +99,23 @@ async function renderRidesBody(c, festival) {
     `).bind(festival.id).all()).results;
 
     return html`
-    <div class="divider">★ THE CARPOOL ZONE ★</div>
 
-    <details class="card">
-      <summary><b>+ post a car</b></summary>
-      <form hx-post="/f/${festival.id}/cars" hx-target="#car-list" hx-swap="innerHTML">
-        seats: <input type="number" name="seats_total" value="4" min="1" style="width:60px">
-        leaving from: <input type="text" name="leaving_from" placeholder="e.g. oakland">
-        day: <input type="text" name="depart_day" placeholder="thu" style="width:60px">
-        time: <input type="text" name="depart_time" placeholder="9am" style="width:80px">
-        <button class="btn" type="submit">post car</button>
+    <details class="card post-car">
+      <summary class="post-car-summary"><b>＋ post a car</b></summary>
+      <form class="edit-panel" hx-post="/f/${festival.id}/cars" hx-target="#car-list" hx-swap="innerHTML"
+        hx-on::after-request="if(event.detail.successful) this.reset();">
+        <div class="edit-panel-title">post a car</div>
+        <div class="edit-field"><label>seats</label><input type="number" name="seats_total" value="4" min="1"></div>
+        <div class="edit-field"><label>from</label><input type="text" name="leaving_from" placeholder="e.g. oakland"></div>
+        <div class="edit-field"><label>day</label><input type="text" name="depart_day" placeholder="thu"></div>
+        <div class="edit-field"><label>time</label><input type="text" name="depart_time" placeholder="9am"></div>
+        <div class="edit-panel-buttons"><button class="btn btn-primary" type="submit">post car</button></div>
       </form>
     </details>
 
     <div id="car-list">
-      ${cars.length === 0 ? html`<p>no cars posted yet.</p>` : ''}
-      ${await Promise.all(cars.map(async (car) => carCard(car, car.display_name, await carStats(db, car), person)))}
+      ${cars.length === 0 ? html`<p class="stuff-empty">no cars posted yet — post the first one!</p>` : ''}
+      ${await Promise.all(cars.map(async (car) => carCard(car, car.display_name, await carStats(db, car), person, expand === `car-${car.id}`, expand === `car-${car.id}`)))}
     </div>
   `;
 }
@@ -106,15 +124,15 @@ rides.get('/f/:id/rides', async (c) => {
     const festival = await loadFestival(c);
     if (!festival) return c.notFound();
     const body = await renderRidesBody(c, festival);
-    return c.html(await renderPage(c, { title: `${festival.name} — rides`, festival, activeTab: 'rides', body }));
+    return c.html(await renderPage(c, { title: `${festival.name} — cars`, festival, activeTab: 'rides', body }));
 });
 
 rides.post('/f/:id/cars', async (c) => {
     const festival = await loadFestival(c);
     if (!festival) return c.notFound();
+    if (needsSignin(c)) return signinModalResponse(c);
     const db = c.env.DB;
     const person = c.get('person');
-    if (!person) return c.html(await renderRidesBody(c, festival));
     const body = await c.req.parseBody();
 
     const result = await db.prepare(`
@@ -148,18 +166,19 @@ async function loadCar(c) {
     return { car, festival, driver };
 }
 
-async function carResponse(c, festival, carId) {
+async function carResponse(c, festival, carId, expanded = true, chatOpen = false) {
     const db = c.env.DB;
     const person = c.get('person');
     const car = await db.prepare('SELECT * FROM cars WHERE id = ?').bind(carId).first();
     if (!car || car.deleted_at) return c.html('');
     const driver = await db.prepare('SELECT display_name FROM people WHERE id = ?').bind(car.driver_person_id).first();
-    return c.html(carCard(car, driver.display_name, await carStats(db, car), person));
+    return c.html(carCard(car, driver.display_name, await carStats(db, car), person, expanded, chatOpen));
 }
 
 rides.post('/cars/:carId/edit', async (c) => {
     const loaded = await loadCar(c);
     if (!loaded) return c.notFound();
+    if (needsSignin(c)) return signinModalResponse(c, { expandId: `car-${loaded.car.id}` });
     const { car, festival } = loaded;
     const db = c.env.DB;
     const person = c.get('person');
@@ -188,6 +207,7 @@ rides.post('/cars/:carId/edit', async (c) => {
 rides.post('/cars/:carId/delete', async (c) => {
     const loaded = await loadCar(c);
     if (!loaded) return c.notFound();
+    if (needsSignin(c)) return signinModalResponse(c, { expandId: `car-${loaded.car.id}` });
     const { car, festival, driver } = loaded;
     const db = c.env.DB;
     const person = c.get('person');
@@ -207,9 +227,9 @@ rides.post('/cars/:carId/seats/claim', async (c) => {
     const loaded = await loadCar(c);
     if (!loaded) return c.notFound();
     const { car, festival, driver } = loaded;
+    if (needsSignin(c)) return signinModalResponse(c, { expandId: `car-${car.id}` });
     const db = c.env.DB;
     const person = c.get('person');
-    if (!person) return carResponse(c, festival, car.id);
 
     const result = await db.prepare('INSERT INTO seats (car_id, person_id) VALUES (?, ?)').bind(car.id, person.id).run();
 
@@ -231,9 +251,10 @@ rides.post('/cars/:carId/seats/claim', async (c) => {
 rides.post('/seats/:seatId/leave', async (c) => {
     const id = Number(c.req.param('seatId'));
     const db = c.env.DB;
-    const person = c.get('person');
     const seat = await db.prepare('SELECT * FROM seats WHERE id = ?').bind(id).first();
     if (!seat) return c.notFound();
+    if (needsSignin(c)) return signinModalResponse(c, { expandId: `car-${seat.car_id}` });
+    const person = c.get('person');
     const car = await db.prepare('SELECT * FROM cars WHERE id = ?').bind(seat.car_id).first();
     const festival = await db.prepare('SELECT * FROM festivals WHERE id = ?').bind(car.festival_id).first();
     const driver = await db.prepare('SELECT display_name FROM people WHERE id = ?').bind(car.driver_person_id).first();
@@ -259,12 +280,12 @@ rides.post('/cars/:carId/comments', async (c) => {
     const loaded = await loadCar(c);
     if (!loaded) return c.notFound();
     const { car, festival, driver } = loaded;
+    if (needsSignin(c)) return signinModalResponse(c, { expandId: `car-${car.id}` });
     const db = c.env.DB;
     const person = c.get('person');
-    if (!person) return carResponse(c, festival, car.id);
     const body = await c.req.parseBody();
     const text = (body.body || '').toString().trim();
-    if (!text) return carResponse(c, festival, car.id);
+    if (!text) return carResponse(c, festival, car.id, true, true);
 
     const result = await db.prepare("INSERT INTO comments (target_type, target_id, person_id, body) VALUES ('car', ?, ?, ?)")
         .bind(car.id, person.id, text).run();
@@ -281,5 +302,5 @@ rides.post('/cars/:carId/comments', async (c) => {
         body: `${person.display_name} said "${text}" on your car thread (${festival.name}).`,
     });
 
-    return carResponse(c, festival, car.id);
+    return carResponse(c, festival, car.id, true, true);
 });
