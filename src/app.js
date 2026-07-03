@@ -45,17 +45,29 @@ app.onError((err, c) => {
     // D1's backing storage got reset — usually clears within a few seconds.
     // Safe to auto-retry GET/HEAD; anything else (a form submit) shouldn't be
     // resubmitted silently, so just ask the person to try again.
-    const canAutoRetry = c.req.method === 'GET' || c.req.method === 'HEAD';
+    const MAX_AUTO_RETRIES = 5; // ~15s of auto-refresh before we stop and ask the person to act
+    const retryCount = Number(c.req.query('d1retry') ?? '0');
+    const canAutoRetry = (c.req.method === 'GET' || c.req.method === 'HEAD') && retryCount < MAX_AUTO_RETRIES;
+
+    let retryUrl;
+    if (canAutoRetry) {
+        const url = new URL(c.req.url);
+        url.searchParams.set('d1retry', String(retryCount + 1));
+        retryUrl = url.pathname + url.search;
+    }
+
     return c.html(
         '<!DOCTYPE html><html><head><meta charset="UTF-8">' +
-        (canAutoRetry ? '<meta http-equiv="refresh" content="3">' : '') +
+        (canAutoRetry ? `<meta http-equiv="refresh" content="3;url=${retryUrl}">` : '') +
         '<title>camp planner</title></head>' +
         '<body style="font-family: sans-serif; text-align: center; padding: 4rem 1rem;">' +
         '<h1>🏕️ Hang tight…</h1>' +
         '<p>' + (canAutoRetry
             ? 'The database is waking up. This page will retry automatically.'
-            : 'The database is waking up. Please try that again in a few seconds.') +
-        '</p></body></html>',
+            : 'The database is taking longer than usual to wake up. Please try again in a minute — sorry for the trouble.') +
+        '</p>' +
+        (canAutoRetry ? '' : '<p><a href="' + c.req.path + '">Reload</a></p>') +
+        '</body></html>',
         503,
         { 'Retry-After': '3' }
     );
