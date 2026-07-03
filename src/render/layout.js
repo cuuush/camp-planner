@@ -518,6 +518,14 @@ const RETRO_CSS = `
   /* Breathing room between the stacked fields in the "add an item" dialog. */
   #add-stuff-modal .edit-field + .edit-field { margin-top: 12px; }
   #add-stuff-modal .dialog-buttons { margin-top: 16px; }
+  /* XP-style "please wait" spinner — hidden until htmx flips on .htmx-request
+     (via hx-indicator) while the add-item POST waits on the LLM emoji lookup. */
+  .xp-spinner-row { display: none; align-items: center; gap: 9px; margin-top: 14px;
+    padding-top: 12px; border-top: 1px solid #c9c2a8; font-size: 0.9em; color: #0a246a; }
+  .xp-spinner-row.htmx-request { display: flex; }
+  .xp-spinner { width: 20px; height: 20px; border-radius: 50%; flex: 0 0 auto;
+    border: 3px solid #cfe0f5; border-top-color: #1f5fd0; animation: xp-spin 0.7s linear infinite; }
+  @keyframes xp-spin { to { transform: rotate(360deg); } }
   .edit-emoji-input { width: 52px !important; text-align: center; font-size: 1.2em !important; }
   .edit-need { display: flex; gap: 8px; }
   .edit-need input[type=number] { width: 72px !important; flex: 0 0 auto; }
@@ -1279,6 +1287,9 @@ export function tickerHtml(entries) {
 async function dogAssistant(c, festival, person) {
     let bubble;
     if (!person) {
+        // Only nudge on a festival page, where signing in has an obvious point (and
+        // also joins you). On the main fest-selection page (root) Rover stays quiet.
+        if (!festival) return '';
         // Bring them back to exactly where they are (and, if it's a fest page,
         // sign-in also joins them). Pop the modal in place rather than navigating.
         const next = encodeURIComponent(c.req.path);

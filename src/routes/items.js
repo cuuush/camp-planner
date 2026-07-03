@@ -239,13 +239,20 @@ async function renderStuffBody(c, festival) {
         </div>
         <div class="xp-dialog-body">
           <form hx-post="/f/${festival.id}/items" hx-target="#stuff-list" hx-swap="innerHTML"
+            hx-indicator="#add-stuff-spinner" hx-disabled-elt="#add-stuff-submit"
             hx-on::after-request="if(event.detail.successful){this.reset(); document.getElementById('add-stuff-modal').style.display='none';}">
             <div class="edit-field"><label>item</label><input type="text" name="name" placeholder="e.g. water" required></div>
             <div class="edit-field"><label>how many</label><input type="text" name="qty_text" placeholder="e.g. 2 cases"></div>
             <div class="edit-field"><label>details</label><input type="text" name="description" placeholder="optional"></div>
             <div class="dialog-buttons">
-              <button class="btn btn-primary" type="submit">add it</button>
+              <button id="add-stuff-submit" class="btn btn-primary" type="submit">add it</button>
               <button class="btn" type="button" onclick="document.getElementById('add-stuff-modal').style.display='none'">cancel</button>
+            </div>
+            <!-- Shown by htmx (via hx-indicator) only while the add request is in
+                 flight — i.e. while the LLM is picking an emoji/unit for the item. -->
+            <div id="add-stuff-spinner" class="xp-spinner-row">
+              <span class="xp-spinner" aria-hidden="true"></span>
+              <span>finding the perfect emoji…</span>
             </div>
           </form>
         </div>

@@ -1,6 +1,6 @@
 import { Hono } from 'hono';
 import { renderPage } from '../render/layout.js';
-import { modalFormMarkup, nameTakenWarning } from '../lib/guard.js';
+import { modalFormMarkup, signinPageMarkup, nameTakenWarning } from '../lib/guard.js';
 import { normalizeName } from '../lib/names.js';
 import { ensureMembership, festIdFromPath, festNameFromPath } from '../lib/festival.js';
 import { absorbPlaceholders } from '../lib/people.js';
@@ -82,11 +82,12 @@ async function joinFestFromNext(c, ctx) {
     if (festId) await ensureMembership(c, festId);
 }
 
-// Full-page fallback for no-JS / plain-form flows (e.g. the join button). Shows the
-// exact same dialog as the in-place modal, so there's only one sign-in UI.
+// Full-page fallback for no-JS / plain-form flows (e.g. the create-fest, settings,
+// and join forms all do a full navigation). Renders a real standalone form — NOT
+// the htmx modal overlay, which only works swapped into #signin-modal-overlay.
 auth.get('/signin', async (c) => {
     const ctx = await withFestName(c, ctxFromQuery(c));
-    return c.html(await renderPage(c, { title: 'sign in', body: modalFormMarkup(ctx) }));
+    return c.html(await renderPage(c, { title: 'sign in', body: signinPageMarkup(ctx) }));
 });
 
 // The sign-in dialog as an htmx fragment — used to pop the modal *before* an action
@@ -116,7 +117,7 @@ auth.post('/signin', async (c) => {
         await withFestName(c, ctx);
         return htmx
             ? c.html(modalFormMarkup(ctx))
-            : c.html(await renderPage(c, { title: 'sign in', body: modalFormMarkup(ctx) }));
+            : c.html(await renderPage(c, { title: 'sign in', body: signinPageMarkup(ctx) }));
     }
 
     const db = c.env.DB;

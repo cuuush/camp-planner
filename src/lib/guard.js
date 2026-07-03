@@ -40,6 +40,26 @@ export function modalFormMarkup(ctx) {
     </div>`;
 }
 
+// The standalone, full-page sign-in form — what you get by actually navigating to
+// /signin (e.g. a no-JS fallback, or a plain form post that needed a login first).
+// Unlike modalFormMarkup this is a REAL form (method/action, no htmx overlay), so
+// it submits and works with or without JS; POST /signin's non-htmx branch signs you
+// in and redirects. Keep it plain — no floating window, no stash/restore dance.
+export function signinPageMarkup(ctx) {
+    return html`
+    <div class="card signin-page">
+      <h2 style="margin-top:0;">Sign In</h2>
+      ${ctx.festName ? html`<p class="signin-fest-note">✔ signing in adds you to <b>${ctx.festName}</b>.</p>` : ''}
+      <form method="post" action="/signin">
+        ${hiddenFields(ctx)}
+        <input type="text" name="name" class="signin-name-input" placeholder="your name" required autofocus>
+        <p class="signin-hint">takes 2 seconds, no password. if u think someone else might use this name, pick something more identifiable haha</p>
+        <input type="email" name="email" placeholder="email (optional, just for notifications)">
+        <button class="btn btn-primary" type="submit" style="width:100%; margin-top:12px;">sign in &amp; continue</button>
+      </form>
+    </div>`;
+}
+
 // Shown as a warning window stacked ON TOP of the sign-in dialog when the typed
 // name is already taken: confirm it's really you (→ trust-based reclaim) or back
 // out and pick another. Built on the reusable xpDialogPopup so it cascades over
