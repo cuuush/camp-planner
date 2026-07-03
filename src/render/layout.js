@@ -951,6 +951,26 @@ const RETRO_CSS = `
   .settings-hint { font-size: 0.8em; color: #4a4a3c; margin: 0 0 8px; }
   .settings-email-form input[type=email] { width: 100%; box-sizing: border-box; }
   .settings-saved { font-size: 0.8em; color: #1a7a1a; font-weight: bold; margin: 6px 0 0; text-align: right; }
+
+  /* Feedback window (start menu → send feedback): a crash-report-style compose
+     box up top, then the "sent reports" log — Explorer-group-header style label. */
+  .feedback-form textarea { width: 100%; box-sizing: border-box; resize: vertical; }
+  .feedback-form .dialog-buttons { margin-top: 10px; }
+  .feedback-log-label {
+    display: flex; align-items: center; gap: 8px;
+    color: #2360cc; font-weight: bold; font-size: 0.85em; margin: 0 0 6px;
+  }
+  .feedback-log-label::after { content: ''; flex: 1; height: 0; border-top: 1px solid currentColor; opacity: 0.4; }
+  .feedback-log-label .section-count { color: #2360cc; border: 1px solid #7aa0d8; }
+  .feedback-list { display: flex; flex-direction: column; gap: 6px; }
+  .feedback-entry { background: #fff; border: 1px solid #cfd8e6; border-radius: 3px; padding: 6px 9px; }
+  .feedback-meta { display: flex; align-items: baseline; gap: 8px; font-size: 0.8em; }
+  .feedback-from { font-weight: bold; }
+  .feedback-page {
+    color: #9a9a8c; font-style: italic; margin-left: auto;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 40%;
+  }
+  .feedback-text { font-size: 0.87em; margin-top: 2px; word-break: break-word; line-height: 1.4; }
   .checklist-label { flex: 1; min-width: 0; }
   .checklist-req {
     font-size: 0.68em; color: #6a6a5c; text-transform: uppercase; letter-spacing: 0.4px;
@@ -1534,6 +1554,9 @@ function taskbar(c, festival, festivals) {
           <a class="xp-startmenu-item" href="/"><span class="xp-startmenu-ico">🖥️</span> all festivals</a>
           <a class="xp-startmenu-item" href="/fests/new"><span class="xp-startmenu-ico">➕</span> create a fest…</a>
           <div class="xp-startmenu-sep"></div>
+          <a class="xp-startmenu-item" href="/feedback" onclick="campCloseStart()"
+            hx-get="/feedback/window" hx-target="#popup-layer" hx-swap="beforeend">
+            <span class="xp-startmenu-ico">📝</span> send feedback</a>
           <a class="xp-startmenu-item" href="/settings" onclick="campCloseStart()"
             hx-get="/settings/window" hx-target="#popup-layer" hx-swap="beforeend">
             <span class="xp-startmenu-ico">⚙️</span> control panel</a>
