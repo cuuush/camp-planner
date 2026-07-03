@@ -109,8 +109,17 @@ you in — reclaim only happens on "yep, that's me" (→ `/signin/reclaim`).
   because `items.description` was appended via ALTER TABLE, so positional dumps
   misalign).
 - **Migrations live in `migrations/`**; locally apply with
-  `wrangler d1 execute camp-planner-db --local --file=migrations/NNN.sql`. Keep
-  `schema.sql` in sync for fresh installs.
+  `wrangler d1 execute camp-planner-db --local --file=migrations/NNN.sql` (or
+  `wrangler d1 migrations apply camp-planner-db --local`, which tracks what ran).
+  Keep `schema.sql` in sync for fresh installs.
+- **Writing a new migration:** next `NNN_name.sql` number in `migrations/` —
+  lexicographic filename order IS the apply order. Prefer idempotent statements
+  (`CREATE TABLE IF NOT EXISTS`, `CREATE INDEX IF NOT EXISTS`); `ALTER TABLE ADD
+  COLUMN` can't be idempotent in SQLite and that's fine — wrangler's bookkeeping
+  runs each file exactly once, but it means a half-failed multi-statement file
+  can't just be re-run, so keep each migration small. Update `schema.sql` with
+  the same change (fresh installs run schema.sql, never the migrations), and
+  mirror new tables' soft-delete (`deleted_at`) convention.
 - **Prod migrations are applied by CI** (`.github/workflows/deploy.yml`): on push to
   main it runs `d1 migrations apply --remote` and only deploys the worker if that
   succeeds. Wrangler tracks what's applied in the `d1_migrations` table; migrations

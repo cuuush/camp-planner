@@ -213,6 +213,24 @@ const RETRO_CSS = `
     background: url(/arrow.png) center/contain no-repeat; }
   .dog-links a:hover { color: #1a52c8; text-decoration: underline; }
   @media (max-width: 600px) { .dog-img { width: 52px; } .dog-bubble { font-size: 0.85em; } }
+  /* Rover reacts to being petted (clicked). What happens on the fifth pet is
+     documented nowhere, which is the point. */
+  .dog-img { cursor: pointer; }
+  @keyframes dog-wiggle { 0% { transform: rotate(0); } 30% { transform: rotate(-8deg) scale(1.06); } 70% { transform: rotate(7deg); } 100% { transform: rotate(0); } }
+  .dog-img.petted { animation: dog-wiggle 0.35s ease; }
+  /* The forbidden fifth pet: an authentic XP Stop error. Lucida Console on that
+     unmistakable blue, dismissed by any key or tap. */
+  .xp-bsod {
+    position: fixed; inset: 0; z-index: 100000;
+    background: #0000aa; color: #fff;
+    font-family: 'Lucida Console', 'Courier New', monospace;
+    font-size: 13px; line-height: 1.45;
+    padding: 36px 5vw; white-space: pre-wrap; overflow: hidden;
+    cursor: default; user-select: none;
+  }
+  @media (max-width: 600px) { .xp-bsod { font-size: 10px; padding: 18px 12px; } }
+  .xp-bsod-cursor { animation: bsod-blink 1s steps(1) infinite; }
+  @keyframes bsod-blink { 50% { opacity: 0; } }
   /* XP tab control: inactive tabs sit slightly lower and behind the active one,
      which lifts up and merges with the page below it. */
   nav.tabs { display: flex; padding: 6px 0 0; gap: 2px; border-bottom: 1px solid #919b9c; margin: 0 0 12px; align-items: flex-end; }
@@ -1461,6 +1479,74 @@ function campTickClock() {
 }
 document.addEventListener('DOMContentLoaded', campTickClock);
 setInterval(campTickClock, 15000);
+
+// ——— Rover's secret. He asked you nicely not to. ————————————————————
+// Five quick pets (clicks) on the dog = an authentic XP Stop error. Any key,
+// click, or tap brings the site back — no harm done, exactly like the real
+// thing except the opposite.
+var dogPets = 0, dogPetTimer = null;
+document.addEventListener('click', function (e) {
+  if (!e.target.classList || !e.target.classList.contains('dog-img')) return;
+  clearTimeout(dogPetTimer);
+  dogPets++;
+  e.target.classList.remove('petted');
+  void e.target.offsetWidth; // restart the wiggle animation on every pet
+  e.target.classList.add('petted');
+  if (dogPets >= 5) { dogPets = 0; campBsod(); return; }
+  dogPetTimer = setTimeout(function () { dogPets = 0; }, 1600);
+});
+function campBsod() {
+  if (document.getElementById('xp-bsod')) return;
+  var lines = [
+    'A problem has been detected and camp planner has been shut down to prevent',
+    'damage to your festival.',
+    '',
+    'DOG_PETTED_TOO_MANY_TIMES',
+    '',
+    "If this is the first time you've seen this Stop error screen, restart your",
+    'browser. If this screen appears again, follow these steps:',
+    '',
+    'Check to make sure your tent is properly staked and your cooler is',
+    'adequately iced. If this is a new festival, ask the group chat for any',
+    'updates you might need.',
+    '',
+    'If problems continue, disable or remove any recently added campers. If you',
+    'need to use Safe Mode to remove or disable components, restart your',
+    'computer, press F8 to select Advanced Startup Options, and then select',
+    'Safe Mode.',
+    '',
+    'Technical information:',
+    '',
+    '*** STOP: 0x0000D06E (0xC0FFEE00, 0x00000005, 0x0BADD06E, 0x00000000)',
+    '',
+    '***  rover.sys - Address 0x0BADD06E base at 0xC0FFEE00, DateStamp 10/25/2001',
+    '',
+    'Beginning dump of physical memory',
+    'Physical memory dump complete.',
+    'Contact your camp administrator or the dog for further assistance.',
+    'He told you not to do that.',
+    '',
+    'Press any key (or tap) to continue ',
+  ];
+  var d = document.createElement('div');
+  d.id = 'xp-bsod';
+  d.className = 'xp-bsod';
+  d.textContent = lines.join('\\n');
+  var cur = document.createElement('span');
+  cur.className = 'xp-bsod-cursor';
+  cur.textContent = '_';
+  d.appendChild(cur);
+  function dismiss() {
+    d.remove();
+    document.removeEventListener('keydown', dismiss);
+  }
+  // Arm dismissal a beat later so the fifth pet-click doesn't close it instantly.
+  setTimeout(function () {
+    d.addEventListener('click', dismiss);
+    document.addEventListener('keydown', dismiss);
+  }, 400);
+  document.body.appendChild(d);
+}
 `;
 
 export function tickerHtml(entries) {
@@ -1474,11 +1560,56 @@ export function tickerHtml(entries) {
     return html`<div class="marquee-wrap"><div class="marquee-track"><span class="marquee" style="animation-duration:${duration}s">${text}&nbsp;&nbsp;·&nbsp;&nbsp;${text}</span></div></div>`;
 }
 
+// Rover's idle chatter: once there's nothing important to say, he rotates through
+// XP-help-style tips instead of going quiet — feedback, the control panel, ghost
+// people, merging duplicates, the MSN emoticons, and one tip that is definitely
+// not a hint about what happens if you pet him five times (see CONFETTI_SCRIPT).
+// Voice: authentic "click Start, and then click…" Windows XP help text.
+function dogTip(festival) {
+    const tips = [
+        {
+            title: 'Your opinion counts!',
+            body: html`camp planner is always looking for ways to improve. To report a problem or share an idea, click <b>Start</b>, and then click <b>send feedback</b>. Your report helps make camping better for everyone.`,
+            links: html`<li><a href="/feedback" hx-get="/feedback/window" hx-target="#popup-layer" hx-swap="beforeend">Send feedback now</a></li>`,
+        },
+        {
+            title: 'Personalize camp planner',
+            body: html`Did you know you can switch between 12-hour and 24-hour time, manage email notifications, and turn confetti on or off? Click <b>Start</b>, and then click <b>control panel</b> to make camp planner truly yours.`,
+            links: html`<li><a href="/settings" hx-get="/settings/window" hx-target="#popup-layer" hx-swap="beforeend">Open the control panel</a></li>`,
+        },
+        {
+            title: 'A blast from 2003',
+            body: html`The emoticons in every chat window are the original MSN Messenger graphics. Try typing <b>:)</b> or <b>(Y)</b> or <b>(8)</b> in a message. Some things never go out of style.`,
+        },
+        {
+            title: 'A note from Rover',
+            body: html`I am a professional Search Companion with an important job to do. Please do not pet me five times in a row. Nothing bad will happen. I am simply asking you not to.`,
+        },
+    ];
+    if (festival) {
+        tips.push({
+            title: 'Bringing a friend?',
+            body: html`You can add people who haven't signed up yet. On the <b>ppl</b> tab, click <b>＋ add person</b> and type their name. When they sign in with that name later, everything they were given links up automatically.`,
+            links: html`<li><a href="/f/${festival.id}/ppl">Go to the ppl tab</a></li>`,
+        });
+        tips.push({
+            title: 'Seeing double?',
+            body: html`If a camper accidentally signs in under two different names, click <b>merge people</b> on the <b>ppl</b> tab and select both entries. They will be combined into one camper, and nothing they did is lost.`,
+            links: html`<li><a href="/f/${festival.id}/ppl">Go to the ppl tab</a></li>`,
+        });
+    }
+    const t = tips[Math.floor(Math.random() * tips.length)];
+    return html`
+      <span class="dog-title">${t.title}</span>
+      ${t.body}
+      ${t.links ? html`<ul class="dog-links">${t.links}</ul>` : ''}`;
+}
+
 // Rover the XP Search Companion: a contextual assistant tip. Not signed in → nudge
 // to sign in; signed in on a fest → remind about the passes they still owe. Copy
-// is written in cheery early-2000s Windows-helper voice. Returns '' when there's
-// nothing useful to say — not on a fest page, or (signed in) once they've checked
-// off the festival pass, plus the car pass only if they're driving.
+// is written in cheery early-2000s Windows-helper voice. When there's nothing
+// important left to say (passes done, or signed in off a fest page), he falls
+// back to the rotating dogTip() pool above instead of disappearing.
 async function dogAssistant(c, festival, person) {
     let bubble;
     if (!person) {
@@ -1509,20 +1640,24 @@ async function dogAssistant(c, festival, person) {
         const needFestPass = !got.has('festival pass');
         const needCarPass = !!driving && !got.has('car pass');
 
-        // All set (festival pass done; car pass done or not needed) → Rover pipes down.
-        if (!needFestPass && !needCarPass) return '';
-
-        const passes = needCarPass
-            ? html`your <b>festival pass</b> and <b>car pass</b>`
-            : html`your <b>festival pass</b>`;
-        bubble = html`
-          <span class="dog-title">Hey ${person.display_name}!</span>
-          Did you remember to buy ${passes}? Once you've got ${needCarPass ? 'them' : 'it'}, check ${needCarPass ? 'them' : 'it'} off your list.
-          <ul class="dog-links">
-            <li><a href="/f/${festival.id}/mine">Go to my checklist</a></li>
-          </ul>`;
+        // All set (festival pass done; car pass done or not needed) → idle tips.
+        if (!needFestPass && !needCarPass) {
+            bubble = dogTip(festival);
+        } else {
+            const passes = needCarPass
+                ? html`your <b>festival pass</b> and <b>car pass</b>`
+                : html`your <b>festival pass</b>`;
+            bubble = html`
+              <span class="dog-title">Hey ${person.display_name}!</span>
+              Did you remember to buy ${passes}? Once you've got ${needCarPass ? 'them' : 'it'}, check ${needCarPass ? 'them' : 'it'} off your list.
+              <ul class="dog-links">
+                <li><a href="/f/${festival.id}/mine">Go to my checklist</a></li>
+              </ul>`;
+        }
     } else {
-        return '';
+        // Signed in but not on a fest page (the festival list, settings, …) —
+        // Rover has nothing urgent, so he shares a tip.
+        bubble = dogTip(null);
     }
     return html`
     <div class="dog-assistant">
