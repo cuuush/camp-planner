@@ -962,7 +962,15 @@ const RETRO_CSS = `
   }
   .feedback-log-label::after { content: ''; flex: 1; height: 0; border-top: 1px solid currentColor; opacity: 0.4; }
   .feedback-log-label .section-count { color: #2360cc; border: 1px solid #7aa0d8; }
-  .feedback-list { display: flex; flex-direction: column; gap: 6px; }
+  /* The reports log scrolls in its own sunken box (like the MSN message log)
+     so a pile of feedback can't stretch the window off the screen — the compose
+     form stays put at the top. */
+  .feedback-list {
+    display: flex; flex-direction: column; gap: 6px;
+    max-height: 240px; overflow-y: auto;
+    padding: 6px; background: #f6f4ea; border: 1px solid #cbc8b8;
+    box-shadow: inset 1px 1px 2px rgba(0,0,0,0.1);
+  }
   .feedback-entry { background: #fff; border: 1px solid #cfd8e6; border-radius: 3px; padding: 6px 9px; }
   .feedback-meta { display: flex; align-items: baseline; gap: 8px; font-size: 0.8em; }
   .feedback-from { font-weight: bold; }
