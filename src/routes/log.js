@@ -22,7 +22,7 @@ async function renderLogBody(c, festival) {
     return html`
     <div class="table-scroll">
     <table class="log-table">
-      <tr><th>when</th><th>who</th><th>what</th><th></th></tr>
+      <tr><th>when</th><th>what</th><th></th></tr>
       ${entries.map((e) => {
             const nextIsRedo = !!e.target_undone_at;
             const label = nextIsRedo ? 'redo' : 'undo';
@@ -31,7 +31,6 @@ async function renderLogBody(c, festival) {
             return html`
         <tr>
           <td class="log-when">${when}</td>
-          <td class="log-who">${e.display_name || 'someone'}</td>
           <td class="log-what">${e.summary}${e.undone_at ? html` <i>(undone)</i>` : ''}</td>
           <td>
             ${e.reversible && !e.undone_at ? html`

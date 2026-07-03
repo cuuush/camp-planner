@@ -1,8 +1,9 @@
 import { Hono } from 'hono';
 import { renderPage } from '../render/layout.js';
-import { signinForm } from '../render/signin.js';
-import { modalFormMarkup } from '../lib/guard.js';
+import { modalFormMarkup, nameTakenWarning } from '../lib/guard.js';
 import { normalizeName } from '../lib/names.js';
+import { ensureMembership, festIdFromPath, festNameFromPath } from '../lib/festival.js';
+import { absorbPlaceholders } from '../lib/people.js';
 import { createSession, destroySession } from '../lib/session.js';
 import { logAction } from '../lib/audit.js';
 
@@ -68,15 +69,31 @@ function isHtmx(c) {
     return c.req.header('HX-Request') === 'true';
 }
 
+// If the sign-in flow will land on a fest page, signing in also joins that fest —
+// so tell them. Resolve the name from `next` and stash it on ctx for the form copy.
+async function withFestName(c, ctx) {
+    ctx.festName = await festNameFromPath(c, ctx.next);
+    return ctx;
+}
+
+// After sign-in, if they were headed to a fest page, mark them as going there.
+async function joinFestFromNext(c, ctx) {
+    const festId = festIdFromPath(ctx.next);
+    if (festId) await ensureMembership(c, festId);
+}
+
+// Full-page fallback for no-JS / plain-form flows (e.g. the join button). Shows the
+// exact same dialog as the in-place modal, so there's only one sign-in UI.
 auth.get('/signin', async (c) => {
-    return c.html(await renderPage(c, { title: 'sign in', body: signinForm('', null, ctxFromQuery(c)) }));
+    const ctx = await withFestName(c, ctxFromQuery(c));
+    return c.html(await renderPage(c, { title: 'sign in', body: modalFormMarkup(ctx) }));
 });
 
 // The sign-in dialog as an htmx fragment — used to pop the modal *before* an action
 // (e.g. tapping "i'll bring this" while signed out) rather than after it's blocked.
 // On success it HX-Redirects to `next`, so we send them back where they were.
 auth.get('/signin/modal', async (c) => {
-    return c.html(modalFormMarkup(ctxFromQuery(c)));
+    return c.html(modalFormMarkup(await withFestName(c, ctxFromQuery(c))));
 });
 
 // Live, non-blocking check as you type — just a heads-up, never prevents signing in.
@@ -96,20 +113,29 @@ auth.post('/signin', async (c) => {
     const htmx = isHtmx(c);
 
     if (!normalized) {
+        await withFestName(c, ctx);
         return htmx
             ? c.html(modalFormMarkup(ctx))
-            : c.html(await renderPage(c, { title: 'sign in', body: signinForm('', null, ctx) }));
+            : c.html(await renderPage(c, { title: 'sign in', body: modalFormMarkup(ctx) }));
     }
 
     const db = c.env.DB;
     const existing = await db.prepare('SELECT * FROM people WHERE normalized_name = ?').bind(normalized).first();
 
     if (existing) {
-        // Name already exists → sign in as that person directly (trust-based). The
-        // live "that name's taken" heads-up on the form is the only confirmation;
-        // no second "is this you?" step after submitting.
+        // Name's taken → pop a warning window on top of the sign-in dialog to confirm
+        // it's really them (they continue via /signin/reclaim). No-JS can't stack a
+        // popup, so it falls through to trust-based direct sign-in below.
+        if (htmx) {
+            await withFestName(c, ctx);
+            c.header('HX-Retarget', '#popup-layer');
+            c.header('HX-Reswap', 'beforeend');
+            return c.html(nameTakenWarning(existing.display_name, ctx));
+        }
+
         const sessionToken = await createSession(c, existing.id);
         c.set('person', existing);
+        await absorbPlaceholders(c, existing.id, normalized);
 
         const meta = c.get('reqMeta') || {};
         await db.prepare('INSERT INTO name_reclaim_log (person_id, reclaimed_ip) VALUES (?, ?)')
@@ -120,6 +146,7 @@ auth.post('/signin', async (c) => {
             summary: `${existing.display_name} signed in (existing name)`,
         });
 
+        await joinFestFromNext(c, ctx);
         await replayOriginalAction(c, { replayPath: ctx.replayPath, replayBody: ctx.replayBody, sessionToken });
 
         const destination = withExpand(ctx.next, ctx.expandId);
@@ -136,12 +163,14 @@ auth.post('/signin', async (c) => {
 
     const sessionToken = await createSession(c, personId);
     c.set('person', { id: personId, display_name: rawName.trim(), normalized_name: normalized, email });
+    await absorbPlaceholders(c, personId, normalized);
 
     await logAction(c, {
         action: 'signin', entityType: 'person', entityId: personId,
         summary: `${rawName.trim()} joined camp planner`,
     });
 
+    await joinFestFromNext(c, ctx);
     await replayOriginalAction(c, { replayPath: ctx.replayPath, replayBody: ctx.replayBody, sessionToken });
 
     const destination = withExpand(ctx.next, ctx.expandId);
@@ -161,13 +190,14 @@ auth.post('/signin/reclaim', async (c) => {
     const person = await db.prepare('SELECT * FROM people WHERE normalized_name = ?').bind(normalized).first();
 
     if (!person) {
-        if (htmx) return c.html(modalFormMarkup(ctx));
+        if (htmx) return c.html(modalFormMarkup(await withFestName(c, ctx)));
         const params = new URLSearchParams({ next: ctx.next, replay_path: ctx.replayPath, replay_body: ctx.replayBody, expand: ctx.expandId });
         return c.redirect(`/signin?${params.toString()}`);
     }
 
     const sessionToken = await createSession(c, person.id);
     c.set('person', person);
+    await absorbPlaceholders(c, person.id, normalized);
 
     const meta = c.get('reqMeta') || {};
     await db.prepare('INSERT INTO name_reclaim_log (person_id, reclaimed_ip) VALUES (?, ?)')
@@ -178,6 +208,7 @@ auth.post('/signin/reclaim', async (c) => {
         summary: `${person.display_name} reclaimed their name (trust-based)`,
     });
 
+    await joinFestFromNext(c, ctx);
     await replayOriginalAction(c, { replayPath: ctx.replayPath, replayBody: ctx.replayBody, sessionToken });
 
     const destination = withExpand(ctx.next, ctx.expandId);

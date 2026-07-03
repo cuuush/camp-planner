@@ -3,14 +3,15 @@ import { html } from 'hono/html';
 import { renderPage } from '../render/layout.js';
 import { loadFestival } from '../lib/festival.js';
 import { logAction } from '../lib/audit.js';
-import { signinForm } from '../render/signin.js';
 import { needsSignin, signinModalResponse } from '../lib/guard.js';
+import { isCarPassTask } from './people.js';
 
 export const mine = new Hono();
 
 // Wrap a "me"-tab section in a little draggable XP window (title bar + caption
-// buttons). `offset` staggers each window slightly so they read like stacked
-// windows on a desktop; the caption buttons are decorative, like the app frame.
+// buttons). `offset` nudges each window left/right (negative = left) so they read
+// like loose, floating windows on a desktop rather than a flush stack; the caption
+// buttons are decorative, like the app frame.
 function miniWindow(title, offset, inner) {
     return html`
     <div class="xp-mini" style="margin-left:${offset}px">
@@ -29,7 +30,13 @@ function miniWindow(title, offset, inner) {
 async function renderMineBody(c, festival) {
     const db = c.env.DB;
     const person = c.get('person');
-    if (!person) return signinForm();
+    if (!person) {
+        return html`<div class="card">
+          <p>sign in to see your packing list, your ride, and your checklist.</p>
+          <button class="btn btn-primary" type="button"
+            hx-get="/signin/modal?next=/f/${festival.id}/mine" hx-target="#signin-modal-overlay" hx-swap="innerHTML">sign in</button>
+        </div>`;
+    }
 
     const daysToGo = festival.start_date ? Math.ceil((new Date(festival.start_date) - new Date()) / 86400000) : null;
     const near = daysToGo !== null && daysToGo <= 14;
@@ -58,9 +65,12 @@ async function renderMineBody(c, festival) {
     return html`
     ${near ? html`<p class="rainbow">it's almost time — here's your 7am packing checklist!</p>` : ''}
 
-    ${miniWindow('festival checklist', 0, html`
+    ${miniWindow('festival checklist', -26, html`
       <div class="checklist-rows">
-        ${tasks.map((t) => html`
+        ${tasks.map((t) => {
+            // A car pass only matters if you're driving — if not, just don't show it.
+            if (isCarPassTask(t) && !drivingCar) return '';
+            return html`
           <div class="checklist-row">
             <form hx-post="/f/${festival.id}/mine/check/${t.id}" hx-target="#main" hx-swap="innerHTML" class="checklist-check">
               <button class="check-toggle" type="submit" aria-label="toggle ${t.label}"><span class="xp-checkbox ${isChecked(t.id) ? 'checked' : ''}"></span></button>
@@ -71,7 +81,8 @@ async function renderMineBody(c, festival) {
                 : html`<form hx-post="/f/${festival.id}/mine/checklist/${t.id}/delete" hx-target="#main" hx-swap="innerHTML" class="checklist-del" hx-confirm="remove &quot;${t.label}&quot; from everyone's checklist?">
                     <button class="btn btn-danger checklist-del-btn" type="submit" title="remove this item">✕</button>
                   </form>`}
-          </div>`)}
+          </div>`;
+        })}
       </div>
       <form class="checklist-add" hx-post="/f/${festival.id}/mine/checklist/tasks" hx-target="#main" hx-swap="innerHTML"
         hx-on::after-request="if(event.detail.successful) this.reset();">
@@ -80,7 +91,7 @@ async function renderMineBody(c, festival) {
       </form>
     `)}
 
-    ${miniWindow('what im bringing', 22, html`
+    ${miniWindow('what im bringing', 30, html`
       ${pledges.length === 0
             ? html`<p class="mine-empty">nothing pledged yet — go grab something on the stuff tab!</p>`
             : html`<div class="bringing-list">
@@ -98,7 +109,7 @@ async function renderMineBody(c, festival) {
         </div>`}
     `)}
 
-    ${miniWindow('my ride', 44, html`
+    ${miniWindow('my ride', -14, html`
       ${drivingCar ? html`<a class="ride-panel" href="/f/${festival.id}/rides"><span class="ride-icon">🚗</span><div class="ride-info"><b>you're driving!</b><br>${drivingCar.seats_total} seats · leaving from ${drivingCar.leaving_from || '?'}</div><span class="ride-go">cars ›</span></a>` : ''}
       ${ridingSeat ? html`<a class="ride-panel" href="/f/${festival.id}/rides"><span class="ride-icon">🚗</span><div class="ride-info"><b>riding with ${ridingSeat.driver_name}</b></div><span class="ride-go">cars ›</span></a>` : ''}
       ${!drivingCar && !ridingSeat ? html`<a class="ride-panel ride-empty" href="/f/${festival.id}/rides"><span class="ride-icon">🚗</span><div class="ride-info">no ride yet — head to the cars tab!</div><span class="ride-go">cars ›</span></a>` : ''}
@@ -125,6 +136,12 @@ mine.post('/f/:id/mine/check/:taskId', async (c) => {
 
     const task = await db.prepare('SELECT * FROM checklist_tasks WHERE id = ? AND festival_id = ?').bind(taskId, festival.id).first();
     if (!task) return c.notFound();
+
+    // Car pass is driver-only — ignore the toggle if they haven't posted a car.
+    if (isCarPassTask(task)) {
+        const driving = await db.prepare('SELECT 1 FROM cars WHERE festival_id = ? AND driver_person_id = ? AND deleted_at IS NULL').bind(festival.id, person.id).first();
+        if (!driving) return c.html(await renderMineBody(c, festival));
+    }
 
     const existing = await db.prepare('SELECT * FROM checklist_checks WHERE task_id = ? AND person_id = ?').bind(taskId, person.id).first();
     let nowChecked;
@@ -169,7 +186,7 @@ mine.post('/f/:id/mine/checklist/tasks', async (c) => {
     return c.html(await renderMineBody(c, festival));
 });
 
-// Remove a checklist item for everyone — but the default festival/parking passes
+// Remove a checklist item for everyone — but the default festival/car passes
 // are required and can't be deleted.
 mine.post('/f/:id/mine/checklist/:taskId/delete', async (c) => {
     const festival = await loadFestival(c);

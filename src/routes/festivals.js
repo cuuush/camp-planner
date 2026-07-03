@@ -141,7 +141,7 @@ festivals.post('/fests', async (c) => {
     }
 
     await db.prepare(`
-        INSERT INTO checklist_tasks (festival_id, label, is_default) VALUES (?, 'festival pass', 1), (?, 'parking pass', 1)
+        INSERT INTO checklist_tasks (festival_id, label, is_default) VALUES (?, 'festival pass', 1), (?, 'car pass', 1)
     `).bind(festId, festId).run();
 
     await logAction(c, {
@@ -162,7 +162,6 @@ async function loadFestival(c) {
 festivals.get('/f/:id', async (c) => {
     const festival = await loadFestival(c);
     if (!festival) return c.notFound();
-    const person = c.get('person');
     const db = c.env.DB;
 
     setCurrentFestCookie(c, festival.id);
@@ -173,12 +172,9 @@ festivals.get('/f/:id', async (c) => {
         setCookie(c, seenCookieName, '1', { path: '/', maxAge: 60 * 60 * 24 * 365 });
     }
 
-    if (person) {
-        await db.prepare(`
-            INSERT INTO memberships (festival_id, person_id, joined_at) VALUES (?, ?, datetime('now'))
-            ON CONFLICT(festival_id, person_id) DO UPDATE SET bailed_at = NULL
-        `).bind(festival.id, person.id).run();
-    }
+    // Note: viewing a fest no longer auto-joins you — you join by doing something
+    // here, or via the explicit "join" button (see /f/:id/join). This keeps the
+    // ppl list to people who are actually going, not everyone who peeked.
 
     return c.redirect(`/f/${festival.id}/stuff`);
 });

@@ -1,10 +1,19 @@
 // Every mutation goes through here. Soft deletes only; undo is itself audited —
 // and undo-ing an undo (redo) works too, indefinitely back and forth.
 
+import { ensureMembership } from './festival.js';
+import { purgeFootprint, restoreFootprint } from './people.js';
+
 export async function logAction(c, { festivalId = null, action, entityType, entityId = null, before = null, after = null, summary, reversible = false }) {
     const db = c.env.DB;
     const person = c.get('person');
     const meta = c.get('reqMeta') || { ip: '', city: '', country: '', userAgent: '' };
+
+    // Doing anything on a fest counts you as going — except bailing, which is the
+    // one action that must NOT re-add you.
+    if (festivalId && person && action !== 'bail') {
+        await ensureMembership(c, festivalId);
+    }
 
     const result = await db.prepare(`
         INSERT INTO audit_log
@@ -42,6 +51,11 @@ const SOFT_DELETE_TABLES = {
 };
 
 async function revertEffect(db, entry, before) {
+    // A person-delete carries a manifest of every row it soft-hid — restore them all.
+    if (entry.entity_type === 'people' && entry.action === 'delete') {
+        await restoreFootprint(db, before || {});
+        return;
+    }
     if (entry.action === 'delete') {
         const col = SOFT_DELETE_TABLES[entry.entity_type];
         if (col) await db.prepare(`UPDATE ${entry.entity_type} SET ${col} = NULL WHERE id = ?`).bind(entry.entity_id).run();
@@ -61,6 +75,11 @@ async function revertEffect(db, entry, before) {
 }
 
 async function reapplyEffect(db, entry, after) {
+    // Redo a person-delete: re-hide the same footprint.
+    if (entry.entity_type === 'people' && entry.action === 'delete') {
+        await purgeFootprint(db, after || {});
+        return;
+    }
     if (entry.action === 'delete') {
         const col = SOFT_DELETE_TABLES[entry.entity_type];
         if (col) await db.prepare(`UPDATE ${entry.entity_type} SET ${col} = datetime('now') WHERE id = ?`).bind(entry.entity_id).run();

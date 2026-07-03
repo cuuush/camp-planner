@@ -7,9 +7,15 @@ CREATE TABLE IF NOT EXISTS people (
     display_name TEXT NOT NULL,
     email TEXT,
     email_unsubscribed INTEGER NOT NULL DEFAULT 0,
+    -- Placeholder ("ghost") people: manually added by name, not yet logged in.
+    -- normalized_name is synthetic for these (unique, unusable for sign-in);
+    -- placeholder_key = normalized display name, matched on real login to absorb.
+    is_placeholder INTEGER NOT NULL DEFAULT 0,
+    placeholder_key TEXT,
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     last_seen_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
+CREATE INDEX IF NOT EXISTS idx_people_placeholder_key ON people(placeholder_key);
 
 CREATE TABLE IF NOT EXISTS sessions (
     token TEXT PRIMARY KEY,

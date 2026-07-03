@@ -1,11 +1,13 @@
 import { Hono } from 'hono';
 import { html } from 'hono/html';
 import { renderPage } from '../render/layout.js';
-import { loadFestival } from '../lib/festival.js';
+import { loadFestival, ensureMembershipForPerson } from '../lib/festival.js';
 import { logAction } from '../lib/audit.js';
 import { notify } from '../lib/notify.js';
 import { needsSignin, signinModalResponse } from '../lib/guard.js';
+import { createPlaceholder } from '../lib/people.js';
 import { msnChat, escapeHtml } from '../render/msn.js';
+import { xpPopup } from '../render/popup.js';
 
 export const rides = new Hono();
 
@@ -57,6 +59,8 @@ function carCard(car, driverName, stats, person, expanded = false, chatOpen = fa
             <form class="car-seat-form" hx-post="/seats/${myTakenSeat.id}/leave" hx-target="#car-${car.id}" hx-swap="outerHTML">
               <button class="btn" type="submit">leave this car</button>
             </form>`}
+
+          <button class="btn" type="button" hx-get="/cars/${car.id}/add-window" hx-target="#popup-layer" hx-swap="beforeend">＋ add person to car</button>
 
           <details class="edit-toggle">
             <summary class="btn btn-like">edit</summary>
@@ -246,6 +250,103 @@ rides.post('/cars/:carId/seats/claim', async (c) => {
     });
 
     return carResponse(c, festival, car.id);
+});
+
+// Popup: pick a fest person to add to this car, or open the "new person" cascade.
+rides.get('/cars/:carId/add-window', async (c) => {
+    const loaded = await loadCar(c);
+    if (!loaded) return c.notFound();
+    if (needsSignin(c)) return signinModalResponse(c, { expandId: `car-${loaded.car.id}` });
+    const { car, festival } = loaded;
+    const db = c.env.DB;
+    const candidates = (await db.prepare(`
+        SELECT pe.id, pe.display_name, pe.is_placeholder FROM memberships m
+        JOIN people pe ON pe.id = m.person_id
+        WHERE m.festival_id = ? AND m.bailed_at IS NULL
+          AND pe.id NOT IN (SELECT person_id FROM seats WHERE car_id = ? AND deleted_at IS NULL)
+        ORDER BY pe.is_placeholder, pe.display_name
+    `).bind(festival.id, car.id).all()).results;
+
+    return c.html(xpPopup({
+        title: 'Add person to car',
+        id: `add-car-${car.id}`,
+        body: html`
+          ${candidates.length ? html`<div class="pick-list">
+            ${candidates.map((p) => html`<button class="pick-row" type="button"
+                hx-post="/cars/${car.id}/seats/add" hx-vals='${JSON.stringify({ person_id: p.id })}'
+                hx-target="#car-${car.id}" hx-swap="outerHTML"
+                hx-on::after-request="if(event.detail.successful) this.remove()">
+                <span class="pick-emoji">${p.is_placeholder ? '👤' : '🙂'}</span>
+                <span class="pick-name">${p.display_name}${p.is_placeholder ? html`<span class="ghost-badge">not signed up</span>` : ''}</span>
+              </button>`)}
+          </div>` : html`<p class="pick-empty">everyone in this fest is already in this car.</p>`}
+          <hr class="popup-divider">
+          <button class="btn btn-primary" type="button" style="width:100%"
+            hx-get="/cars/${car.id}/add-new-window" hx-target="#popup-layer" hx-swap="beforeend">＋ add someone new</button>`,
+    }));
+});
+
+// Add an existing fest person (real or placeholder) to this car.
+rides.post('/cars/:carId/seats/add', async (c) => {
+    const loaded = await loadCar(c);
+    if (!loaded) return c.notFound();
+    if (needsSignin(c)) return signinModalResponse(c, { expandId: `car-${loaded.car.id}` });
+    const { car, festival, driver } = loaded;
+    const db = c.env.DB;
+    const actor = c.get('person');
+    const personId = Number((await c.req.parseBody()).person_id);
+    const target = await db.prepare('SELECT * FROM people WHERE id = ?').bind(personId).first();
+    if (!target) return carResponse(c, festival, car.id, true);
+
+    const seated = await db.prepare('SELECT 1 FROM seats WHERE car_id = ? AND person_id = ? AND deleted_at IS NULL').bind(car.id, personId).first();
+    if (!seated) {
+        await ensureMembershipForPerson(db, festival.id, personId);
+        const result = await db.prepare('INSERT INTO seats (car_id, person_id) VALUES (?, ?)').bind(car.id, personId).run();
+        await logAction(c, {
+            festivalId: festival.id, action: 'create', entityType: 'seats', entityId: result.meta.last_row_id,
+            reversible: true,
+            summary: `${actor.display_name} added ${target.display_name} to ${driver.display_name}'s car`,
+        });
+    }
+    return carResponse(c, festival, car.id, true);
+});
+
+// Cascading popup: type a brand-new name to add them to this car (and the ppl list).
+rides.get('/cars/:carId/add-new-window', async (c) => {
+    const loaded = await loadCar(c);
+    if (!loaded) return c.notFound();
+    if (needsSignin(c)) return signinModalResponse(c, { expandId: `car-${loaded.car.id}` });
+    const { car } = loaded;
+    return c.html(xpPopup({
+        title: 'New person',
+        id: `add-car-new-${car.id}`,
+        body: html`
+          <p class="popup-hint">someone who hasn't signed up yet — they'll be put in this car and on the ppl list. when they log in with this name, it links up.</p>
+          <form class="popup-form" hx-post="/cars/${car.id}/seats/add-new" hx-target="#car-${car.id}" hx-swap="outerHTML"
+            hx-on::after-request="if(event.detail.successful) closePopup(this)" autocomplete="off">
+            <input type="text" name="name" placeholder="their name" required data-1p-ignore data-lpignore="true">
+            <button class="btn btn-primary" type="submit">add to car</button>
+          </form>`,
+    }));
+});
+
+rides.post('/cars/:carId/seats/add-new', async (c) => {
+    const loaded = await loadCar(c);
+    if (!loaded) return c.notFound();
+    if (needsSignin(c)) return signinModalResponse(c, { expandId: `car-${loaded.car.id}` });
+    const { car, festival, driver } = loaded;
+    const db = c.env.DB;
+    const actor = c.get('person');
+    const name = ((await c.req.parseBody()).name || '').toString().trim();
+    if (!name) return carResponse(c, festival, car.id, true);
+
+    const ghost = await createPlaceholder(c, festival.id, name); // creates + joins fest
+    await db.prepare('INSERT INTO seats (car_id, person_id) VALUES (?, ?)').bind(car.id, ghost.id).run();
+    await logAction(c, {
+        festivalId: festival.id, action: 'create', entityType: 'people', entityId: ghost.id,
+        summary: `${actor.display_name} added ${name} to ${driver.display_name}'s car`,
+    });
+    return carResponse(c, festival, car.id, true);
 });
 
 rides.post('/seats/:seatId/leave', async (c) => {

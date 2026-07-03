@@ -1,4 +1,6 @@
 import { html } from 'hono/html';
+import { festNameFromPath } from './festival.js';
+import { xpDialogPopup } from '../render/popup.js';
 
 export function needsSignin(c) {
     return !c.get('person');
@@ -17,13 +19,14 @@ function hiddenFields({ next, expandId, replayPath, replayBody }) {
 // it in place instead of navigating to a separate screen.
 export function modalFormMarkup(ctx) {
     return html`
-    <div class="modal-backdrop" onclick="if(event.target===this)document.getElementById('signin-modal-overlay').innerHTML=''">
+    <div class="modal-backdrop" onclick="campSigninBackdrop(event, this)">
       <div class="modal-box xp-dialog">
         <div class="xp-dialog-title">
           <span class="xp-dialog-title-text">Sign In</span>
           <button type="button" class="xp-dialog-close" onclick="document.getElementById('signin-modal-overlay').innerHTML=''">✕</button>
         </div>
         <div class="xp-dialog-body">
+          ${ctx.festName ? html`<p class="signin-fest-note">✔ signing in adds you to <b>${ctx.festName}</b>.</p>` : ''}
           <form hx-post="/signin" hx-target="#signin-modal-overlay" hx-swap="innerHTML">
             ${hiddenFields(ctx)}
             <input type="text" name="name" class="signin-name-input" placeholder="your name" required autofocus>
@@ -37,27 +40,27 @@ export function modalFormMarkup(ctx) {
     </div>`;
 }
 
-// Shown in place of the form (same overlay slot) when the name's already taken —
-// trust-based reclaim, no separate page.
-export function modalReclaimMarkup(reclaimName, ctx) {
-    return html`
-    <div class="modal-backdrop" onclick="if(event.target===this)document.getElementById('signin-modal-overlay').innerHTML=''">
-      <div class="modal-box xp-dialog">
-        <div class="xp-dialog-title">
-          <span class="xp-dialog-title-text">Camp Planner</span>
-          <button type="button" class="xp-dialog-close" onclick="document.getElementById('signin-modal-overlay').innerHTML=''">✕</button>
-        </div>
-        <div class="xp-dialog-body">
-          <p>there's already an account named <b>${reclaimName}</b> — is that yours?</p>
-          <form hx-post="/signin/reclaim" hx-target="#signin-modal-overlay" hx-swap="innerHTML">
-            <input type="hidden" name="name" value="${reclaimName}">
-            ${hiddenFields(ctx)}
-            <button class="btn btn-primary" type="submit" style="width:100%;">yep, that's mine</button>
-          </form>
-          <button type="button" class="btn" style="width:100%; margin-top:8px;" onclick="document.getElementById('signin-modal-overlay').innerHTML=''">nevermind, that's not me</button>
-        </div>
-      </div>
-    </div>`;
+// Shown as a warning window stacked ON TOP of the sign-in dialog when the typed
+// name is already taken: confirm it's really you (→ trust-based reclaim) or back
+// out and pick another. Built on the reusable xpDialogPopup so it cascades over
+// the modal like a real second window.
+export function nameTakenWarning(reclaimName, ctx) {
+    const vals = { name: reclaimName, next: ctx.next || '', expand: ctx.expandId || '', replay_path: ctx.replayPath || '', replay_body: ctx.replayBody || '' };
+    return xpDialogPopup({
+        title: 'Name already in use',
+        id: 'name-taken',
+        icon: '/notify.png',
+        big: true,
+        // While this is up, the sign-in form is stashed; dismissing (✕ or "pick
+        // another") brings it back with whatever they'd typed still there.
+        onClose: 'campRestoreSignin()',
+        message: html`<b>${reclaimName}</b> is already signed up. If that's you, go ahead and sign in — otherwise close this and pick a more specific name.`,
+        buttons: html`
+          <button class="btn" type="button" onclick="campRestoreSignin();closePopup(this)">pick another</button>
+          <button class="btn btn-primary" type="button"
+            hx-post="/signin/reclaim" hx-target="#signin-modal-overlay" hx-swap="innerHTML"
+            hx-vals='${JSON.stringify(vals)}'>yep, that's me</button>`,
+    });
 }
 
 function captureReplay(c) {
@@ -81,7 +84,8 @@ export async function signinModalResponse(c, { expandId } = {}) {
         replayBody = await c.req.raw.clone().text();
     } catch (e) { /* no body to replay */ }
 
-    return c.html(modalFormMarkup({ next, expandId, replayPath, replayBody }));
+    const festName = await festNameFromPath(c, next);
+    return c.html(modalFormMarkup({ next, expandId, replayPath, replayBody, festName }));
 }
 
 // Used by plain (non-htmx) form posts that mutate state — full navigation to a

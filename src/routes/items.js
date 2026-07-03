@@ -345,7 +345,6 @@ items.post('/items/:itemId/edit', async (c) => {
     });
 
     // Leave a trail in the comments so "why does this need 4 now?" is self-answering.
-    const who = person ? person.display_name : 'someone';
     const changes = [];
     if (before.name !== after.name) changes.push(`renamed it from "${before.name}" to "${after.name}"`);
     if (before.emoji !== after.emoji) changes.push(`changed the emoji to ${after.emoji}`);
@@ -353,14 +352,12 @@ items.post('/items/:itemId/edit', async (c) => {
     if (before.unit !== after.unit) changes.push(`changed the unit to "${after.unit || '(none)'}"`);
 
     if (changes.length) {
+        // Drop an auto-note into the item's comment thread so the change is
+        // self-explaining — but DON'T log it. The edit itself is already logged
+        // above; a second "left a note" entry is just noise in the log/ticker.
         const noteBody = changes.join(', ');
-        const commentResult = await db.prepare("INSERT INTO comments (target_type, target_id, person_id, body) VALUES ('item', ?, ?, ?)")
+        await db.prepare("INSERT INTO comments (target_type, target_id, person_id, body) VALUES ('item', ?, ?, ?)")
             .bind(item.id, person ? person.id : null, noteBody).run();
-        await logAction(c, {
-            festivalId: festival.id, action: 'create', entityType: 'comments', entityId: commentResult.meta.last_row_id,
-            reversible: true,
-            summary: `${who} left a note on ${after.name}: ${changes.join(', ')}`,
-        });
     }
 
     return itemRowResponse(c, festival, item.id, true);

@@ -158,6 +158,16 @@ const RETRO_CSS = `
     background: #fffdf5; color: #000; font-weight: bold;
     border-color: #919b9c; top: 0; padding-top: 9px; margin-bottom: -1px; z-index: 2;
   }
+  /* "you're not on the list yet" prompt — an XP info bar above the tab body. */
+  .join-banner {
+    display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+    margin: 0 0 12px; padding: 8px 12px;
+    background: linear-gradient(180deg,#fdf6d8 0%,#fbeeb0 100%);
+    border: 1px solid #d9bd5a; border-radius: 4px; box-shadow: inset 0 1px 0 #fffbe8;
+    font-size: 0.9em;
+  }
+  .join-banner-text { flex: 1 1 200px; color: #4a3d12; }
+  .join-banner-form { margin: 0; flex: 0 0 auto; }
   main { max-width: 900px; margin: 0 auto; padding: 12px; min-height: 60vh; }
   table { border-collapse: collapse; width: 100%; font-size: 0.9em; background: #fff; }
   /* Wide grids (the ppl checklist) scroll inside their own box instead of
@@ -256,8 +266,12 @@ const RETRO_CSS = `
     background: #fff; border: 1px solid #c3d2ec; border-radius: 3px; padding: 5px 10px;
   }
   .ppl-name { font-weight: bold; }
-  .ppl-tasks { display: flex; flex-wrap: wrap; gap: 3px 10px; margin-left: auto; }
-  .ppl-task { font-size: 0.8em; color: #8a8a7a; white-space: nowrap; }
+  .ppl-tasks { display: flex; flex-wrap: wrap; gap: 3px 8px; margin-left: auto; }
+  /* Fixed-width cells so each pass lines up in its own column down every row —
+     a non-driver renders a blank cell where the car pass would be, keeping the
+     festival-pass column (and any custom columns) vertically aligned. */
+  .ppl-task { font-size: 0.8em; color: #8a8a7a; white-space: nowrap; width: 116px; overflow: hidden; text-overflow: ellipsis; }
+  .ppl-task.blank { visibility: hidden; }
   .ppl-task.done { color: #1a7a1a; }
   @media (max-width: 600px) { nav.tabs a { font-size: 0.8em; padding: 8px 2px; } h1.title { font-size: 1.1em; padding: 7px 12px; } }
 
@@ -314,6 +328,11 @@ const RETRO_CSS = `
   }
   .modal-box input[type=email], .card input[type=email] {
     margin-top: 10px;
+  }
+  .signin-fest-note {
+    font-size: 0.85em; color: #2a5a12; margin: 0 0 10px; padding: 6px 9px;
+    background: linear-gradient(180deg,#f0f9e6 0%,#e2f2d0 100%);
+    border: 1px solid #9fca77; border-radius: 4px;
   }
   .signin-hint { font-size: 0.8em; color: #4a4a3c; margin: 8px 0 0; }
   .name-taken-notice { font-size: 0.8em; color: #b85c00; margin-top: 6px; }
@@ -462,7 +481,7 @@ const RETRO_CSS = `
   /* Icon bottom-aligns with the field so the "?" sits level with the input row,
      not floated up by the label above it. */
   .pledge-prompt { display: flex; align-items: flex-end; gap: 12px; margin-top: 2px; }
-  .xp-dialog-icon { width: 32px; height: 32px; flex-shrink: 0; margin-bottom: 2px; }
+  .xp-dialog-icon { width: 40px; height: 40px; flex-shrink: 0; margin-bottom: 2px; }
   .pledge-field-col { flex: 1; min-width: 0; }
   .pledge-label { display: block; margin: 2px 0 5px 2ch; font-size: 0.85em; color: #1a1a1a; }
   .pledge-input-row { display: flex; align-items: center; gap: 8px; }
@@ -496,6 +515,9 @@ const RETRO_CSS = `
   .edit-field { display: grid; grid-template-columns: 64px 1fr; align-items: center; gap: 10px; }
   .edit-field > label { font-size: 0.85em; color: #333; text-align: right; }
   .edit-field input[type=text], .edit-field input[type=number] { width: 100%; }
+  /* Breathing room between the stacked fields in the "add an item" dialog. */
+  #add-stuff-modal .edit-field + .edit-field { margin-top: 12px; }
+  #add-stuff-modal .dialog-buttons { margin-top: 16px; }
   .edit-emoji-input { width: 52px !important; text-align: center; font-size: 1.2em !important; }
   .edit-need { display: flex; gap: 8px; }
   .edit-need input[type=number] { width: 72px !important; flex: 0 0 auto; }
@@ -734,6 +756,83 @@ const RETRO_CSS = `
   .xp-mini.dragging { opacity: 0.94; box-shadow: 0 16px 38px rgba(0,0,0,0.55); z-index: 60; }
   @media (max-width: 600px) { .xp-mini { margin-left: 0 !important; max-width: 100%; } }
 
+  /* Floating, draggable XP popup windows (add person / merge / add-to-car). They
+     live in #popup-layer, are positioned + cascaded by JS on insert, and share the
+     Luna title-bar look with the .xp-mini windows. */
+  #popup-layer { position: fixed; inset: 0; pointer-events: none; z-index: 1000; }
+  #popup-layer:empty { display: none; }
+  .xp-popup {
+    position: fixed; width: 300px; max-width: calc(100vw - 24px); pointer-events: auto;
+    background: #0831d9; padding: 0 3px 3px; border-radius: 8px 8px 0 0;
+    box-shadow: 0 14px 40px rgba(0,0,0,0.5);
+  }
+  .xp-popup.wide { width: 360px; }
+  /* Message dialogs (xpDialogPopup): reasonable on desktop, ~95vw on mobile. */
+  .xp-popup.dialog { width: min(420px, 95vw); }
+  /* Icon sits left of the message, vertically centered with it (not bottom-aligned
+     like the pledge dialog). The big modifier doubles the icon. */
+  .xp-dialog-prompt { display: flex; align-items: center; gap: 14px; }
+  .xp-dialog-prompt .xp-dialog-icon { margin: 0; }
+  .xp-dialog-icon.big { width: 68px; height: 68px; }
+  .xp-dialog-msg { flex: 1; min-width: 0; line-height: 1.45; }
+  .xp-popup-titlebar {
+    height: 26px; display: flex; align-items: center; gap: 6px;
+    margin: 0 -3px; padding: 0 4px 0 9px; border-radius: 8px 8px 0 0;
+    color: #fff; font-weight: bold; font-family: Tahoma, sans-serif; font-size: 0.85em;
+    text-shadow: 1px 1px 2px rgba(0,0,20,0.55);
+    background: linear-gradient(180deg,#0997ff 0%,#0053ee 8%,#0050ee 40%,#0165ff 88%,#0165ff 93%,#0997ff 95%,#0165ff 100%);
+    cursor: move; user-select: none; touch-action: none;
+  }
+  .xp-popup-title { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .xp-popup-close {
+    width: 21px; height: 20px; padding: 0; line-height: 18px; font-size: 0.8em; color: #fff;
+    border: 1px solid #fff; border-radius: 3px; cursor: pointer;
+    background: linear-gradient(180deg,#f9b38c 0%,#e0632f 8%,#e14f28 45%,#d0330f 100%);
+    box-shadow: inset 0 1px 2px rgba(255,255,255,0.5);
+  }
+  .xp-popup-close:hover { filter: brightness(1.08); }
+  .xp-popup-body { background: #ece9d8; padding: 12px 14px; max-height: 70vh; overflow-y: auto; }
+  .xp-popup.dragging { opacity: 0.96; }
+
+  /* Pick-list rows inside the add-to-car / merge popups. */
+  .pick-list { display: flex; flex-direction: column; gap: 3px; margin: 0 0 4px; }
+  .pick-row {
+    display: flex; align-items: center; gap: 8px; padding: 5px 8px; margin: 0;
+    background: #fff; border: 1px solid #cfd8e6; border-radius: 3px; text-align: left;
+    width: 100%; cursor: pointer; color: #14345f; font-size: 0.95em;
+  }
+  .pick-row:hover { background: #eaf2ff; border-color: #7ba7dd; box-shadow: none; }
+  .pick-row .pick-emoji { font-size: 1.1em; }
+  .pick-row .pick-name { flex: 1; }
+  .pick-empty { color: #555; font-style: italic; margin: 2px 0 8px; font-size: 0.9em; }
+  .popup-hint { font-size: 0.8em; color: #4a4a3c; margin: 0 0 8px; }
+  .popup-form { display: flex; flex-direction: column; gap: 8px; }
+  .popup-form input[type=text] { width: 100%; box-sizing: border-box; }
+  .popup-divider { border: none; border-top: 1px solid #cbc8b8; margin: 10px 0; }
+
+  /* "not signed up yet" badge on placeholder people. */
+  .ghost-badge {
+    font-size: 0.66em; color: #7a5a12; text-transform: uppercase; letter-spacing: 0.4px;
+    border: 1px solid #d9bd5a; background: #fdf3d4; border-radius: 2px; padding: 1px 5px; margin-left: 6px;
+    vertical-align: middle; white-space: nowrap;
+  }
+  .ppl-task.na { color: #9a9a8c; font-style: italic; }
+  .ppl-add-bar { display: flex; gap: 8px; flex-wrap: wrap; margin: 0 0 12px; }
+  /* merge/delete selection bar + the per-row checkboxes it reveals. */
+  .ppl-select-bar {
+    display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: 0 0 12px; padding: 7px 10px;
+    background: linear-gradient(180deg,#fdf6d8 0%,#fbeeb0 100%);
+    border: 1px solid #d9bd5a; border-radius: 4px;
+  }
+  .ppl-select-bar[hidden] { display: none; }
+  .ppl-select-hint { flex: 1 1 160px; font-size: 0.85em; color: #4a3d12; }
+  .ppl-select-box { display: none; align-items: center; }
+  .ppl-list.selecting .ppl-select-box { display: inline-flex; }
+  .ppl-list.selecting .ppl-row { cursor: pointer; user-select: none; }
+  .ppl-list.selecting .ppl-row:hover { background: #f2f7ff; }
+  .ppl-list.selecting .ppl-row:has(.ppl-select-check:checked) { background: #dbeaff; border-color: #6f9fda; }
+  .ppl-select-check { width: 16px; height: 16px; }
+
   /* me-tab: festival checklist rows (inside its window) */
   .checklist-rows { display: flex; flex-direction: column; gap: 1px; margin: 2px 0 8px; }
   .checklist-row { display: flex; align-items: center; gap: 8px; padding: 3px 6px; border-radius: 3px; }
@@ -940,10 +1039,12 @@ document.addEventListener('htmx:afterSwap', function (e) { pixmojify(e.target); 
   var drag = null;
   document.addEventListener('pointerdown', function (e) {
     if (!e.target.closest) return;
-    var handle = e.target.closest('.xp-mini-titlebar');
-    if (!handle || e.target.closest('.xp-tb-btn')) return;
-    var win = handle.closest('.xp-mini');
+    var handle = e.target.closest('.xp-mini-titlebar, .xp-popup-titlebar');
+    if (!handle || e.target.closest('.xp-tb-btn, .xp-popup-close')) return;
+    var win = handle.closest('.xp-mini, .xp-popup');
     if (!win) return;
+    // Bring a clicked popup to the front of the stack.
+    if (win.classList.contains('xp-popup')) win.style.zIndex = String(popupTop());
     var dx = parseFloat(win.dataset.dx || '0'), dy = parseFloat(win.dataset.dy || '0');
     drag = { win: win, sx: e.clientX, sy: e.clientY, bx: dx, by: dy };
     win.classList.add('dragging');
@@ -960,6 +1061,140 @@ document.addEventListener('htmx:afterSwap', function (e) { pixmojify(e.target); 
   document.addEventListener('pointerup', endDrag);
   document.addEventListener('pointercancel', endDrag);
 })();
+
+// Floating XP popups: remove one, remove all, and figure out the next z-index.
+function popupTop() {
+  var wins = document.querySelectorAll('#popup-layer .xp-popup');
+  var max = 1000;
+  for (var i = 0; i < wins.length; i++) { var z = parseInt(wins[i].style.zIndex || '0', 10); if (z > max) max = z; }
+  return max + 1;
+}
+function closePopup(el) { var w = el.closest('.xp-popup'); if (w) w.remove(); }
+function closeAllPopups() { var l = document.getElementById('popup-layer'); if (l) l.innerHTML = ''; }
+
+// Temporarily hide / bring back the sign-in modal when a takeover window (the
+// name-taken warning) shows and is then dismissed — so they don't stack.
+function campStashSignin() { var ov = document.getElementById('signin-modal-overlay'); if (ov) ov.style.display = 'none'; }
+function campRestoreSignin() { var ov = document.getElementById('signin-modal-overlay'); if (ov) ov.style.display = ''; }
+
+// Backdrop click-to-dismiss for the sign-in modal — but NOT when a second window
+// (e.g. the name-taken warning) is open on top, and NOT when the user has typed
+// something into the name or email field (don't throw away their input).
+function campSigninBackdrop(e, backdrop) {
+  if (e.target !== backdrop) return;
+  var layer = document.getElementById('popup-layer');
+  if (layer && layer.querySelector('.xp-popup')) return;
+  var inputs = backdrop.querySelectorAll('input[name="name"], input[name="email"]');
+  for (var i = 0; i < inputs.length; i++) { if ((inputs[i].value || '').trim()) return; }
+  var overlay = document.getElementById('signin-modal-overlay');
+  if (overlay) overlay.innerHTML = '';
+}
+
+// When a popup is inserted (via htmx beforeend), give it a cascading position so
+// stacked windows step down-and-right like real overlapping windows. If one with
+// the same data-popup-id already exists, drop the old one first (re-open = move).
+document.addEventListener('htmx:afterSwap', function (e) {
+  var layer = document.getElementById('popup-layer');
+  if (!layer) return;
+  var fresh = layer.querySelectorAll('.xp-popup:not([data-placed])');
+  for (var i = 0; i < fresh.length; i++) {
+    (function (win) {
+      var pid = win.getAttribute('data-popup-id');
+      if (pid) {
+        var dups = layer.querySelectorAll('.xp-popup[data-popup-id="' + pid + '"][data-placed]');
+        for (var j = 0; j < dups.length; j++) dups[j].remove();
+      }
+      var n = layer.querySelectorAll('.xp-popup[data-placed]').length;
+      win.setAttribute('data-placed', '1');
+      // Center the first window; cascade any stacked on top of it down-and-right.
+      var w = win.offsetWidth || 300, h = win.offsetHeight || 180;
+      var cl = Math.max(10, (window.innerWidth - w) / 2);
+      var ct = Math.max(10, (window.innerHeight - h) / 2 - 30);
+      win.style.left = (cl + n * 28) + 'px';
+      win.style.top = (ct + n * 28) + 'px';
+      win.style.zIndex = String(popupTop());
+      // The name-taken warning takes over from the sign-in form rather than stacking.
+      if (pid === 'name-taken') campStashSignin();
+      var input = win.querySelector('input[type=text], input:not([type])');
+      if (input) input.focus();
+    })(fresh[i]);
+  }
+});
+
+// ppl-tab select mode: the "merge people" / "delete person" buttons reveal a
+// checkbox on every row. Merge needs exactly 2; delete takes 1+. Both submit via
+// htmx into #main. Delete is reversible, so we say so in the confirm.
+function campSelBar() { var m = document.getElementById('main'); return m ? m.querySelector('.ppl-select-bar') : null; }
+function campSelList() { var m = document.getElementById('main'); return m ? m.querySelector('.ppl-list') : null; }
+function campSelChecked() {
+  var list = campSelList(); if (!list) return [];
+  return Array.prototype.slice.call(list.querySelectorAll('.ppl-select-check:checked'));
+}
+function campEnterSelect(btn, mode) {
+  var bar = campSelBar(), list = campSelList();
+  if (!bar || !list) return;
+  bar.setAttribute('data-mode', mode);
+  bar.hidden = false;
+  list.classList.add('selecting');
+  var checks = list.querySelectorAll('.ppl-select-check');
+  for (var i = 0; i < checks.length; i++) checks[i].checked = false;
+  campUpdateSelect();
+}
+function campCancelSelect() {
+  var bar = campSelBar(), list = campSelList();
+  if (list) { list.classList.remove('selecting'); var checks = list.querySelectorAll('.ppl-select-check'); for (var i = 0; i < checks.length; i++) checks[i].checked = false; }
+  if (bar) bar.hidden = true;
+}
+function campUpdateSelect() {
+  var bar = campSelBar(); if (!bar) return;
+  var mode = bar.getAttribute('data-mode');
+  var n = campSelChecked().length;
+  var hint = bar.querySelector('.ppl-select-hint');
+  var go = bar.querySelector('.ppl-select-go');
+  if (mode === 'merge') {
+    go.textContent = 'merge selected'; go.disabled = n !== 2;
+    hint.textContent = 'pick the 2 rows that are the same person — ' + n + '/2';
+  } else {
+    go.textContent = 'delete selected'; go.disabled = n < 1;
+    hint.textContent = 'pick people to remove (undoable) — ' + n + ' selected';
+  }
+}
+document.addEventListener('change', function (e) {
+  if (!e.target.classList || !e.target.classList.contains('ppl-select-check')) return;
+  var bar = campSelBar();
+  if (bar && bar.getAttribute('data-mode') === 'merge' && campSelChecked().length > 2) { e.target.checked = false; return; }
+  campUpdateSelect();
+});
+// In select mode, clicking anywhere on a row toggles its checkbox (not just the box).
+document.addEventListener('click', function (e) {
+  var list = campSelList();
+  if (!list || !list.classList.contains('selecting') || !e.target.closest) return;
+  var row = e.target.closest('.ppl-row');
+  if (!row || !list.contains(row)) return;
+  if (e.target.closest('.ppl-select-box')) return; // clicking the box itself handles natively
+  var cb = row.querySelector('.ppl-select-check');
+  if (!cb) return;
+  var bar = campSelBar();
+  if (!cb.checked && bar && bar.getAttribute('data-mode') === 'merge' && campSelChecked().length >= 2) return;
+  cb.checked = !cb.checked;
+  campUpdateSelect();
+});
+function campRunSelect(go) {
+  var bar = campSelBar(); if (!bar) return;
+  var mode = bar.getAttribute('data-mode'), fest = bar.getAttribute('data-fest');
+  var checked = campSelChecked();
+  var ids = checked.map(function (c) { return c.value; });
+  if (mode === 'merge') {
+    if (ids.length !== 2) return;
+    var names = checked.map(function (c) { return c.getAttribute('data-name'); });
+    if (!confirm('Merge ' + names.join(' + ') + '? Their stuff combines into one person (the real, logged-in one wins).')) return;
+    htmx.ajax('POST', '/f/' + fest + '/people/merge', { target: '#main', swap: 'innerHTML', values: { person_ids: ids.join(',') } });
+  } else {
+    if (!ids.length) return;
+    if (!confirm('Remove ' + ids.length + ' ' + (ids.length === 1 ? 'person' : 'people') + '? You can undo this from the log tab — it restores everything they did.')) return;
+    htmx.ajax('POST', '/f/' + fest + '/people/delete', { target: '#main', swap: 'innerHTML', values: { person_ids: ids.join(',') } });
+  }
+}
 
 // MSN emoticon toolbar: append the typed emoticon into the chat's compose box.
 function msnEmote(el, txt) {
@@ -1037,21 +1272,46 @@ export function tickerHtml(entries) {
 }
 
 // Rover the XP Search Companion: a contextual assistant tip. Not signed in → nudge
-// to sign in; signed in on a fest → remind about the festival + parking passes. Copy
+// to sign in; signed in on a fest → remind about the passes they still owe. Copy
 // is written in cheery early-2000s Windows-helper voice. Returns '' when there's
-// nothing useful to say (signed in, but not on a festival page).
-function dogAssistant(c, festival, person) {
+// nothing useful to say — not on a fest page, or (signed in) once they've checked
+// off the festival pass, plus the car pass only if they're driving.
+async function dogAssistant(c, festival, person) {
     let bubble;
     if (!person) {
+        // Bring them back to exactly where they are (and, if it's a fest page,
+        // sign-in also joins them). Pop the modal in place rather than navigating.
+        const next = encodeURIComponent(c.req.path);
         bubble = html`
           <span class="dog-title">Hi there — I'm Rover!</span>
-          It looks like you're just visiting. Would you like to <a href="/signin">sign in</a>?
+          It looks like you're just visiting. Would you like to
+          <a href="/signin?next=${next}" hx-get="/signin/modal?next=${next}" hx-target="#signin-modal-overlay" hx-swap="innerHTML">sign in</a>?
           It only takes a moment, and then you can claim what you're bringing and save your seat in a carpool.`;
     } else if (festival) {
+        const db = c.env.DB;
+        // Only drivers owe a car pass, so only nag drivers about it.
+        const driving = await db.prepare('SELECT 1 FROM cars WHERE festival_id = ? AND driver_person_id = ? AND deleted_at IS NULL')
+            .bind(festival.id, person.id).first();
+        // Which default passes has this person actually checked off?
+        const passRows = (await db.prepare(`
+            SELECT t.label FROM checklist_tasks t
+            JOIN checklist_checks cc ON cc.task_id = t.id AND cc.person_id = ? AND cc.unchecked_at IS NULL
+            WHERE t.festival_id = ? AND t.is_default = 1 AND t.deleted_at IS NULL
+        `).bind(person.id, festival.id).all()).results;
+        const got = new Set(passRows.map((r) => (r.label || '').toLowerCase()));
+        const needFestPass = !got.has('festival pass');
+        const needCarPass = !!driving && !got.has('car pass');
+
+        // All set (festival pass done; car pass done or not needed) → Rover pipes down.
+        if (!needFestPass && !needCarPass) return '';
+
+        const passes = needCarPass
+            ? html`your <b>festival pass</b> and <b>car pass</b>`
+            : html`your <b>festival pass</b>`;
         bubble = html`
           <span class="dog-title">Hey ${person.display_name}!</span>
-          Did you remember to buy your <b>festival pass</b> and <b>parking pass</b>? If you've got them,
-          pop over to the <a href="/f/${festival.id}/mine">me</a> tab and check them off your list.`;
+          Did you remember to buy ${passes}? Once you've got ${needCarPass ? 'them' : 'it'},
+          pop over to the <a href="/f/${festival.id}/mine">me</a> tab and check ${needCarPass ? 'them' : 'it'} off your list.`;
     } else {
         return '';
     }
@@ -1078,7 +1338,8 @@ function festPicker(c, festival, festivals) {
       <div>
         ${person
             ? html`signed in as <b>${person.display_name}</b> · <a href="/signout">sign out</a>`
-            : html`<a href="/signin">sign in</a> <i>(takes 2 seconds)</i>`}
+            : html`<a href="/signin?next=${encodeURIComponent(c.req.path)}"
+                hx-get="/signin/modal?next=${encodeURIComponent(c.req.path)}" hx-target="#signin-modal-overlay" hx-swap="innerHTML">sign in</a> <i>(takes 2 seconds)</i>`}
       </div>
     </div>`;
 }
@@ -1113,6 +1374,16 @@ export async function renderPage(c, { title, activeTab = '', body, festival = nu
         ]
         : [];
 
+    // Signed-in-but-not-a-member of the fest you're looking at → offer to join.
+    let showJoin = false;
+    if (festival && person) {
+        try {
+            const m = await db.prepare('SELECT 1 FROM memberships WHERE festival_id = ? AND person_id = ? AND bailed_at IS NULL')
+                .bind(festival.id, person.id).first();
+            showJoin = !m;
+        } catch (e) { /* ok */ }
+    }
+
     return html`<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -1136,8 +1407,9 @@ export async function renderPage(c, { title, activeTab = '', body, festival = nu
     <span class="title-icon">🏕️</span>
     <span class="title-text">${festival ? festival.name : 'camp planner'}</span>
   </h1>
-  ${dogAssistant(c, festival, person)}
+  ${await dogAssistant(c, festival, person)}
   <div id="signin-modal-overlay"></div>
+  <div id="popup-layer"></div>
   <div id="toast"></div>
   <div class="xp-window">
     <div class="xp-titlebar">
@@ -1150,6 +1422,13 @@ export async function renderPage(c, { title, activeTab = '', body, festival = nu
     </div>
     <div class="xp-window-body">
       ${festival ? html`<nav class="tabs">${tabs.map(([label, href, key]) => html`<a href="${href}" class="${key === activeTab ? 'active' : ''}">${label}</a>`)}</nav>` : ''}
+      ${showJoin ? html`
+        <div class="join-banner">
+          <span class="join-banner-text">you're just browsing <b>${festival.name}</b> — you're not on the list yet.</span>
+          <form method="post" action="/f/${festival.id}/join" class="join-banner-form">
+            <button class="btn btn-primary" type="submit">✔ i'm going!</button>
+          </form>
+        </div>` : ''}
       <main id="main">
         ${body}
       </main>
