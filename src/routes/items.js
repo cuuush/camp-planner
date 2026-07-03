@@ -244,6 +244,11 @@ async function renderStuffBody(c, festival) {
             <div class="edit-field"><label>item</label><input type="text" name="name" placeholder="e.g. water" required></div>
             <div class="edit-field"><label>how many</label><input type="text" name="qty_text" placeholder="e.g. 2 cases"></div>
             <div class="edit-field"><label>details</label><input type="text" name="description" placeholder="optional"></div>
+            <label class="xp-check-label" style="margin-top:12px;">
+              <input type="checkbox" class="xp-check-input" name="bringing" value="1">
+              <span class="xp-checkbox"></span>
+              i'm bringing this — put me down for it
+            </label>
             <div class="dialog-buttons">
               <button id="add-stuff-submit" class="btn btn-primary" type="submit">add it</button>
               <button class="btn" type="button" onclick="document.getElementById('add-stuff-modal').style.display='none'">cancel</button>
@@ -302,8 +307,21 @@ items.post('/f/:id/items', async (c) => {
         summary: `${person ? person.display_name : 'someone'} added ${emoji} ${name}`,
     });
 
+    // "i'm bringing this" checked → pledge the whole asked-for amount right away,
+    // so adding something you've already got covered is one step, not two.
+    const bringing = !!body.bringing && person;
+    if (bringing) {
+        const pledgeResult = await db.prepare('INSERT INTO pledges (item_id, person_id, qty) VALUES (?, ?, ?)')
+            .bind(result.meta.last_row_id, person.id, qty).run();
+        await logAction(c, {
+            festivalId: festival.id, action: 'create', entityType: 'pledges', entityId: pledgeResult.meta.last_row_id,
+            reversible: true,
+            summary: `${person.display_name} is bringing ${emoji} ${name}`,
+        });
+    }
+
     const list = await itemListFragment(c, festival);
-    return c.html(html`<div id="toast" hx-swap-oob="true">✅ added ${emoji} ${name}!</div>${list}`);
+    return c.html(html`<div id="toast" hx-swap-oob="true">✅ added ${emoji} ${name}${bringing ? " — it's on you!" : '!'}</div>${list}`);
 });
 
 async function loadItem(c) {

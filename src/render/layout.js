@@ -932,6 +932,25 @@ const RETRO_CSS = `
     width: 4px; height: 8px; border: solid #1a7a1a; border-width: 0 2px 2px 0;
     transform: rotate(45deg);
   }
+  /* Form flavour of the XP checkbox: a real (hidden) checkbox input drives the
+     drawn square, so it submits with the form and stays keyboard-accessible. */
+  .xp-check-label {
+    display: inline-flex; align-items: center; gap: 7px; cursor: pointer;
+    font-size: 0.85em; color: #1a1a1a; user-select: none; position: relative;
+  }
+  .xp-check-input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+  .xp-check-input:checked + .xp-checkbox::after {
+    content: ''; position: absolute; left: 4px; top: 0;
+    width: 4px; height: 8px; border: solid #1a7a1a; border-width: 0 2px 2px 0;
+    transform: rotate(45deg);
+  }
+  .xp-check-input:focus-visible + .xp-checkbox { outline: 1px dotted #4a4a3c; outline-offset: 2px; }
+
+  /* Control Panel window (start menu → control panel). */
+  .xp-radio-label { display: flex; align-items: center; gap: 7px; font-size: 0.85em; margin: 5px 0; cursor: pointer; }
+  .settings-hint { font-size: 0.8em; color: #4a4a3c; margin: 0 0 8px; }
+  .settings-email-form input[type=email] { width: 100%; box-sizing: border-box; }
+  .settings-saved { font-size: 0.8em; color: #1a7a1a; font-weight: bold; margin: 6px 0 0; text-align: right; }
   .checklist-label { flex: 1; min-width: 0; }
   .checklist-req {
     font-size: 0.68em; color: #6a6a5c; text-transform: uppercase; letter-spacing: 0.4px;
@@ -996,6 +1015,7 @@ const RETRO_CSS = `
 
 const CONFETTI_SCRIPT = `
 function campConfetti(el) {
+  if (!campConfettiOn()) return; // "visual effects" switched off in the control panel
   el.classList.add('pop');
   setTimeout(function () { el.classList.remove('pop'); }, 350);
   var rect = el.getBoundingClientRect();
@@ -1105,8 +1125,57 @@ function campAutoOpenPledge() {
     if (modal) { modal.style.display = 'flex'; var inp = modal.querySelector('input[name=qty]'); if (inp) inp.focus(); }
   } catch (e) {}
 }
-document.addEventListener('DOMContentLoaded', function () { pixmojify(document.body); suppressPwManagers(document.body); campAutoOpenPledge(); });
-document.addEventListener('htmx:afterSwap', function (e) { pixmojify(e.target); suppressPwManagers(e.target); });
+// ——— Local time + control-panel prefs (stored in localStorage, per device) ———
+// Server timestamps are UTC (SQLite datetime). Anything wrapped in a
+// .local-time[data-utc] span gets rewritten to the viewer's own time zone here,
+// honoring the 12h/24h preference from the control panel.
+function campTimeFmt() { try { return localStorage.getItem('campTimeFmt') || '12'; } catch (e) { return '12'; } }
+function campConfettiOn() { try { return localStorage.getItem('campConfetti') !== 'off'; } catch (e) { return true; } }
+function campFmtClock(d) {
+  var h = d.getHours(), mi = d.getMinutes(), mm = (mi < 10 ? '0' : '') + mi;
+  if (campTimeFmt() === '24') return (h < 10 ? '0' : '') + h + ':' + mm;
+  var ap = h >= 12 ? 'PM' : 'AM';
+  h = h % 12; if (h === 0) h = 12;
+  return h + ':' + mm + ' ' + ap;
+}
+function campLocalizeTimes(root) {
+  if (!root || !root.querySelectorAll) return;
+  var els = root.querySelectorAll('.local-time[data-utc]');
+  for (var i = 0; i < els.length; i++) {
+    var el = els[i];
+    var m = (el.getAttribute('data-utc') || '').match(/^(\\d{4})-(\\d{2})-(\\d{2})[T ](\\d{2}):(\\d{2})/);
+    if (!m) continue;
+    var d = new Date(Date.UTC(+m[1], +m[2] - 1, +m[3], +m[4], +m[5]));
+    var t = campFmtClock(d);
+    if (el.getAttribute('data-fmt') === 'datetime') {
+      var mo = d.getMonth() + 1, da = d.getDate();
+      t = (mo < 10 ? '0' : '') + mo + '-' + (da < 10 ? '0' : '') + da + ' ' + t;
+    }
+    el.textContent = t;
+  }
+}
+function campSetTimeFmt(v) {
+  try { localStorage.setItem('campTimeFmt', v); } catch (e) {}
+  campTickClock();
+  campLocalizeTimes(document.body);
+}
+function campSetConfetti(on, el) {
+  try { localStorage.setItem('campConfetti', on ? 'on' : 'off'); } catch (e) {}
+  if (on && el) campConfetti(el); // a little celebratory proof it's back on
+}
+// The control panel's clock radios + effects checkbox reflect this device's
+// prefs, which the server can't render — fill them in after the popup lands.
+// (The email/notify checkbox is server-rendered state; leave it alone.)
+function campInitSettings(root) {
+  if (!root || !root.querySelectorAll) return;
+  var radios = root.querySelectorAll('input[name="camp_time_fmt"]');
+  for (var i = 0; i < radios.length; i++) radios[i].checked = radios[i].value === campTimeFmt();
+  var fx = root.querySelector('#camp-fx-check');
+  if (fx) fx.checked = campConfettiOn();
+}
+
+document.addEventListener('DOMContentLoaded', function () { pixmojify(document.body); suppressPwManagers(document.body); campAutoOpenPledge(); campLocalizeTimes(document.body); campInitSettings(document.body); });
+document.addEventListener('htmx:afterSwap', function (e) { pixmojify(e.target); suppressPwManagers(e.target); campLocalizeTimes(e.target); campInitSettings(e.target); });
 
 // Make the little "me"-tab XP windows draggable by their title bar. Position is
 // tracked as an accumulated translate on each window (dataset.dx/dy) so repeated
@@ -1355,15 +1424,12 @@ document.addEventListener('click', function (e) {
 });
 document.addEventListener('keydown', function (e) { if (e.key === 'Escape') campCloseStart(); });
 
-// The little tray clock. 12-hour, no seconds — exactly what the XP tray showed.
+// The little tray clock. No seconds, and it follows the 12h/24h preference
+// from the control panel (XP default: 12-hour).
 function campTickClock() {
   var el = document.getElementById('xp-clock');
   if (!el) return;
-  var d = new Date();
-  var h = d.getHours(), mi = d.getMinutes();
-  var ap = h >= 12 ? 'PM' : 'AM';
-  h = h % 12; if (h === 0) h = 12;
-  el.textContent = h + ':' + (mi < 10 ? '0' : '') + mi + ' ' + ap;
+  el.textContent = campFmtClock(new Date());
 }
 document.addEventListener('DOMContentLoaded', campTickClock);
 setInterval(campTickClock, 15000);
@@ -1467,6 +1533,10 @@ function taskbar(c, festival, festivals) {
           <div class="xp-startmenu-sep"></div>
           <a class="xp-startmenu-item" href="/"><span class="xp-startmenu-ico">🖥️</span> all festivals</a>
           <a class="xp-startmenu-item" href="/fests/new"><span class="xp-startmenu-ico">➕</span> create a fest…</a>
+          <div class="xp-startmenu-sep"></div>
+          <a class="xp-startmenu-item" href="/settings" onclick="campCloseStart()"
+            hx-get="/settings/window" hx-target="#popup-layer" hx-swap="beforeend">
+            <span class="xp-startmenu-ico">⚙️</span> control panel</a>
         </div>
         <div class="xp-startmenu-foot">
           ${person

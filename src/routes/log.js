@@ -26,11 +26,13 @@ async function renderLogBody(c, festival) {
       ${entries.map((e) => {
             const nextIsRedo = !!e.target_undone_at;
             const label = nextIsRedo ? 'redo' : 'undo';
-            // "2026-07-02 14:33:12" -> "07-02 14:33" so the column stays narrow on phones.
+            // "2026-07-02 14:33:12" -> "07-02 14:33" so the column stays narrow on
+            // phones. That's the UTC no-JS fallback; the .local-time span rewrites
+            // it into the viewer's own time zone (and 12h/24h pref) client-side.
             const when = (e.created_at || '').slice(5, 16);
             return html`
         <tr>
-          <td class="log-when">${when}</td>
+          <td class="log-when"><span class="local-time" data-utc="${e.created_at}" data-fmt="datetime">${when}</span></td>
           <td class="log-what">${e.summary}${e.undone_at ? html` <i>(undone)</i>` : ''}</td>
           <td>
             ${e.reversible && !e.undone_at ? html`

@@ -9,7 +9,8 @@ export function nameColor(name) {
 }
 
 // Pull HH:MM out of a SQLite "YYYY-MM-DD HH:MM:SS" datetime for MSN-style message
-// timestamps. Best-effort — blank if we can't find one.
+// timestamps. Best-effort — blank if we can't find one. This is the UTC no-JS
+// fallback; the .local-time span rewrites it to the viewer's zone client-side.
 export function fmtTime(dt) {
     const m = (dt || '').toString().match(/(\d{2}):(\d{2})/);
     return m ? `${m[1]}:${m[2]}` : '';
@@ -112,7 +113,7 @@ export function msnChat({ title, dpEmoji, toLabel, comments, postUrl, target, ch
         </div>
         <div class="msn-log">
           ${comments.length
-              ? comments.map((cm) => html`<div class="msn-msg"><span class="msn-name" style="color:${nameColor(cm.display_name)}">${cm.display_name} says:</span><span class="msn-time">${fmtTime(cm.created_at)}</span><span class="msn-body">${raw(msnify(cm.body))}</span></div>`)
+              ? comments.map((cm) => html`<div class="msn-msg"><span class="msn-name" style="color:${nameColor(cm.display_name)}">${cm.display_name} says:</span><span class="msn-time local-time" data-utc="${cm.created_at}">${fmtTime(cm.created_at)}</span><span class="msn-body">${raw(msnify(cm.body))}</span></div>`)
               : html`<div class="msn-empty">no messages yet — say something!</div>`}
         </div>
         <div class="msn-toolbar">
