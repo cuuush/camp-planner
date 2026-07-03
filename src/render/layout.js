@@ -52,56 +52,118 @@ const RETRO_CSS = `
   }
   a { color: #0000ee; text-decoration: underline; }
   a:visited { color: #551a8b; }
-  /* News ticker styled like an XP status/notification strip: a Luna blue caption
-     gradient band with a bright top bevel, a little "Start"-style News pill pinned
-     at the left, and the headlines scrolling in white Tahoma on the inset track. */
+  /* News ticker styled like an XP window status bar: the same flat Luna beige as
+     the window body, a thin sunken groove, and the headlines scrolling past in
+     dark-navy Tahoma. Lives at the very top of the window body. */
   .marquee-wrap {
     position: relative; display: flex; align-items: stretch;
-    background: linear-gradient(180deg,#3d95ff 0%,#1e63e8 8%,#1a52d0 45%,#1749c4 55%,#1e63e8 92%,#3d95ff 100%);
-    border-top: 1px solid #6aa4ff; border-bottom: 1px solid #0a246a;
-    box-shadow: inset 0 1px 0 rgba(255,255,255,0.35), 0 1px 3px rgba(0,0,0,0.3);
+    background: #ece9d8;
+    border-bottom: 1px solid #aca899;
+    box-shadow: inset 0 -1px 0 #fff;
     overflow: hidden; white-space: nowrap;
+    /* Bleed to the window body's top/left/right edges (its padding is 4px 6px 8px);
+       only the bottom keeps a gap before the tabs. */
+    margin: -4px -6px 10px;
   }
-  /* A flat darker-navy label segment with a divider — reads as a ticker heading,
-     not the green Start button. */
-  .marquee-badge {
-    flex: 0 0 auto; display: flex; align-items: center; gap: 5px;
-    padding: 4px 13px 4px 11px; font-family: Tahoma, sans-serif; font-weight: bold;
-    font-size: 0.82em; color: #dfeaff; letter-spacing: 0.3px; text-transform: uppercase;
-    text-shadow: 1px 1px 1px rgba(0,0,30,0.6);
-    background: linear-gradient(180deg,#123f9e 0%,#0c2f80 55%,#0a2872 100%);
-    border-right: 1px solid rgba(0,0,20,0.5);
-    box-shadow: inset 0 1px 0 rgba(255,255,255,0.18), 1px 0 0 rgba(120,160,230,0.4);
-  }
-  .marquee-track { flex: 1 1 auto; overflow: hidden; align-self: center; }
-  .marquee { display: inline-block; padding-left: 100%; animation-name: marquee; animation-timing-function: linear; animation-iteration-count: infinite; color: #fff; font-weight: bold; font-family: Tahoma, Verdana, sans-serif; text-shadow: 1px 1px 1px rgba(0,0,30,0.55); font-size: 0.86em; }
+  .marquee-track { flex: 1 1 auto; overflow: hidden; align-self: center; padding: 4px 0; }
+  .marquee { display: inline-block; padding-left: 100%; animation-name: marquee; animation-timing-function: linear; animation-iteration-count: infinite; color: #0a246a; font-weight: bold; font-family: Tahoma, Verdana, sans-serif; font-size: 0.76em; }
+  @media (max-width: 600px) { .marquee { font-size: 0.53em; } }
   @keyframes marquee { from { transform: translateX(0); } to { transform: translateX(-100%); } }
-  /* Silver "Explorer" command bar rather than a big slab of taskbar blue. */
-  header.site {
-    background: linear-gradient(180deg,#faf9f4 0%,#eeece0 48%,#e4e1d1 52%,#f1efe4 100%);
-    border-bottom: 1px solid #9a9784;
-    box-shadow: 0 1px 0 #fff inset, 0 2px 5px rgba(0,0,0,0.25);
-    padding: 8px 14px; color: #1b1b17;
+  button, select, input[type=submit] { font-family: inherit; }
+
+  /* ——— The XP taskbar: topmost thing on the page. Green Start button on the
+     left (opens the fake Start menu below) and the lighter-blue tray with a
+     live clock — the bar is exactly as tall as the Start button, no extra blue
+     below. ——— */
+  .xp-taskbar {
+    /* ⚙ ONE knob for the whole bar: the bar height AND the Start button image both
+       follow --taskbar-h. Tune this for desktop, and the mobile override just below. */
+    --taskbar-h: 32px;
+    position: relative; z-index: 500;
+    display: flex; align-items: center; gap: 8px; height: var(--taskbar-h);
+    background: linear-gradient(180deg,#1f2f86 0%,#4993e6 3%,#2b71e0 6%,#2663da 10%,#2157d6 24%,#2157d6 68%,#245ddb 86%,#1f4dc0 95%,#1941a5 100%);
+    border-bottom: 1px solid #0a246a;
+    box-shadow: inset 0 1px 0 rgba(255,255,255,0.25), 0 2px 5px rgba(0,0,0,0.35);
   }
-  .fest-picker { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px; }
-  .fest-picker a { color: #0a3d91; }
-  .fest-picker b { color: #0a246a; }
-  .fest-picker select, .fest-picker a.button, button, input[type=submit] { font-family: inherit; }
-  /* Page header: an XP "Explorer bar" title band — a silver-to-blue Luna gradient
-     panel with a bright top bevel and the fest name in blue Tahoma, like the header
-     of a Control Panel / My Computer view. (No more Web-1.0 orange gradient text.) */
-  h1.title {
-    max-width: 900px; width: calc(100% - 44px); margin: 16px auto 0;
-    display: flex; align-items: center; gap: 10px;
-    text-align: left; font-size: 1.35em; letter-spacing: 0; font-weight: bold;
-    font-family: Tahoma, Verdana, sans-serif; color: #0a246a;
-    padding: 8px 16px; border-radius: 6px;
-    background: linear-gradient(180deg,#fbfdff 0%,#eaf0fb 46%,#d7e3f7 54%,#e9f0fb 100%);
-    border: 1px solid #7a9bd0;
-    box-shadow: inset 0 1px 0 #fff, 0 2px 5px rgba(0,0,0,0.22);
+  @media (max-width: 600px) { .xp-taskbar { --taskbar-h: 37px; } }
+  /* The Start button is the start.png artwork itself — kill the Luna button chrome. */
+  .xp-taskbar .xp-start-btn { background: none; border: none; padding: 0; margin: 0;
+    align-self: stretch; display: flex; align-items: center; box-shadow: none; border-radius: 0; }
+  .xp-taskbar .xp-start-btn img { height: var(--taskbar-h); width: auto; display: block;
+    filter: drop-shadow(1px 1px 2px rgba(0,0,20,0.45)); }
+  .xp-taskbar .xp-start-btn:hover { background: none; box-shadow: none; border: none; }
+  .xp-taskbar .xp-start-btn:hover img { filter: drop-shadow(1px 1px 2px rgba(0,0,20,0.45)) brightness(1.12); }
+  .xp-taskbar .xp-start-btn:active { background: none; box-shadow: none; }
+  .xp-taskbar .xp-start-btn:active img { filter: brightness(0.88); }
+  .xp-tray {
+    margin-left: auto; align-self: stretch; display: flex; align-items: center; padding: 0 12px 0 14px;
+    background: linear-gradient(180deg,#0c59b9 0%,#18b5f2 6%,#0d8dea 14%,#0d8dea 72%,#0f8adf 90%,#094fb1 100%);
+    border-left: 1px solid #092e73; box-shadow: inset 1px 1px 1px rgba(255,255,255,0.35);
+    color: #fff; font-family: Tahoma, sans-serif; font-size: 0.9em;
+    text-shadow: 1px 1px 1px rgba(0,0,30,0.5);
   }
-  .title-icon { font-size: 1.15em; line-height: 1; }
-  .title-text { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+  /* ——— The fake Start menu: blue header band with the signed-in account (pic +
+     name) over the classic thin orange rule, a white column of festivals to jump
+     between, and the blue footer band holding Log Off — just like the real one. */
+  .xp-startmenu {
+    position: absolute; top: calc(100% + 1px); left: 2px; z-index: 500;
+    width: min(320px, 92vw); overflow: hidden;
+    border: 1px solid #0831d9; border-radius: 6px;
+    box-shadow: 3px 4px 12px rgba(0,0,20,0.5);
+    background: #fff; font-family: Tahoma, Verdana, sans-serif;
+    /* Modestly sized (the BAR is the chunky part, not the menu). The pic + icons
+       below are em-sized so they track this. */
+    font-size: 1.05em;
+  }
+  @media (max-width: 600px) { .xp-startmenu { width: min(280px, 88vw); font-size: 0.875em; } }
+  .xp-startmenu[hidden] { display: none; }
+  .xp-startmenu-head {
+    position: relative; display: flex; align-items: center; gap: 10px; padding: 9px 10px 11px;
+    background: linear-gradient(180deg,#3a81e8 0%,#1a5cd7 55%,#1650bd 100%);
+  }
+  .xp-startmenu-head::after { content: ''; position: absolute; left: 0; right: 0; bottom: 0; height: 2px;
+    background: linear-gradient(90deg, rgba(255,150,50,0) 0%, #f7a24a 45%, rgba(255,150,50,0) 100%); }
+  /* The framed XP account picture (the classic spaceman). Em-sized so it grows
+     with the menu's font-size bump. */
+  .xp-user-pic { width: 2.2em; height: 2.2em; display: flex; align-items: center; justify-content: center;
+    background: #f4f9ff; border: 2px solid #fff; border-radius: 4px; overflow: hidden;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.4); flex: 0 0 auto; }
+  .xp-user-pic img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .xp-startmenu-name { color: #fff; font-weight: bold; font-size: 1em; min-width: 0;
+    text-shadow: 0 1px 2px rgba(0,0,20,0.6); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  a.xp-startmenu-name, a.xp-startmenu-name:visited { color: #fff; }
+  .xp-startmenu-body { padding: 6px 0; max-height: 55vh; overflow-y: auto; }
+  .xp-startmenu-label { padding: 4px 12px 3px; font-size: 0.72em; font-weight: bold;
+    letter-spacing: 0.6px; text-transform: uppercase; color: #7f8896; }
+  .xp-startmenu-item { display: flex; align-items: center; gap: 9px; padding: 6px 12px;
+    color: #111; text-decoration: none; font-size: 0.9em; }
+  .xp-startmenu-item:visited { color: #111; }
+  .xp-startmenu-item:hover { background: #316ac5; color: #fff; }
+  .xp-startmenu-item.current { font-weight: bold; }
+  .xp-startmenu-ico { width: 1.4em; text-align: center; font-size: 1.1em; flex: 0 0 auto; }
+  .xp-startmenu-sep { height: 1px; margin: 5px 10px; background: #d6d6cf; }
+  .xp-startmenu-foot {
+    display: flex; justify-content: flex-end; padding: 7px 10px;
+    background: linear-gradient(180deg,#3a81e8 0%,#1a5cd7 55%,#1650bd 100%);
+    border-top: 1px solid #1245a8;
+  }
+  /* Log Off lives in the Start menu's footer band: white bold Tahoma next to the
+     red shutdown roundel, highlighting on hover — exactly where XP puts it. */
+  .xp-logoff { display: inline-flex; align-items: center; gap: 7px; color: #fff; font-weight: bold;
+    font-size: 0.88em; text-decoration: none; padding: 3px 7px; border-radius: 3px;
+    font-family: Tahoma, Verdana, sans-serif; }
+  .xp-logoff:visited { color: #fff; }
+  .xp-logoff:hover { background: rgba(255,255,255,0.16); }
+  .xp-logoff-ico { display: inline-flex; align-items: center; justify-content: center;
+    width: 16px; height: 16px; border-radius: 50%; color: #fff; font-size: 10px; font-weight: bold;
+    background: radial-gradient(circle at 50% 32%, #ea6a45, #c0392b);
+    box-shadow: inset 0 1px 0 rgba(255,255,255,0.5), 0 1px 1px rgba(0,0,0,0.3); }
+
+  /* The fest-name title band used to live here; it's gone so the desktop wallpaper
+     shows through above the window. Keep the same vertical gap it occupied. */
+  .title-gap { height: 58px; }
+  @media (max-width: 600px) { .title-gap { height: 40px; } }
 
   /* Rover the Search Companion: an authentic XP touch. The tip sits in a blue
      rounded speech box (light-blue fill, white outline) and the dog sits just
@@ -112,7 +174,7 @@ const RETRO_CSS = `
   }
   .dog-bubble {
     position: relative; align-self: stretch; min-width: 0;
-    background: #d3e6fb;                 /* light blue inside */
+    background: #d8dff5;                 /* light blue inside (rgb 216,223,245) */
     border: 2px solid #ffffff;           /* white outline */
     border-radius: 12px;
     padding: 11px 15px; font-size: 0.9em; color: #14396e; line-height: 1.42;
@@ -135,14 +197,21 @@ const RETRO_CSS = `
      PERPENDICULAR to the A→C and C→B edges (not a fixed x/y shift), so the white
      border stays a constant 1px width all the way down to the tip. Its top sits at
      y=1 (up inside the box) to hide the box's bottom border between A and B. */
-  .dog-bubble::after { background: #d3e6fb; clip-path: polygon(2.12px 1px, 18.7px 1px, 17.19px 31.14px); }
+  .dog-bubble::after { background: #d8dff5; clip-path: polygon(2.12px 1px, 18.7px 1px, 17.19px 31.14px); }
   .dog-img {
     width: 66px; height: auto; margin: 30px 0 0 34px; image-rendering: auto;
     filter: drop-shadow(1px 2px 2px rgba(0,0,0,0.3));
   }
   .dog-bubble b { color: #0a246a; }
-  .dog-bubble a { color: #0a3d91; font-weight: bold; }
   .dog-title { font-weight: bold; color: #0a246a; display: block; margin-bottom: 2px; }
+  /* Search-Companion quick links: a green XP arrow bullet + the action, one per row,
+     the way the real Rover lists "Pictures, music, or video" etc. — not inline links. */
+  .dog-links { list-style: none; margin: 9px 0 1px; padding: 0; }
+  .dog-links li { margin: 6px 0; }
+  .dog-links a { display: flex; align-items: flex-start; gap: 9px; color: #0a3d91; font-weight: normal; text-decoration: none; }
+  .dog-links a::before { content: ''; flex: 0 0 auto; width: 18px; height: 18px; margin-top: 1px;
+    background: url(/arrow.png) center/contain no-repeat; }
+  .dog-links a:hover { color: #1a52c8; text-decoration: underline; }
   @media (max-width: 600px) { .dog-img { width: 52px; } .dog-bubble { font-size: 0.85em; } }
   /* XP tab control: inactive tabs sit slightly lower and behind the active one,
      which lifts up and merges with the page below it. */
@@ -273,7 +342,7 @@ const RETRO_CSS = `
   .ppl-task { font-size: 0.8em; color: #8a8a7a; white-space: nowrap; width: 116px; overflow: hidden; text-overflow: ellipsis; }
   .ppl-task.blank { visibility: hidden; }
   .ppl-task.done { color: #1a7a1a; }
-  @media (max-width: 600px) { nav.tabs a { font-size: 0.8em; padding: 8px 2px; } h1.title { font-size: 1.1em; padding: 7px 12px; } }
+  @media (max-width: 600px) { nav.tabs a { font-size: 0.8em; padding: 8px 2px; } }
 
   #signin-modal-overlay:empty { display: none; }
   #signin-modal-overlay:not(:empty) {
@@ -1266,17 +1335,49 @@ document.addEventListener('input', function (e) {
       .catch(function () {});
   }, 350);
 });
+
+// ——— XP taskbar: Start menu + tray clock ———————————————————————————
+function campToggleStart(e) {
+  if (e && e.stopPropagation) e.stopPropagation();
+  var m = document.getElementById('xp-startmenu');
+  if (m) m.hidden = !m.hidden;
+}
+function campCloseStart() {
+  var m = document.getElementById('xp-startmenu');
+  if (m) m.hidden = true;
+}
+// Click anywhere outside the menu (or press Escape) closes it, like real Windows.
+document.addEventListener('click', function (e) {
+  var m = document.getElementById('xp-startmenu');
+  if (!m || m.hidden || !e.target.closest) return;
+  if (e.target.closest('#xp-startmenu') || e.target.closest('.xp-start-btn')) return;
+  m.hidden = true;
+});
+document.addEventListener('keydown', function (e) { if (e.key === 'Escape') campCloseStart(); });
+
+// The little tray clock. 12-hour, no seconds — exactly what the XP tray showed.
+function campTickClock() {
+  var el = document.getElementById('xp-clock');
+  if (!el) return;
+  var d = new Date();
+  var h = d.getHours(), mi = d.getMinutes();
+  var ap = h >= 12 ? 'PM' : 'AM';
+  h = h % 12; if (h === 0) h = 12;
+  el.textContent = h + ':' + (mi < 10 ? '0' : '') + mi + ' ' + ap;
+}
+document.addEventListener('DOMContentLoaded', campTickClock);
+setInterval(campTickClock, 15000);
 `;
 
 export function tickerHtml(entries) {
     if (!entries || !entries.length) {
-        return html`<div class="marquee-wrap"><span class="marquee-badge">📢 News</span><div class="marquee-track"><span class="marquee" style="animation-duration:20s">nothing's happened yet... be the first!</span></div></div>`;
+        return html`<div class="marquee-wrap"><div class="marquee-track"><span class="marquee" style="animation-duration:20s">nothing's happened yet... be the first!</span></div></div>`;
     }
     const text = entries.map((e) => e.summary).join('   ·   ');
     // Duration scales with content length so the scroll speed (px/sec) stays roughly
     // constant instead of whipping faster as more news accumulates.
     const duration = Math.max(25, Math.round(text.length / 6));
-    return html`<div class="marquee-wrap"><span class="marquee-badge">📢 News</span><div class="marquee-track"><span class="marquee" style="animation-duration:${duration}s">${text}&nbsp;&nbsp;·&nbsp;&nbsp;${text}</span></div></div>`;
+    return html`<div class="marquee-wrap"><div class="marquee-track"><span class="marquee" style="animation-duration:${duration}s">${text}&nbsp;&nbsp;·&nbsp;&nbsp;${text}</span></div></div>`;
 }
 
 // Rover the XP Search Companion: a contextual assistant tip. Not signed in → nudge
@@ -1295,9 +1396,10 @@ async function dogAssistant(c, festival, person) {
         const next = encodeURIComponent(c.req.path);
         bubble = html`
           <span class="dog-title">Hi there — I'm Rover!</span>
-          It looks like you're just visiting. Would you like to
-          <a href="/signin?next=${next}" hx-get="/signin/modal?next=${next}" hx-target="#signin-modal-overlay" hx-swap="innerHTML">sign in</a>?
-          It only takes a moment, and then you can claim what you're bringing and save your seat in a carpool.`;
+          It looks like you're just visiting. Sign in and you can claim what you're bringing and save a seat in a carpool.
+          <ul class="dog-links">
+            <li><a href="/signin?next=${next}" hx-get="/signin/modal?next=${next}" hx-target="#signin-modal-overlay" hx-swap="innerHTML">Sign in &amp; join this fest</a></li>
+          </ul>`;
     } else if (festival) {
         const db = c.env.DB;
         // Only drivers owe a car pass, so only nag drivers about it.
@@ -1321,8 +1423,10 @@ async function dogAssistant(c, festival, person) {
             : html`your <b>festival pass</b>`;
         bubble = html`
           <span class="dog-title">Hey ${person.display_name}!</span>
-          Did you remember to buy ${passes}? Once you've got ${needCarPass ? 'them' : 'it'},
-          pop over to the <a href="/f/${festival.id}/mine">me</a> tab and check ${needCarPass ? 'them' : 'it'} off your list.`;
+          Did you remember to buy ${passes}? Once you've got ${needCarPass ? 'them' : 'it'}, check ${needCarPass ? 'them' : 'it'} off your list.
+          <ul class="dog-links">
+            <li><a href="/f/${festival.id}/mine">Go to my checklist</a></li>
+          </ul>`;
     } else {
         return '';
     }
@@ -1333,24 +1437,44 @@ async function dogAssistant(c, festival, person) {
     </div>`;
 }
 
-function festPicker(c, festival, festivals) {
+// The XP taskbar + fake Start menu. The green Start button toggles a Start menu
+// holding: the signed-in account (blue header band), the festival list to jump
+// between, create-a-fest, and Log Off in the blue footer band. Clicking outside
+// or pressing Escape closes it (wired in CONFETTI_SCRIPT).
+function taskbar(c, festival, festivals) {
     const person = c.get('person');
+    const next = encodeURIComponent(c.req.path);
     return html`
-    <div class="fest-picker">
-      <div>
-        ${festival
-            ? html`<select onchange="if(this.value) window.location='/f/'+this.value">
-                 <option value="">switch fest...</option>
-                 ${(festivals || []).map((f) => html`<option value="${f.id}" ${f.id === festival.id ? 'selected' : ''}>${f.name}</option>`)}
-               </select>`
-            : html`<b>choose a fest below</b>`}
-        <a class="btn" href="/fests/new">+ add a fest</a>
-      </div>
-      <div>
-        ${person
-            ? html`signed in as <b>${person.display_name}</b> · <a href="/signout">sign out</a>`
-            : html`<a href="/signin?next=${encodeURIComponent(c.req.path)}"
-                hx-get="/signin/modal?next=${encodeURIComponent(c.req.path)}" hx-target="#signin-modal-overlay" hx-swap="innerHTML">sign in</a> <i>(takes 2 seconds)</i>`}
+    <div class="xp-taskbar">
+      <button type="button" class="xp-start-btn" onclick="campToggleStart(event)"
+        aria-haspopup="true" aria-controls="xp-startmenu" title="start">
+        <img src="/start.png" alt="start">
+      </button>
+      <span class="xp-tray"><span id="xp-clock"></span></span>
+      <div class="xp-startmenu" id="xp-startmenu" hidden>
+        <div class="xp-startmenu-head">
+          <span class="xp-user-pic"><img src="/spaceman.png" alt=""></span>
+          ${person
+            ? html`<span class="xp-startmenu-name">${person.display_name}</span>`
+            : html`<a class="xp-startmenu-name" href="/signin?next=${next}" onclick="campCloseStart()"
+                     hx-get="/signin/modal?next=${next}" hx-target="#signin-modal-overlay" hx-swap="innerHTML">sign in…</a>`}
+        </div>
+        <div class="xp-startmenu-body">
+          <div class="xp-startmenu-label">festivals</div>
+          ${(festivals || []).map((f) => html`
+            <a class="xp-startmenu-item ${festival && f.id === festival.id ? 'current' : ''}" href="/f/${f.id}">
+              <span class="xp-startmenu-ico">🏕️</span> ${f.name}</a>`)}
+          <div class="xp-startmenu-sep"></div>
+          <a class="xp-startmenu-item" href="/"><span class="xp-startmenu-ico">🖥️</span> all festivals</a>
+          <a class="xp-startmenu-item" href="/fests/new"><span class="xp-startmenu-ico">➕</span> create a fest…</a>
+        </div>
+        <div class="xp-startmenu-foot">
+          ${person
+            ? html`<a class="xp-logoff" href="/signout"><span class="xp-logoff-ico">⏻</span> Log Off</a>`
+            : html`<a class="xp-logoff" href="/signin?next=${next}" onclick="campCloseStart()"
+                     hx-get="/signin/modal?next=${next}" hx-target="#signin-modal-overlay" hx-swap="innerHTML">
+                     <span class="xp-logoff-ico" style="background: radial-gradient(circle at 50% 32%, #7fd35c, #3a9427);">⏻</span> Log On</a>`}
+        </div>
       </div>
     </div>`;
 }
@@ -1410,14 +1534,8 @@ export async function renderPage(c, { title, activeTab = '', body, festival = nu
   <style>${raw(RETRO_CSS)}</style>
 </head>
 <body>
-  ${tickerHtml(ticker)}
-  <header class="site">
-    ${festPicker(c, festival, festivals)}
-  </header>
-  <h1 class="title">
-    <span class="title-icon">🏕️</span>
-    <span class="title-text">${festival ? festival.name : 'camp planner'}</span>
-  </h1>
+  ${taskbar(c, festival, festivals)}
+  <div class="title-gap" aria-hidden="true"></div>
   ${await dogAssistant(c, festival, person)}
   <div id="signin-modal-overlay"></div>
   <div id="popup-layer"></div>
@@ -1432,6 +1550,7 @@ export async function renderPage(c, { title, activeTab = '', body, festival = nu
       </span>
     </div>
     <div class="xp-window-body">
+      ${tickerHtml(ticker)}
       ${festival ? html`<nav class="tabs">${tabs.map(([label, href, key]) => html`<a href="${href}" class="${key === activeTab ? 'active' : ''}">${label}</a>`)}</nav>` : ''}
       ${showJoin ? html`
         <div class="join-banner">
