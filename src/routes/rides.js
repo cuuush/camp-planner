@@ -31,6 +31,9 @@ function carCard(car, driverName, stats, person, expanded = false, chatOpen = fa
     const { seats, comments } = stats;
     const openSeats = car.seats_total - seats.length;
     const myTakenSeat = person && seats.find((s) => s.person_id === person.id);
+    // Driver first in the riders list, tagged so it's obvious who's behind the wheel.
+    const isDriver = (s) => s.person_id === car.driver_person_id;
+    const riders = [...seats].sort((a, b) => isDriver(b) - isDriver(a));
 
     return html`
     <details class="card car-details" id="car-${car.id}" ${expanded ? 'open' : ''}>
@@ -49,13 +52,14 @@ function carCard(car, driverName, stats, person, expanded = false, chatOpen = fa
       </summary>
 
       <div class="item-actions">
-        <p class="car-riders"><b>riders:</b> ${seats.length ? seats.map((s) => s.display_name).join(', ') : '(none yet)'}</p>
+        <p class="car-riders"><b>in the car:</b> ${riders.length ? riders.map((s) => `${s.display_name}${isDriver(s) ? ' (driver)' : ''}`).join(', ') : '(empty — even the driver bailed)'}</p>
 
         <div class="action-buttons">
           ${!myTakenSeat ? html`
             <form class="car-seat-form" hx-post="/cars/${car.id}/seats/claim" hx-target="#car-${car.id}" hx-swap="outerHTML">
-              <button class="btn btn-primary" type="submit">grab an open seat</button>
-            </form>` : html`
+              <button class="btn btn-primary" type="submit">${openSeats > 0 ? 'grab an open seat' : 'squeeze in anyway'}</button>
+            </form>` : person && person.id === car.driver_person_id ? html`
+            <form class="car-seat-form"><button class="btn" type="button" disabled>you're driving 🚗</button></form>` : html`
             <form class="car-seat-form" hx-post="/seats/${myTakenSeat.id}/leave" hx-target="#car-${car.id}" hx-swap="outerHTML">
               <button class="btn" type="submit">leave this car</button>
             </form>`}
@@ -109,7 +113,8 @@ async function renderRidesBody(c, festival) {
       <form class="edit-panel" hx-post="/f/${festival.id}/cars" hx-target="#car-list" hx-swap="innerHTML"
         hx-on::after-request="if(event.detail.successful) this.reset();">
         <div class="edit-panel-title">post a car</div>
-        <div class="edit-field"><label>seats</label><input type="number" name="seats_total" value="4" min="1"></div>
+        <p class="popup-hint" style="margin:0;">you're the driver — you get the first seat automatically.</p>
+        <div class="edit-field"><label>seats</label><input type="number" name="seats_total" value="4" min="1" title="total seats, including yours"></div>
         <div class="edit-field"><label>from</label><input type="text" name="leaving_from" placeholder="e.g. oakland"></div>
         <div class="edit-field"><label>day</label><input type="text" name="depart_day" placeholder="thu"></div>
         <div class="edit-field"><label>time</label><input type="text" name="depart_time" placeholder="9am"></div>
@@ -149,6 +154,11 @@ rides.post('/f/:id/cars', async (c) => {
         (body.depart_day || '').toString() || null,
         (body.depart_time || '').toString() || null,
     ).run();
+
+    // The driver rides in their own car — seat them right away so the riders
+    // list starts with them instead of looking empty.
+    await db.prepare('INSERT INTO seats (car_id, person_id) VALUES (?, ?)')
+        .bind(result.meta.last_row_id, person.id).run();
 
     await logAction(c, {
         festivalId: festival.id, action: 'create', entityType: 'cars', entityId: result.meta.last_row_id,

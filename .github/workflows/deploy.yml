@@ -14,6 +14,26 @@ jobs:
         with:
           node-version: 22
       - run: npm ci
-      - uses: cloudflare/wrangler-action@v3
+
+      # Migrations 001/002 were applied by hand before this workflow existed;
+      # mark them as done in wrangler's d1_migrations bookkeeping so `migrations
+      # apply` below only ever runs the genuinely new ones. Safe to re-run.
+      - name: Baseline migration history
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          command: d1 execute camp-planner-db --remote --file=scripts/baseline-migrations.sql
+
+      # Additive-migration-first deploy order (see AGENTS.md): new columns/tables
+      # land while the old worker is still running, THEN the new code ships. If a
+      # migration fails, the job stops here and the old worker keeps running.
+      - name: Apply D1 migrations
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          command: d1 migrations apply camp-planner-db --remote
+
+      - name: Deploy worker
+        uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}

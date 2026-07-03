@@ -9,6 +9,8 @@ import { people } from './routes/people.js';
 import { rides } from './routes/rides.js';
 import { mine } from './routes/mine.js';
 import { log } from './routes/log.js';
+import { settings } from './routes/settings.js';
+import { feedback } from './routes/feedback.js';
 import { admin } from './routes/admin.js';
 import { webring } from './routes/webring.js';
 
@@ -27,6 +29,8 @@ app.route('/', people);
 app.route('/', rides);
 app.route('/', mine);
 app.route('/', log);
+app.route('/', settings);
+app.route('/', feedback);
 app.route('/', admin);
 app.route('/', webring);
 

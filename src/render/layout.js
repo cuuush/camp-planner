@@ -213,6 +213,24 @@ const RETRO_CSS = `
     background: url(/arrow.png) center/contain no-repeat; }
   .dog-links a:hover { color: #1a52c8; text-decoration: underline; }
   @media (max-width: 600px) { .dog-img { width: 52px; } .dog-bubble { font-size: 0.85em; } }
+  /* Rover reacts to being petted (clicked). What happens on the fifth pet is
+     documented nowhere, which is the point. */
+  .dog-img { cursor: pointer; }
+  @keyframes dog-wiggle { 0% { transform: rotate(0); } 30% { transform: rotate(-8deg) scale(1.06); } 70% { transform: rotate(7deg); } 100% { transform: rotate(0); } }
+  .dog-img.petted { animation: dog-wiggle 0.35s ease; }
+  /* The forbidden fifth pet: an authentic XP Stop error. Lucida Console on that
+     unmistakable blue, dismissed by any key or tap. */
+  .xp-bsod {
+    position: fixed; inset: 0; z-index: 100000;
+    background: #0000aa; color: #fff;
+    font-family: 'Lucida Console', 'Courier New', monospace;
+    font-size: 13px; line-height: 1.45;
+    padding: 36px 5vw; white-space: pre-wrap; overflow: hidden;
+    cursor: default; user-select: none;
+  }
+  @media (max-width: 600px) { .xp-bsod { font-size: 10px; padding: 18px 12px; } }
+  .xp-bsod-cursor { animation: bsod-blink 1s steps(1) infinite; }
+  @keyframes bsod-blink { 50% { opacity: 0; } }
   /* XP tab control: inactive tabs sit slightly lower and behind the active one,
      which lifts up and merges with the page below it. */
   nav.tabs { display: flex; padding: 6px 0 0; gap: 2px; border-bottom: 1px solid #919b9c; margin: 0 0 12px; align-items: flex-end; }
@@ -932,6 +950,53 @@ const RETRO_CSS = `
     width: 4px; height: 8px; border: solid #1a7a1a; border-width: 0 2px 2px 0;
     transform: rotate(45deg);
   }
+  /* Form flavour of the XP checkbox: a real (hidden) checkbox input drives the
+     drawn square, so it submits with the form and stays keyboard-accessible. */
+  .xp-check-label {
+    display: inline-flex; align-items: center; gap: 7px; cursor: pointer;
+    font-size: 0.85em; color: #1a1a1a; user-select: none; position: relative;
+  }
+  .xp-check-input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+  .xp-check-input:checked + .xp-checkbox::after {
+    content: ''; position: absolute; left: 4px; top: 0;
+    width: 4px; height: 8px; border: solid #1a7a1a; border-width: 0 2px 2px 0;
+    transform: rotate(45deg);
+  }
+  .xp-check-input:focus-visible + .xp-checkbox { outline: 1px dotted #4a4a3c; outline-offset: 2px; }
+
+  /* Control Panel window (start menu → control panel). */
+  .xp-radio-label { display: flex; align-items: center; gap: 7px; font-size: 0.85em; margin: 5px 0; cursor: pointer; }
+  .settings-hint { font-size: 0.8em; color: #4a4a3c; margin: 0 0 8px; }
+  .settings-email-form input[type=email] { width: 100%; box-sizing: border-box; }
+  .settings-saved { font-size: 0.8em; color: #1a7a1a; font-weight: bold; margin: 6px 0 0; text-align: right; }
+
+  /* Feedback window (start menu → send feedback): a crash-report-style compose
+     box up top, then the "sent reports" log — Explorer-group-header style label. */
+  .feedback-form textarea { width: 100%; box-sizing: border-box; resize: vertical; }
+  .feedback-form .dialog-buttons { margin-top: 10px; }
+  .feedback-log-label {
+    display: flex; align-items: center; gap: 8px;
+    color: #2360cc; font-weight: bold; font-size: 0.85em; margin: 0 0 6px;
+  }
+  .feedback-log-label::after { content: ''; flex: 1; height: 0; border-top: 1px solid currentColor; opacity: 0.4; }
+  .feedback-log-label .section-count { color: #2360cc; border: 1px solid #7aa0d8; }
+  /* The reports log scrolls in its own sunken box (like the MSN message log)
+     so a pile of feedback can't stretch the window off the screen — the compose
+     form stays put at the top. */
+  .feedback-list {
+    display: flex; flex-direction: column; gap: 6px;
+    max-height: 240px; overflow-y: auto;
+    padding: 6px; background: #f6f4ea; border: 1px solid #cbc8b8;
+    box-shadow: inset 1px 1px 2px rgba(0,0,0,0.1);
+  }
+  .feedback-entry { background: #fff; border: 1px solid #cfd8e6; border-radius: 3px; padding: 6px 9px; }
+  .feedback-meta { display: flex; align-items: baseline; gap: 8px; font-size: 0.8em; }
+  .feedback-from { font-weight: bold; }
+  .feedback-page {
+    color: #9a9a8c; font-style: italic; margin-left: auto;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 40%;
+  }
+  .feedback-text { font-size: 0.87em; margin-top: 2px; word-break: break-word; line-height: 1.4; }
   .checklist-label { flex: 1; min-width: 0; }
   .checklist-req {
     font-size: 0.68em; color: #6a6a5c; text-transform: uppercase; letter-spacing: 0.4px;
@@ -996,6 +1061,7 @@ const RETRO_CSS = `
 
 const CONFETTI_SCRIPT = `
 function campConfetti(el) {
+  if (!campConfettiOn()) return; // "visual effects" switched off in the control panel
   el.classList.add('pop');
   setTimeout(function () { el.classList.remove('pop'); }, 350);
   var rect = el.getBoundingClientRect();
@@ -1105,8 +1171,57 @@ function campAutoOpenPledge() {
     if (modal) { modal.style.display = 'flex'; var inp = modal.querySelector('input[name=qty]'); if (inp) inp.focus(); }
   } catch (e) {}
 }
-document.addEventListener('DOMContentLoaded', function () { pixmojify(document.body); suppressPwManagers(document.body); campAutoOpenPledge(); });
-document.addEventListener('htmx:afterSwap', function (e) { pixmojify(e.target); suppressPwManagers(e.target); });
+// ——— Local time + control-panel prefs (stored in localStorage, per device) ———
+// Server timestamps are UTC (SQLite datetime). Anything wrapped in a
+// .local-time[data-utc] span gets rewritten to the viewer's own time zone here,
+// honoring the 12h/24h preference from the control panel.
+function campTimeFmt() { try { return localStorage.getItem('campTimeFmt') || '12'; } catch (e) { return '12'; } }
+function campConfettiOn() { try { return localStorage.getItem('campConfetti') !== 'off'; } catch (e) { return true; } }
+function campFmtClock(d) {
+  var h = d.getHours(), mi = d.getMinutes(), mm = (mi < 10 ? '0' : '') + mi;
+  if (campTimeFmt() === '24') return (h < 10 ? '0' : '') + h + ':' + mm;
+  var ap = h >= 12 ? 'PM' : 'AM';
+  h = h % 12; if (h === 0) h = 12;
+  return h + ':' + mm + ' ' + ap;
+}
+function campLocalizeTimes(root) {
+  if (!root || !root.querySelectorAll) return;
+  var els = root.querySelectorAll('.local-time[data-utc]');
+  for (var i = 0; i < els.length; i++) {
+    var el = els[i];
+    var m = (el.getAttribute('data-utc') || '').match(/^(\\d{4})-(\\d{2})-(\\d{2})[T ](\\d{2}):(\\d{2})/);
+    if (!m) continue;
+    var d = new Date(Date.UTC(+m[1], +m[2] - 1, +m[3], +m[4], +m[5]));
+    var t = campFmtClock(d);
+    if (el.getAttribute('data-fmt') === 'datetime') {
+      var mo = d.getMonth() + 1, da = d.getDate();
+      t = (mo < 10 ? '0' : '') + mo + '-' + (da < 10 ? '0' : '') + da + ' ' + t;
+    }
+    el.textContent = t;
+  }
+}
+function campSetTimeFmt(v) {
+  try { localStorage.setItem('campTimeFmt', v); } catch (e) {}
+  campTickClock();
+  campLocalizeTimes(document.body);
+}
+function campSetConfetti(on, el) {
+  try { localStorage.setItem('campConfetti', on ? 'on' : 'off'); } catch (e) {}
+  if (on && el) campConfetti(el); // a little celebratory proof it's back on
+}
+// The control panel's clock radios + effects checkbox reflect this device's
+// prefs, which the server can't render — fill them in after the popup lands.
+// (The email/notify checkbox is server-rendered state; leave it alone.)
+function campInitSettings(root) {
+  if (!root || !root.querySelectorAll) return;
+  var radios = root.querySelectorAll('input[name="camp_time_fmt"]');
+  for (var i = 0; i < radios.length; i++) radios[i].checked = radios[i].value === campTimeFmt();
+  var fx = root.querySelector('#camp-fx-check');
+  if (fx) fx.checked = campConfettiOn();
+}
+
+document.addEventListener('DOMContentLoaded', function () { pixmojify(document.body); suppressPwManagers(document.body); campAutoOpenPledge(); campLocalizeTimes(document.body); campInitSettings(document.body); });
+document.addEventListener('htmx:afterSwap', function (e) { pixmojify(e.target); suppressPwManagers(e.target); campLocalizeTimes(e.target); campInitSettings(e.target); });
 
 // Make the little "me"-tab XP windows draggable by their title bar. Position is
 // tracked as an accumulated translate on each window (dataset.dx/dy) so repeated
@@ -1355,18 +1470,83 @@ document.addEventListener('click', function (e) {
 });
 document.addEventListener('keydown', function (e) { if (e.key === 'Escape') campCloseStart(); });
 
-// The little tray clock. 12-hour, no seconds — exactly what the XP tray showed.
+// The little tray clock. No seconds, and it follows the 12h/24h preference
+// from the control panel (XP default: 12-hour).
 function campTickClock() {
   var el = document.getElementById('xp-clock');
   if (!el) return;
-  var d = new Date();
-  var h = d.getHours(), mi = d.getMinutes();
-  var ap = h >= 12 ? 'PM' : 'AM';
-  h = h % 12; if (h === 0) h = 12;
-  el.textContent = h + ':' + (mi < 10 ? '0' : '') + mi + ' ' + ap;
+  el.textContent = campFmtClock(new Date());
 }
 document.addEventListener('DOMContentLoaded', campTickClock);
 setInterval(campTickClock, 15000);
+
+// ——— Rover's secret. He asked you nicely not to. ————————————————————
+// Five quick pets (clicks) on the dog = an authentic XP Stop error. Any key,
+// click, or tap brings the site back — no harm done, exactly like the real
+// thing except the opposite.
+var dogPets = 0, dogPetTimer = null;
+document.addEventListener('click', function (e) {
+  if (!e.target.classList || !e.target.classList.contains('dog-img')) return;
+  clearTimeout(dogPetTimer);
+  dogPets++;
+  e.target.classList.remove('petted');
+  void e.target.offsetWidth; // restart the wiggle animation on every pet
+  e.target.classList.add('petted');
+  if (dogPets >= 5) { dogPets = 0; campBsod(); return; }
+  dogPetTimer = setTimeout(function () { dogPets = 0; }, 1600);
+});
+function campBsod() {
+  if (document.getElementById('xp-bsod')) return;
+  var lines = [
+    'A problem has been detected and camp planner has been shut down to prevent',
+    'damage to your festival.',
+    '',
+    'DOG_PETTED_TOO_MANY_TIMES',
+    '',
+    "If this is the first time you've seen this Stop error screen, restart your",
+    'browser. If this screen appears again, follow these steps:',
+    '',
+    'Check to make sure your tent is properly staked and your cooler is',
+    'adequately iced. If this is a new festival, ask the group chat for any',
+    'updates you might need.',
+    '',
+    'If problems continue, disable or remove any recently added campers. If you',
+    'need to use Safe Mode to remove or disable components, restart your',
+    'computer, press F8 to select Advanced Startup Options, and then select',
+    'Safe Mode.',
+    '',
+    'Technical information:',
+    '',
+    '*** STOP: 0x0000D06E (0xC0FFEE00, 0x00000005, 0x0BADD06E, 0x00000000)',
+    '',
+    '***  rover.sys - Address 0x0BADD06E base at 0xC0FFEE00, DateStamp 10/25/2001',
+    '',
+    'Beginning dump of physical memory',
+    'Physical memory dump complete.',
+    'Contact your camp administrator or the dog for further assistance.',
+    'He told you not to do that.',
+    '',
+    'Press any key (or tap) to continue ',
+  ];
+  var d = document.createElement('div');
+  d.id = 'xp-bsod';
+  d.className = 'xp-bsod';
+  d.textContent = lines.join('\\n');
+  var cur = document.createElement('span');
+  cur.className = 'xp-bsod-cursor';
+  cur.textContent = '_';
+  d.appendChild(cur);
+  function dismiss() {
+    d.remove();
+    document.removeEventListener('keydown', dismiss);
+  }
+  // Arm dismissal a beat later so the fifth pet-click doesn't close it instantly.
+  setTimeout(function () {
+    d.addEventListener('click', dismiss);
+    document.addEventListener('keydown', dismiss);
+  }, 400);
+  document.body.appendChild(d);
+}
 `;
 
 export function tickerHtml(entries) {
@@ -1380,11 +1560,56 @@ export function tickerHtml(entries) {
     return html`<div class="marquee-wrap"><div class="marquee-track"><span class="marquee" style="animation-duration:${duration}s">${text}&nbsp;&nbsp;·&nbsp;&nbsp;${text}</span></div></div>`;
 }
 
+// Rover's idle chatter: once there's nothing important to say, he rotates through
+// XP-help-style tips instead of going quiet — feedback, the control panel, ghost
+// people, merging duplicates, the MSN emoticons, and one tip that is definitely
+// not a hint about what happens if you pet him five times (see CONFETTI_SCRIPT).
+// Voice: authentic "click Start, and then click…" Windows XP help text.
+function dogTip(festival) {
+    const tips = [
+        {
+            title: 'Your opinion counts!',
+            body: html`camp planner is always looking for ways to improve. To report a problem or share an idea, click <b>Start</b>, and then click <b>send feedback</b>. Your report helps make camping better for everyone.`,
+            links: html`<li><a href="/feedback" hx-get="/feedback/window" hx-target="#popup-layer" hx-swap="beforeend">Send feedback now</a></li>`,
+        },
+        {
+            title: 'Personalize camp planner',
+            body: html`Did you know you can switch between 12-hour and 24-hour time, manage email notifications, and turn confetti on or off? Click <b>Start</b>, and then click <b>control panel</b> to make camp planner truly yours.`,
+            links: html`<li><a href="/settings" hx-get="/settings/window" hx-target="#popup-layer" hx-swap="beforeend">Open the control panel</a></li>`,
+        },
+        {
+            title: 'A blast from 2003',
+            body: html`The emoticons in every chat window are the original MSN Messenger graphics. Try typing <b>:)</b> or <b>(Y)</b> or <b>(8)</b> in a message. Some things never go out of style.`,
+        },
+        {
+            title: 'A note from Rover',
+            body: html`I am a professional Search Companion with an important job to do. Please do not pet me five times in a row. Nothing bad will happen. I am simply asking you not to.`,
+        },
+    ];
+    if (festival) {
+        tips.push({
+            title: 'Bringing a friend?',
+            body: html`You can add people who haven't signed up yet. On the <b>ppl</b> tab, click <b>＋ add person</b> and type their name. When they sign in with that name later, everything they were given links up automatically.`,
+            links: html`<li><a href="/f/${festival.id}/ppl">Go to the ppl tab</a></li>`,
+        });
+        tips.push({
+            title: 'Seeing double?',
+            body: html`If a camper accidentally signs in under two different names, click <b>merge people</b> on the <b>ppl</b> tab and select both entries. They will be combined into one camper, and nothing they did is lost.`,
+            links: html`<li><a href="/f/${festival.id}/ppl">Go to the ppl tab</a></li>`,
+        });
+    }
+    const t = tips[Math.floor(Math.random() * tips.length)];
+    return html`
+      <span class="dog-title">${t.title}</span>
+      ${t.body}
+      ${t.links ? html`<ul class="dog-links">${t.links}</ul>` : ''}`;
+}
+
 // Rover the XP Search Companion: a contextual assistant tip. Not signed in → nudge
 // to sign in; signed in on a fest → remind about the passes they still owe. Copy
-// is written in cheery early-2000s Windows-helper voice. Returns '' when there's
-// nothing useful to say — not on a fest page, or (signed in) once they've checked
-// off the festival pass, plus the car pass only if they're driving.
+// is written in cheery early-2000s Windows-helper voice. When there's nothing
+// important left to say (passes done, or signed in off a fest page), he falls
+// back to the rotating dogTip() pool above instead of disappearing.
 async function dogAssistant(c, festival, person) {
     let bubble;
     if (!person) {
@@ -1415,20 +1640,24 @@ async function dogAssistant(c, festival, person) {
         const needFestPass = !got.has('festival pass');
         const needCarPass = !!driving && !got.has('car pass');
 
-        // All set (festival pass done; car pass done or not needed) → Rover pipes down.
-        if (!needFestPass && !needCarPass) return '';
-
-        const passes = needCarPass
-            ? html`your <b>festival pass</b> and <b>car pass</b>`
-            : html`your <b>festival pass</b>`;
-        bubble = html`
-          <span class="dog-title">Hey ${person.display_name}!</span>
-          Did you remember to buy ${passes}? Once you've got ${needCarPass ? 'them' : 'it'}, check ${needCarPass ? 'them' : 'it'} off your list.
-          <ul class="dog-links">
-            <li><a href="/f/${festival.id}/mine">Go to my checklist</a></li>
-          </ul>`;
+        // All set (festival pass done; car pass done or not needed) → idle tips.
+        if (!needFestPass && !needCarPass) {
+            bubble = dogTip(festival);
+        } else {
+            const passes = needCarPass
+                ? html`your <b>festival pass</b> and <b>car pass</b>`
+                : html`your <b>festival pass</b>`;
+            bubble = html`
+              <span class="dog-title">Hey ${person.display_name}!</span>
+              Did you remember to buy ${passes}? Once you've got ${needCarPass ? 'them' : 'it'}, check ${needCarPass ? 'them' : 'it'} off your list.
+              <ul class="dog-links">
+                <li><a href="/f/${festival.id}/mine">Go to my checklist</a></li>
+              </ul>`;
+        }
     } else {
-        return '';
+        // Signed in but not on a fest page (the festival list, settings, …) —
+        // Rover has nothing urgent, so he shares a tip.
+        bubble = dogTip(null);
     }
     return html`
     <div class="dog-assistant">
@@ -1467,6 +1696,13 @@ function taskbar(c, festival, festivals) {
           <div class="xp-startmenu-sep"></div>
           <a class="xp-startmenu-item" href="/"><span class="xp-startmenu-ico">🖥️</span> all festivals</a>
           <a class="xp-startmenu-item" href="/fests/new"><span class="xp-startmenu-ico">➕</span> create a fest…</a>
+          <div class="xp-startmenu-sep"></div>
+          <a class="xp-startmenu-item" href="/feedback" onclick="campCloseStart()"
+            hx-get="/feedback/window" hx-target="#popup-layer" hx-swap="beforeend">
+            <span class="xp-startmenu-ico">📝</span> send feedback</a>
+          <a class="xp-startmenu-item" href="/settings" onclick="campCloseStart()"
+            hx-get="/settings/window" hx-target="#popup-layer" hx-swap="beforeend">
+            <span class="xp-startmenu-ico">⚙️</span> control panel</a>
         </div>
         <div class="xp-startmenu-foot">
           ${person
