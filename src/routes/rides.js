@@ -3,6 +3,7 @@ import { html } from 'hono/html';
 import { renderPage } from '../render/layout.js';
 import { loadFestival, ensureMembershipForPerson } from '../lib/festival.js';
 import { logAction } from '../lib/audit.js';
+import { sqlNow, createEffect, deleteEffect, fieldEffects } from '../lib/effects.js';
 import { notify } from '../lib/notify.js';
 import { needsSignin, signinModalResponse } from '../lib/guard.js';
 import { loadComments, handleCommentPost } from '../lib/comments.js';
@@ -152,14 +153,18 @@ rides.post('/f/:id/cars', async (c) => {
         (body.depart_time || '').toString() || null,
     ).run();
 
+    const carId = result.meta.last_row_id;
     // The driver rides in their own car — seat them right away so the riders
     // list starts with them instead of looking empty.
-    await db.prepare('INSERT INTO seats (car_id, person_id) VALUES (?, ?)')
-        .bind(result.meta.last_row_id, person.id).run();
+    const seatResult = await db.prepare('INSERT INTO seats (car_id, person_id) VALUES (?, ?)')
+        .bind(carId, person.id).run();
 
     await logAction(c, {
-        festivalId: festival.id, action: 'create', entityType: 'cars', entityId: result.meta.last_row_id,
+        festivalId: festival.id, action: 'create', entityType: 'cars', entityId: carId,
         reversible: true,
+        // Posting a car creates two rows (the car AND the driver's seat); undo hides
+        // both so it comes apart exactly as it went in.
+        effects: [createEffect('cars', carId, sqlNow()), createEffect('seats', seatResult.meta.last_row_id, sqlNow())],
         summary: `${person.display_name} posted a car (${body.seats_total || 1} seats)`,
     });
 
@@ -208,7 +213,7 @@ rides.post('/cars/:carId/edit', async (c) => {
 
     await logAction(c, {
         festivalId: festival.id, action: 'update', entityType: 'cars', entityId: car.id,
-        before, after, reversible: true,
+        before, after, reversible: true, effects: fieldEffects('cars', car.id, before, after),
         summary: `${person ? person.display_name : 'someone'} updated a car's details`,
     });
 
@@ -223,11 +228,12 @@ rides.post('/cars/:carId/delete', async (c) => {
     const db = c.env.DB;
     const person = c.get('person');
 
-    await db.prepare("UPDATE cars SET deleted_at = datetime('now') WHERE id = ?").bind(car.id).run();
+    const stamp = sqlNow();
+    await db.prepare('UPDATE cars SET deleted_at = ? WHERE id = ?').bind(stamp, car.id).run();
 
     await logAction(c, {
         festivalId: festival.id, action: 'delete', entityType: 'cars', entityId: car.id,
-        reversible: true,
+        reversible: true, effects: [deleteEffect('cars', car.id, stamp)],
         summary: `${person ? person.display_name : 'someone'} deleted ${driver.display_name}'s car`,
     });
 
@@ -246,7 +252,7 @@ rides.post('/cars/:carId/seats/claim', async (c) => {
 
     await logAction(c, {
         festivalId: festival.id, action: 'create', entityType: 'seats', entityId: result.meta.last_row_id,
-        reversible: true,
+        reversible: true, effects: [createEffect('seats', result.meta.last_row_id, sqlNow())],
         summary: `${person.display_name} claimed a seat in ${driver.display_name}'s car`,
     });
 
@@ -311,7 +317,7 @@ rides.post('/cars/:carId/seats/add', async (c) => {
         const result = await db.prepare('INSERT INTO seats (car_id, person_id) VALUES (?, ?)').bind(car.id, personId).run();
         await logAction(c, {
             festivalId: festival.id, action: 'create', entityType: 'seats', entityId: result.meta.last_row_id,
-            reversible: true,
+            reversible: true, effects: [createEffect('seats', result.meta.last_row_id, sqlNow())],
             summary: `${actor.display_name} added ${target.display_name} to ${driver.display_name}'s car`,
         });
     }
@@ -367,11 +373,12 @@ rides.post('/seats/:seatId/leave', async (c) => {
     const festival = await db.prepare('SELECT * FROM festivals WHERE id = ?').bind(car.festival_id).first();
     const driver = await db.prepare('SELECT display_name FROM people WHERE id = ?').bind(car.driver_person_id).first();
 
-    await db.prepare("UPDATE seats SET deleted_at = datetime('now') WHERE id = ?").bind(id).run();
+    const stamp = sqlNow();
+    await db.prepare('UPDATE seats SET deleted_at = ? WHERE id = ?').bind(stamp, id).run();
 
     await logAction(c, {
         festivalId: festival.id, action: 'delete', entityType: 'seats', entityId: id,
-        reversible: true,
+        reversible: true, effects: [deleteEffect('seats', id, stamp)],
         summary: `${person ? person.display_name : 'someone'} left ${driver.display_name}'s car`,
     });
 

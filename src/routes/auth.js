@@ -3,11 +3,22 @@ import { renderPage } from '../render/layout.js';
 import { modalFormMarkup, signinPageMarkup, nameTakenWarning } from '../lib/guard.js';
 import { normalizeName } from '../lib/names.js';
 import { ensureMembership, festIdFromPath, festNameFromPath } from '../lib/festival.js';
-import { absorbPlaceholders } from '../lib/people.js';
+import { absorbPlaceholders, resolveMergedPerson } from '../lib/people.js';
 import { createSession, destroySession } from '../lib/session.js';
 import { logAction } from '../lib/audit.js';
 
 export const auth = new Hono();
+
+// Log each ghost-absorb merge that a sign-in performed as a reversible audit entry
+// (so it's visible AND un-mergeable from the log — closing G8's "unlogged absorb").
+async function logAbsorbs(c, merges, survivorId) {
+    for (const m of merges) {
+        await logAction(c, {
+            festivalId: m.festivalId, action: 'merge', entityType: 'people', entityId: survivorId,
+            effects: m.effects, reversible: true, summary: m.summary,
+        });
+    }
+}
 
 // Only ever redirect to a same-site relative path — never trust an absolute/external "next".
 function safeNext(raw) {
@@ -134,17 +145,21 @@ auth.post('/signin', async (c) => {
             return c.html(nameTakenWarning(existing.display_name, ctx));
         }
 
-        const sessionToken = await createSession(c, existing.id);
-        c.set('person', existing);
-        await absorbPlaceholders(c, existing.id, normalized);
+        // The typed name may point at a merged-away identity; follow merged_into to
+        // the surviving account and sign into that (the merge asserted they're one).
+        const survivor = await resolveMergedPerson(db, existing);
+        const sessionToken = await createSession(c, survivor.id);
+        c.set('person', survivor);
+        const merges = await absorbPlaceholders(c, survivor.id, normalized);
+        await logAbsorbs(c, merges, survivor.id);
 
         const meta = c.get('reqMeta') || {};
         await db.prepare('INSERT INTO name_reclaim_log (person_id, reclaimed_ip) VALUES (?, ?)')
-            .bind(existing.id, meta.ip || null).run();
+            .bind(survivor.id, meta.ip || null).run();
 
         await logAction(c, {
-            action: 'reclaim', entityType: 'person', entityId: existing.id,
-            summary: `${existing.display_name} signed in (existing name)`,
+            action: 'reclaim', entityType: 'person', entityId: survivor.id,
+            summary: `${survivor.display_name} signed in (existing name)`,
         });
 
         await joinFestFromNext(c, ctx);
@@ -164,7 +179,8 @@ auth.post('/signin', async (c) => {
 
     const sessionToken = await createSession(c, personId);
     c.set('person', { id: personId, display_name: rawName.trim(), normalized_name: normalized, email });
-    await absorbPlaceholders(c, personId, normalized);
+    const merges = await absorbPlaceholders(c, personId, normalized);
+    await logAbsorbs(c, merges, personId);
 
     await logAction(c, {
         action: 'signin', entityType: 'person', entityId: personId,
@@ -196,17 +212,19 @@ auth.post('/signin/reclaim', async (c) => {
         return c.redirect(`/signin?${params.toString()}`);
     }
 
-    const sessionToken = await createSession(c, person.id);
-    c.set('person', person);
-    await absorbPlaceholders(c, person.id, normalized);
+    const survivor = await resolveMergedPerson(db, person);
+    const sessionToken = await createSession(c, survivor.id);
+    c.set('person', survivor);
+    const merges = await absorbPlaceholders(c, survivor.id, normalized);
+    await logAbsorbs(c, merges, survivor.id);
 
     const meta = c.get('reqMeta') || {};
     await db.prepare('INSERT INTO name_reclaim_log (person_id, reclaimed_ip) VALUES (?, ?)')
-        .bind(person.id, meta.ip || null).run();
+        .bind(survivor.id, meta.ip || null).run();
 
     await logAction(c, {
-        action: 'reclaim', entityType: 'person', entityId: person.id,
-        summary: `${person.display_name} reclaimed their name (trust-based)`,
+        action: 'reclaim', entityType: 'person', entityId: survivor.id,
+        summary: `${survivor.display_name} reclaimed their name (trust-based)`,
     });
 
     await joinFestFromNext(c, ctx);

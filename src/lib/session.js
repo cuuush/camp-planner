@@ -21,6 +21,10 @@ export async function loadPerson(c) {
 
     const person = await db.prepare('SELECT * FROM people WHERE id = ?').bind(session.person_id).first();
     if (!person) return null;
+    // A merged-away (soft-deleted) identity can't act — its sessions were dropped at
+    // merge time, so this is belt-and-braces. On un-merge deleted_at is nulled and
+    // they sign in fresh.
+    if (person.deleted_at) return null;
 
     // Rolling expiry: refresh if more than a day since last touch.
     const lastUsed = new Date(session.last_used_at);

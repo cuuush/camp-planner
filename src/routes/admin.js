@@ -8,6 +8,8 @@ export const admin = new Hono();
 admin.get('/admin', async (c) => {
     const db = c.env.DB;
     const people = (await db.prepare('SELECT * FROM people ORDER BY last_seen_at DESC').all()).results;
+    // For annotating merged-away identities with where they went.
+    const nameById = new Map(people.map((p) => [p.id, p.display_name]));
 
     const rows = [];
     for (const p of people) {
@@ -24,7 +26,7 @@ admin.get('/admin', async (c) => {
       <tr><th>name</th><th>email?</th><th>joined</th><th>last seen</th><th>last location</th><th>last device</th></tr>
       ${rows.map(({ p, lastEvent }) => html`
         <tr>
-          <td>${p.display_name}</td>
+          <td>${p.display_name}${p.merged_into ? html` <span style="color:#888">(merged into ${nameById.get(p.merged_into) || `#${p.merged_into}`})</span>` : ''}</td>
           <td>${p.email ? 'yes' : 'no'}</td>
           <td>${p.created_at}</td>
           <td>${p.last_seen_at}</td>

@@ -3,6 +3,7 @@ import { html } from 'hono/html';
 import { getCookie, setCookie } from 'hono/cookie';
 import { renderPage } from '../render/layout.js';
 import { logAction } from '../lib/audit.js';
+import { fieldEffects } from '../lib/effects.js';
 import { setCurrentFestCookie } from '../lib/session.js';
 import { needsSignin, signinRedirect } from '../lib/guard.js';
 
@@ -226,7 +227,7 @@ festivals.post('/f/:id/settings', async (c) => {
 
     await logAction(c, {
         festivalId: festival.id, action: 'update', entityType: 'festivals', entityId: festival.id,
-        before, after, reversible: true,
+        before, after, reversible: true, effects: fieldEffects('festivals', festival.id, before, after),
         summary: `${person ? person.display_name : 'someone'} updated fest info for "${after.name}"`,
     });
 

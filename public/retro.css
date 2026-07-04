@@ -267,6 +267,8 @@
   .log-table { font-size: 0.85em; }
   .log-table .log-when { color: #555; }
   .log-table .log-what { white-space: normal; min-width: 150px; }
+  /* Quiet "some of it couldn't be undone" note under a partial-undo entry. */
+  .log-table .log-skip-hint { margin-top: 3px; font-size: 0.9em; color: #7a5c00; font-style: italic; }
   td, th { border: 1px solid #7e9dc4; padding: 6px 8px; }
   th { background: linear-gradient(180deg,#c1d7f2,#9cbde4); color: #0a246a; }
   .btn, button, input[type=submit] {

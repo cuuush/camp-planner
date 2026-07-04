@@ -13,7 +13,12 @@ CREATE TABLE IF NOT EXISTS people (
     is_placeholder INTEGER NOT NULL DEFAULT 0,
     placeholder_key TEXT,
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
-    last_seen_at TEXT NOT NULL DEFAULT (datetime('now'))
+    last_seen_at TEXT NOT NULL DEFAULT (datetime('now')),
+    -- Soft-delete + merge pointer (migration 004). A person is never hard-DELETEd:
+    -- a merge soft-hides the source row and records the survivor in merged_into, so
+    -- the merge is fully reversible and sign-in can follow the chain to the survivor.
+    deleted_at TEXT,
+    merged_into INTEGER
 );
 CREATE INDEX IF NOT EXISTS idx_people_placeholder_key ON people(placeholder_key);
 
@@ -175,6 +180,10 @@ CREATE TABLE IF NOT EXISTS audit_log (
     entity_id INTEGER,
     before_json TEXT,
     after_json TEXT,
+    -- Ordered list of cell-level changes the action made (migration 005). The
+    -- generic undo engine (src/lib/effects.js) reverts/reapplies from this; older
+    -- rows without it fall back to the legacy before/after interpreter.
+    effects_json TEXT,
     summary TEXT NOT NULL,
     reversible INTEGER NOT NULL DEFAULT 0,
     undone_at TEXT,

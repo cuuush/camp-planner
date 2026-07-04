@@ -321,7 +321,7 @@ function campRunSelect(go) {
   if (mode === 'merge') {
     if (ids.length !== 2) return;
     var names = checked.map(function (c) { return c.getAttribute('data-name'); });
-    if (!confirm('Are you sure you want to merge ' + names.join(' and ') + '? Everything they brought, pledged, and said will be combined into one camper. (The real, signed-in account wins.)')) return;
+    if (!confirm('Are you sure you want to merge ' + names.join(' and ') + '? Everything they brought, pledged, and said will be combined into one camper. (The real, signed-in account wins.) This can be undone from the log tab.')) return;
     htmx.ajax('POST', '/f/' + fest + '/people/merge', { target: '#main', swap: 'innerHTML', values: { person_ids: ids.join(',') } });
   } else {
     if (!ids.length) return;
