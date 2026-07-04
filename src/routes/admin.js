@@ -7,9 +7,10 @@ import { getItemMeta } from '../lib/emoji.js';
 export const admin = new Hono();
 
 // One-time-ever cleanup: re-ask the LLM about items stuck on the 📦 fallback.
-// Small batches because each name costs an LLM fetch + a few D1 calls, and a
-// Worker request has a subrequest budget — the page says "Run Again" until done.
-const REEMOJI_BATCH = 10;
+// Small batches because each name costs up to 3 LLM fetches (retries) + a few
+// D1 calls, and a Worker request has a subrequest budget (50 on the free plan)
+// — the page says "Run Again" until done.
+const REEMOJI_BATCH = 8;
 
 admin.get('/admin', async (c) => {
     const db = c.env.DB;
