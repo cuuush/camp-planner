@@ -26,14 +26,14 @@ export function modalFormMarkup(ctx) {
           <button type="button" class="xp-dialog-close" onclick="document.getElementById('signin-modal-overlay').innerHTML=''">✕</button>
         </div>
         <div class="xp-dialog-body">
-          ${ctx.festName ? html`<p class="signin-fest-note">✔ signing in adds you to <b>${ctx.festName}</b>.</p>` : ''}
+          ${ctx.festName ? html`<p class="signin-fest-note">✔ Signing in will also add you to <b>${ctx.festName}</b>.</p>` : ''}
           <form hx-post="/signin" hx-target="#signin-modal-overlay" hx-swap="innerHTML">
             ${hiddenFields(ctx)}
-            <input type="text" name="name" class="signin-name-input" placeholder="your name" required autofocus>
+            <input type="text" name="name" class="signin-name-input" placeholder="Type your name" required autofocus>
             <div class="name-taken-notice"></div>
-            <p class="signin-hint">takes 2 seconds, no password. if u think someone else might use this name, pick something more identifiable haha</p>
-            <input type="email" name="email" placeholder="email (optional, just for notifications)">
-            <button class="btn btn-primary" type="submit" style="width:100%; margin-top:12px;">sign in &amp; continue</button>
+            <p class="signin-hint">To begin, type your name. No password is required. If someone else might use this name, choose one that is more identifiable.</p>
+            <input type="email" name="email" placeholder="E-mail address (optional, for notifications)">
+            <button class="btn btn-primary" type="submit" style="width:100%; margin-top:12px;">Sign In and Continue</button>
           </form>
         </div>
       </div>
@@ -49,13 +49,13 @@ export function signinPageMarkup(ctx) {
     return html`
     <div class="card signin-page">
       <h2 style="margin-top:0;">Sign In</h2>
-      ${ctx.festName ? html`<p class="signin-fest-note">✔ signing in adds you to <b>${ctx.festName}</b>.</p>` : ''}
+      ${ctx.festName ? html`<p class="signin-fest-note">✔ Signing in will also add you to <b>${ctx.festName}</b>.</p>` : ''}
       <form method="post" action="/signin">
         ${hiddenFields(ctx)}
-        <input type="text" name="name" class="signin-name-input" placeholder="your name" required autofocus>
-        <p class="signin-hint">takes 2 seconds, no password. if u think someone else might use this name, pick something more identifiable haha</p>
-        <input type="email" name="email" placeholder="email (optional, just for notifications)">
-        <button class="btn btn-primary" type="submit" style="width:100%; margin-top:12px;">sign in &amp; continue</button>
+        <input type="text" name="name" class="signin-name-input" placeholder="Type your name" required autofocus>
+        <p class="signin-hint">To begin, type your name. No password is required. If someone else might use this name, choose one that is more identifiable.</p>
+        <input type="email" name="email" placeholder="E-mail address (optional, for notifications)">
+        <button class="btn btn-primary" type="submit" style="width:100%; margin-top:12px;">Sign In and Continue</button>
       </form>
     </div>`;
 }
@@ -67,19 +67,19 @@ export function signinPageMarkup(ctx) {
 export function nameTakenWarning(reclaimName, ctx) {
     const vals = { name: reclaimName, next: ctx.next || '', expand: ctx.expandId || '', replay_path: ctx.replayPath || '', replay_body: ctx.replayBody || '' };
     return xpDialogPopup({
-        title: 'Name already in use',
+        title: 'Name Already in Use',
         id: 'name-taken',
         icon: '/notify.png',
         big: true,
-        // While this is up, the sign-in form is stashed; dismissing (✕ or "pick
-        // another") brings it back with whatever they'd typed still there.
+        // While this is up, the sign-in form is stashed; dismissing (✕ or "Choose
+        // Another") brings it back with whatever they'd typed still there.
         onClose: 'campRestoreSignin()',
-        message: html`<b>${reclaimName}</b> is already signed up. If that's you, go ahead and sign in — otherwise close this and pick a more specific name.`,
+        message: html`The name <b>${reclaimName}</b> is already in use. If this is you, click <b>Yes, That's Me</b> to sign in. If not, click <b>Choose Another</b> and pick a name that is more identifiable.`,
         buttons: html`
-          <button class="btn" type="button" onclick="campRestoreSignin();closePopup(this)">pick another</button>
+          <button class="btn" type="button" onclick="campRestoreSignin();closePopup(this)">Choose Another</button>
           <button class="btn btn-primary" type="button"
             hx-post="/signin/reclaim" hx-target="#signin-modal-overlay" hx-swap="innerHTML"
-            hx-vals='${JSON.stringify(vals)}'>yep, that's me</button>`,
+            hx-vals='${JSON.stringify(vals)}'>Yes, That's Me</button>`,
     });
 }
 

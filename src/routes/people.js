@@ -44,17 +44,17 @@ async function renderPplBody(c, festival) {
     <p class="ppl-count">${members.length} ${members.length === 1 ? 'person' : 'people'} going</p>
     <div class="ppl-add-bar">
       <button class="btn" type="button"
-        hx-get="/f/${festival.id}/people/add-window" hx-target="#popup-layer" hx-swap="beforeend">＋ add person</button>
+        hx-get="/f/${festival.id}/people/add-window" hx-target="#popup-layer" hx-swap="beforeend">＋ Add Person</button>
       ${person
-          ? html`<button class="btn" type="button" onclick="campEnterSelect(this,'merge')">merge</button>
-                 <button class="btn" type="button" onclick="campEnterSelect(this,'delete')">delete</button>`
-          : html`<button class="btn" type="button" hx-get="/signin/modal?next=/f/${festival.id}/ppl" hx-target="#signin-modal-overlay" hx-swap="innerHTML">merge</button>
-                 <button class="btn" type="button" hx-get="/signin/modal?next=/f/${festival.id}/ppl" hx-target="#signin-modal-overlay" hx-swap="innerHTML">delete</button>`}
+          ? html`<button class="btn" type="button" onclick="campEnterSelect(this,'merge')">Merge</button>
+                 <button class="btn" type="button" onclick="campEnterSelect(this,'delete')">Delete</button>`
+          : html`<button class="btn" type="button" hx-get="/signin/modal?next=/f/${festival.id}/ppl" hx-target="#signin-modal-overlay" hx-swap="innerHTML">Merge</button>
+                 <button class="btn" type="button" hx-get="/signin/modal?next=/f/${festival.id}/ppl" hx-target="#signin-modal-overlay" hx-swap="innerHTML">Delete</button>`}
     </div>
     <div class="ppl-select-bar" data-fest="${festival.id}" hidden>
       <span class="ppl-select-hint"></span>
-      <button class="btn btn-primary ppl-select-go" type="button" disabled onclick="campRunSelect(this)">go</button>
-      <button class="btn" type="button" onclick="campCancelSelect(this)">cancel</button>
+      <button class="btn btn-primary ppl-select-go" type="button" disabled onclick="campRunSelect(this)">Go</button>
+      <button class="btn" type="button" onclick="campCancelSelect(this)">Cancel</button>
     </div>
     <div class="ppl-list">
       ${members.map((m) => html`
@@ -108,14 +108,14 @@ people.get('/f/:id/people/add-window', async (c) => {
     if (!festival) return c.notFound();
     if (needsSignin(c)) return signinModalResponse(c);
     return c.html(xpPopup({
-        title: 'Add person',
+        title: 'Add Person',
         id: `add-person-${festival.id}`,
         body: html`
-          <p class="popup-hint">add someone who hasn't signed up yet. when they log in with this exact name, their seats &amp; check-offs link up automatically.</p>
+          <p class="popup-hint">Add a camper who has not signed up yet. When they sign in with this exact name, their seats and check-offs will link up automatically.</p>
           <form class="popup-form" hx-post="/f/${festival.id}/people/add" hx-target="#main" hx-swap="innerHTML"
             hx-on::after-request="if(event.detail.successful) closePopup(this)" autocomplete="off">
-            <input type="text" name="name" placeholder="their name" required data-1p-ignore data-lpignore="true">
-            <button class="btn btn-primary" type="submit">add to list</button>
+            <input type="text" name="name" placeholder="Type their name" required data-1p-ignore data-lpignore="true">
+            <button class="btn btn-primary" type="submit">Add to List</button>
           </form>`,
     }));
 });

@@ -77,9 +77,14 @@ who brings what, who rides with whom, who bought their parking pass.
 - [ ] One goofy retro template, from `camp@robot.cuuush.com`, with an unsubscribe link.
 - [ ] Don't email people about their own actions.
 
-## Vibe (1995, but works on a phone)
+## Vibe (Windows XP, but works on a phone)
 
-- [ ] GeoCities energy, mobile-usable: web-safe colors, beveled buttons, dense tables, goofy lowercase copy throughout ("whos bringing what", "i got one!!").
+> Superseded the original GeoCities direction: the whole app is now full Windows XP
+> "Luna" — the site lives in an XP window with taskbar, Start menu, Rover, MSN chat
+> windows, and Control Panel. UI copy follows suit: system chrome reads like real
+> XP dialog text (see AGENTS.md → Conventions), while in-content fun stays playful.
+
+- [x] Authentic XP chrome, mobile-usable: Luna window frames, Tahoma, real XP buttons/checkboxes/scrollbars; copy in genuine XP voice for dialogs and hints.
 - [ ] Static (non-animated) flair: NEW! starbursts, rainbow gradient text, ★ dividers.
 - [ ] 88x31 badge row in the footer — Chris supplies the images, leave placeholder slots for: under construction, best viewed in Netscape/IE, valid HTML, NEW!, mailbox, misc rave badges.
 - [ ] Webring footer: "← prev | random | next →" cycling through the site's festivals.

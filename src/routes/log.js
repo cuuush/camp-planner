@@ -36,7 +36,7 @@ async function renderLogBody(c, festival) {
           <td class="log-what">${e.summary}${e.undone_at ? html` <i>(undone)</i>` : ''}</td>
           <td>
             ${e.reversible && !e.undone_at ? html`
-              <form hx-post="/f/${festival.id}/log/${e.id}/undo" hx-target="#main" hx-swap="innerHTML" hx-confirm="${label} this?">
+              <form hx-post="/f/${festival.id}/log/${e.id}/undo" hx-target="#main" hx-swap="innerHTML" hx-confirm="Are you sure you want to ${label} this?">
                 <button class="btn" type="submit">${label}</button>
               </form>` : ''}
           </td>
