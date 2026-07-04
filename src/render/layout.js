@@ -49,6 +49,11 @@ function dogTip(festival) {
             body: html`If a camper accidentally signs in under two different names, click <b>Merge</b> on the <b>ppl</b> tab and select both entries. They will be combined into one camper, and nothing they did is lost.`,
             links: html`<li><a href="/f/${festival.id}/ppl">Go to the ppl tab</a></li>`,
         });
+        tips.push({
+            title: 'Made a mistake? You can undo it!',
+            body: html`Almost everything that happens here is recorded and reversible. To take something back, click the <b>log</b> tab and then click <b>undo</b> next to the entry. Changed your mind again? You can even undo an undo — click <b>redo</b> and it comes right back. Nothing is ever really lost.`,
+            links: html`<li><a href="/f/${festival.id}/log">Go to the log tab</a></li>`,
+        });
     }
     const t = tips[Math.floor(Math.random() * tips.length)];
     return html`
