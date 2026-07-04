@@ -1,6 +1,7 @@
 import { normalizeName } from './names.js';
 import { randomToken } from './tokens.js';
 import { ensureMembershipForPerson } from './festival.js';
+import { sqlNow } from './effects.js';
 
 // Create a placeholder ("ghost") person — someone added to a fest/car by name who
 // hasn't logged in yet. They're a real `people` row (so seats/memberships/etc. can
@@ -83,16 +84,37 @@ export async function mergePeople(db, fromId, toId) {
 // pledge. The manifest lists only rows that were ACTIVE at delete time, so undo
 // never resurrects something that was already gone.
 
-export async function purgeFootprint(db, m) {
+export async function purgeFootprint(db, m, stamp) {
     m = m || {};
-    const soft = async (t, ids) => { for (const id of ids || []) await db.prepare(`UPDATE ${t} SET deleted_at = datetime('now') WHERE id = ?`).bind(id).run(); };
+    // `stamp` lets the caller hide every row with the SAME timestamp it records in
+    // the entry's effects, so the undo engine's guard matches exactly. Legacy
+    // callers (the pre-effects reapply path) pass none and get datetime('now').
+    const s = stamp || (await db.prepare("SELECT datetime('now') AS n").first()).n;
+    const soft = async (t, ids) => { for (const id of ids || []) await db.prepare(`UPDATE ${t} SET deleted_at = ? WHERE id = ?`).bind(s, id).run(); };
     await soft('pledges', m.pledges);
     await soft('seats', m.seats);
     await soft('votes', m.votes);
     await soft('comments', m.comments);
     await soft('cars', m.cars);
-    for (const id of m.checks || []) await db.prepare("UPDATE checklist_checks SET unchecked_at = datetime('now') WHERE id = ?").bind(id).run();
-    for (const id of m.memberships || []) await db.prepare("UPDATE memberships SET bailed_at = datetime('now') WHERE id = ?").bind(id).run();
+    for (const id of m.checks || []) await db.prepare('UPDATE checklist_checks SET unchecked_at = ? WHERE id = ?').bind(s, id).run();
+    for (const id of m.memberships || []) await db.prepare('UPDATE memberships SET bailed_at = ? WHERE id = ?').bind(s, id).run();
+}
+
+// Build the cell-level effects for a footprint hidden with `stamp` — one effect per
+// row, matching what purgeFootprint(db, manifest, stamp) actually wrote. Undo walks
+// these to un-hide precisely those rows (and only if still hidden by this action).
+export function footprintEffects(m, stamp) {
+    m = m || {};
+    const effects = [];
+    const del = (t, ids, col) => { for (const id of ids || []) effects.push({ t, id, col, from: null, to: stamp }); };
+    del('pledges', m.pledges, 'deleted_at');
+    del('seats', m.seats, 'deleted_at');
+    del('votes', m.votes, 'deleted_at');
+    del('comments', m.comments, 'deleted_at');
+    del('cars', m.cars, 'deleted_at');
+    del('checklist_checks', m.checks, 'unchecked_at');
+    del('memberships', m.memberships, 'bailed_at');
+    return effects;
 }
 
 export async function restoreFootprint(db, m) {
@@ -122,8 +144,11 @@ export async function deletePersonFootprint(db, festivalId, personId) {
         checks: await pick('SELECT cc.id FROM checklist_checks cc JOIN checklist_tasks t ON t.id = cc.task_id WHERE cc.person_id = ? AND t.festival_id = ? AND cc.unchecked_at IS NULL', personId, festivalId),
         memberships: await pick('SELECT id FROM memberships WHERE person_id = ? AND festival_id = ? AND bailed_at IS NULL', personId, festivalId),
     };
-    await purgeFootprint(db, manifest);
-    return manifest;
+    // Hide it all with one shared stamp, and return both the manifest (kept in
+    // before/after for display + legacy undo) and the matching effects list.
+    const stamp = sqlNow();
+    await purgeFootprint(db, manifest, stamp);
+    return { manifest, effects: footprintEffects(manifest, stamp) };
 }
 
 // After a real login, find & merge any placeholders that share this person's name

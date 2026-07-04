@@ -3,6 +3,7 @@ import { html } from 'hono/html';
 import { renderPage } from '../render/layout.js';
 import { loadFestival, ensureMembership } from '../lib/festival.js';
 import { logAction } from '../lib/audit.js';
+import { sqlNow, createEffect, deleteEffect } from '../lib/effects.js';
 import { needsSignin, signinModalResponse, signinRedirect } from '../lib/guard.js';
 import { createPlaceholder, mergePeople, deletePersonFootprint } from '../lib/people.js';
 import { xpPopup } from '../render/popup.js';
@@ -129,11 +130,19 @@ people.post('/f/:id/people/add', async (c) => {
     const name = (body.name || '').toString().trim();
     if (!name) return c.html(await renderPplBody(c, festival));
 
-    const ghost = await createPlaceholder(c, festival.id, name);
+    const ghost = await createPlaceholder(c, festival.id, name); // creates person + joins fest
     if (ghost) {
+        // Adding a ghost creates the person row AND joins them (a membership). Make it
+        // undoable from the log like every other create (G9): undo hides the person
+        // and bails the membership; redo brings both back.
+        const membership = await db.prepare('SELECT id FROM memberships WHERE festival_id = ? AND person_id = ?')
+            .bind(festival.id, ghost.id).first();
+        const now = sqlNow();
+        const effects = [createEffect('people', ghost.id, now)];
+        if (membership) effects.push({ t: 'memberships', id: membership.id, col: 'bailed_at', from: now, to: null });
         await logAction(c, {
             festivalId: festival.id, action: 'create', entityType: 'people', entityId: ghost.id,
-            reversible: false,
+            reversible: true, effects,
             summary: `${person.display_name} added ${name} to the list`,
         });
     }
@@ -186,7 +195,7 @@ people.post('/f/:id/people/delete', async (c) => {
     for (const pid of ids) {
         const target = await db.prepare('SELECT display_name FROM people WHERE id = ?').bind(pid).first();
         if (!target) continue;
-        const manifest = await deletePersonFootprint(db, festival.id, pid);
+        const { manifest, effects } = await deletePersonFootprint(db, festival.id, pid);
         // End their sessions so a removed person can't keep acting on this fest —
         // otherwise their next click would auto-rejoin them (logAction →
         // ensureMembership) and spawn fresh rows, which a later undo of THIS delete
@@ -196,7 +205,7 @@ people.post('/f/:id/people/delete', async (c) => {
         await db.prepare('DELETE FROM sessions WHERE person_id = ?').bind(pid).run();
         await logAction(c, {
             festivalId: festival.id, action: 'delete', entityType: 'people', entityId: pid,
-            before: manifest, after: manifest, reversible: true,
+            before: manifest, after: manifest, effects, reversible: true,
             summary: `${actor.display_name} removed ${target.display_name} from ${festival.name} — undo to restore everything`,
         });
     }
@@ -281,7 +290,7 @@ people.post('/f/:id/checklist/tasks', async (c) => {
 
     await logAction(c, {
         festivalId: festival.id, action: 'create', entityType: 'checklist_tasks', entityId: result.meta.last_row_id,
-        reversible: true,
+        reversible: true, effects: [createEffect('checklist_tasks', result.meta.last_row_id, sqlNow())],
         summary: `${person ? person.display_name : 'someone'} added checklist column "${label}"`,
     });
 
@@ -299,11 +308,12 @@ people.post('/checklist/:taskId/delete', async (c) => {
     if (task.is_default) return c.notFound();
     const festival = await db.prepare('SELECT * FROM festivals WHERE id = ?').bind(task.festival_id).first();
 
-    await db.prepare("UPDATE checklist_tasks SET deleted_at = datetime('now') WHERE id = ?").bind(taskId).run();
+    const stamp = sqlNow();
+    await db.prepare('UPDATE checklist_tasks SET deleted_at = ? WHERE id = ?').bind(stamp, taskId).run();
 
     await logAction(c, {
         festivalId: festival.id, action: 'delete', entityType: 'checklist_tasks', entityId: taskId,
-        reversible: true,
+        reversible: true, effects: [deleteEffect('checklist_tasks', taskId, stamp)],
         summary: `${person ? person.display_name : 'someone'} removed checklist column "${task.label}"`,
     });
 
@@ -322,25 +332,32 @@ people.post('/f/:id/people/:personId/bail', async (c) => {
     if (!membership) return c.html(await renderPplBody(c, festival));
     const target = await db.prepare('SELECT display_name FROM people WHERE id = ?').bind(personId).first();
 
-    await db.prepare("UPDATE memberships SET bailed_at = datetime('now') WHERE id = ?").bind(membership.id).run();
+    // Collect exactly which pledges + seats this bail releases BEFORE hiding them,
+    // so undo restores them too — not just the membership flip (G2). One shared
+    // stamp goes into every hidden cell and its matching effect.
+    const stamp = sqlNow();
+    const releasedPledges = (await db.prepare(`
+        SELECT p.id FROM pledges p WHERE p.person_id = ? AND p.deleted_at IS NULL
+        AND p.item_id IN (SELECT id FROM items WHERE festival_id = ?)
+    `).bind(personId, festival.id).all()).results.map((r) => r.id);
+    const releasedSeats = (await db.prepare(`
+        SELECT s.id FROM seats s WHERE s.person_id = ? AND s.deleted_at IS NULL
+        AND s.car_id IN (SELECT id FROM cars WHERE festival_id = ?)
+    `).bind(personId, festival.id).all()).results.map((r) => r.id);
 
-    // Release pledges back to unclaimed.
-    await db.prepare(`
-        UPDATE pledges SET deleted_at = datetime('now')
-        WHERE person_id = ? AND deleted_at IS NULL
-        AND item_id IN (SELECT id FROM items WHERE festival_id = ?)
-    `).bind(personId, festival.id).run();
+    await db.prepare('UPDATE memberships SET bailed_at = ? WHERE id = ?').bind(stamp, membership.id).run();
+    for (const pid of releasedPledges) await db.prepare('UPDATE pledges SET deleted_at = ? WHERE id = ?').bind(stamp, pid).run();
+    for (const sid of releasedSeats) await db.prepare('UPDATE seats SET deleted_at = ? WHERE id = ?').bind(stamp, sid).run();
 
-    // Release car seats back to open.
-    await db.prepare(`
-        UPDATE seats SET deleted_at = datetime('now')
-        WHERE person_id = ? AND deleted_at IS NULL
-        AND car_id IN (SELECT id FROM cars WHERE festival_id = ?)
-    `).bind(personId, festival.id).run();
+    const effects = [
+        { t: 'memberships', id: membership.id, col: 'bailed_at', from: null, to: stamp },
+        ...releasedPledges.map((pid) => deleteEffect('pledges', pid, stamp)),
+        ...releasedSeats.map((sid) => deleteEffect('seats', sid, stamp)),
+    ];
 
     await logAction(c, {
         festivalId: festival.id, action: 'bail', entityType: 'memberships', entityId: membership.id,
-        reversible: true,
+        reversible: true, effects,
         summary: `${target ? target.display_name : 'someone'} isn't going anymore 😢 (pledges & seats released)`,
     });
 

@@ -3,6 +3,7 @@ import { html, raw } from 'hono/html';
 import { renderPage } from '../render/layout.js';
 import { loadFestival } from '../lib/festival.js';
 import { logAction } from '../lib/audit.js';
+import { sqlNow, createEffect, deleteEffect, fieldEffects } from '../lib/effects.js';
 import { getItemMeta } from '../lib/emoji.js';
 import { notify } from '../lib/notify.js';
 import { needsSignin, signinModalResponse } from '../lib/guard.js';
@@ -298,9 +299,10 @@ items.post('/f/:id/items', async (c) => {
         person ? person.id : null,
     ).run();
 
+    const itemId = result.meta.last_row_id;
     await logAction(c, {
-        festivalId: festival.id, action: 'create', entityType: 'items', entityId: result.meta.last_row_id,
-        reversible: true,
+        festivalId: festival.id, action: 'create', entityType: 'items', entityId: itemId,
+        reversible: true, effects: [createEffect('items', itemId, sqlNow())],
         summary: `${person ? person.display_name : 'someone'} added ${emoji} ${name}`,
     });
 
@@ -309,10 +311,10 @@ items.post('/f/:id/items', async (c) => {
     const bringing = !!body.bringing && person;
     if (bringing) {
         const pledgeResult = await db.prepare('INSERT INTO pledges (item_id, person_id, qty) VALUES (?, ?, ?)')
-            .bind(result.meta.last_row_id, person.id, qty).run();
+            .bind(itemId, person.id, qty).run();
         await logAction(c, {
             festivalId: festival.id, action: 'create', entityType: 'pledges', entityId: pledgeResult.meta.last_row_id,
-            reversible: true,
+            reversible: true, effects: [createEffect('pledges', pledgeResult.meta.last_row_id, sqlNow())],
             summary: `${person.display_name} is bringing ${emoji} ${name}`,
         });
     }
@@ -360,11 +362,9 @@ items.post('/items/:itemId/edit', async (c) => {
     await db.prepare('UPDATE items SET name=?, emoji=?, needed_qty=?, unit=?, description=? WHERE id=?')
         .bind(after.name, after.emoji, after.needed_qty, after.unit, after.description, item.id).run();
 
-    await logAction(c, {
-        festivalId: festival.id, action: 'update', entityType: 'items', entityId: item.id,
-        before, after, reversible: true,
-        summary: `${person ? person.display_name : 'someone'} changed ${after.name}`,
-    });
+    // One effect per CHANGED column only — undoing an old edit reverts just what it
+    // touched, never blind-clobbering a newer edit (G5).
+    const effects = fieldEffects('items', item.id, before, after);
 
     // Leave a trail in the comments so "why does this need 4 now?" is self-answering.
     const changes = [];
@@ -375,12 +375,20 @@ items.post('/items/:itemId/edit', async (c) => {
 
     if (changes.length) {
         // Drop an auto-note into the item's comment thread so the change is
-        // self-explaining — but DON'T log it. The edit itself is already logged
-        // above; a second "left a note" entry is just noise in the log/ticker.
+        // self-explaining — but DON'T log it separately. Instead fold the note's
+        // deleted_at into THIS edit's effects, so undoing the edit also hides the
+        // now-false note ("changed 3 to 6" when it's back to 3) — closing G10.
         const noteBody = changes.join(', ');
-        await db.prepare("INSERT INTO comments (target_type, target_id, person_id, body) VALUES ('item', ?, ?, ?)")
+        const noteResult = await db.prepare("INSERT INTO comments (target_type, target_id, person_id, body) VALUES ('item', ?, ?, ?)")
             .bind(item.id, person ? person.id : null, noteBody).run();
+        effects.push(createEffect('comments', noteResult.meta.last_row_id, sqlNow()));
     }
+
+    await logAction(c, {
+        festivalId: festival.id, action: 'update', entityType: 'items', entityId: item.id,
+        before, after, effects, reversible: true,
+        summary: `${person ? person.display_name : 'someone'} changed ${after.name}`,
+    });
 
     return itemRowResponse(c, festival, item.id, true);
 });
@@ -393,11 +401,12 @@ items.post('/items/:itemId/delete', async (c) => {
     const db = c.env.DB;
     const person = c.get('person');
 
-    await db.prepare("UPDATE items SET deleted_at = datetime('now') WHERE id = ?").bind(item.id).run();
+    const stamp = sqlNow();
+    await db.prepare('UPDATE items SET deleted_at = ? WHERE id = ?').bind(stamp, item.id).run();
 
     await logAction(c, {
         festivalId: festival.id, action: 'delete', entityType: 'items', entityId: item.id,
-        reversible: true,
+        reversible: true, effects: [deleteEffect('items', item.id, stamp)],
         summary: `${person ? person.display_name : 'someone'} deleted ${item.emoji} ${item.name}`,
     });
 
@@ -451,6 +460,7 @@ items.post('/items/:itemId/pledge', async (c) => {
         await logAction(c, {
             festivalId: festival.id, action: 'update', entityType: 'pledges', entityId: existing.id,
             before: { qty: existing.qty }, after: { qty: newQty }, reversible: true,
+            effects: fieldEffects('pledges', existing.id, { qty: existing.qty }, { qty: newQty }),
             summary: `${person.display_name} changed their pledge on ${item.emoji} ${item.name} to ${newQty}`,
         });
     } else {
@@ -458,7 +468,7 @@ items.post('/items/:itemId/pledge', async (c) => {
             .bind(item.id, person.id, qty).run();
         await logAction(c, {
             festivalId: festival.id, action: 'create', entityType: 'pledges', entityId: result.meta.last_row_id,
-            reversible: true,
+            reversible: true, effects: [createEffect('pledges', result.meta.last_row_id, sqlNow())],
             summary: `${person.display_name} pledged ${qty} ${item.unit || ''} of ${item.emoji} ${item.name}`,
         });
     }
@@ -482,11 +492,12 @@ items.post('/pledges/:pledgeId/withdraw', async (c) => {
     const item = await db.prepare('SELECT * FROM items WHERE id = ?').bind(pledge.item_id).first();
     const festival = await db.prepare('SELECT * FROM festivals WHERE id = ?').bind(item.festival_id).first();
 
-    await db.prepare("UPDATE pledges SET deleted_at = datetime('now') WHERE id = ?").bind(id).run();
+    const stamp = sqlNow();
+    await db.prepare('UPDATE pledges SET deleted_at = ? WHERE id = ?').bind(stamp, id).run();
 
     await logAction(c, {
         festivalId: festival.id, action: 'delete', entityType: 'pledges', entityId: id,
-        reversible: true,
+        reversible: true, effects: [deleteEffect('pledges', id, stamp)],
         summary: `${person ? person.display_name : 'someone'} withdrew their pledge on ${item.name}`,
     });
 
