@@ -6,6 +6,7 @@ import { logAction } from '../lib/audit.js';
 import { getItemMeta } from '../lib/emoji.js';
 import { notify } from '../lib/notify.js';
 import { needsSignin, signinModalResponse } from '../lib/guard.js';
+import { loadComments, handleCommentPost } from '../lib/comments.js';
 import { msnChat, escapeHtml } from '../render/msn.js';
 
 export const items = new Hono();
@@ -32,11 +33,7 @@ async function itemStats(db, item) {
 
     const votes = (await db.prepare('SELECT person_id FROM votes WHERE item_id = ? AND deleted_at IS NULL').bind(item.id).all()).results;
 
-    const comments = (await db.prepare(`
-        SELECT c.id, c.body, c.created_at, pe.display_name FROM comments c
-        JOIN people pe ON pe.id = c.person_id
-        WHERE c.target_type = 'item' AND c.target_id = ? AND c.deleted_at IS NULL ORDER BY c.created_at
-    `).bind(item.id).all()).results;
+    const comments = await loadComments(db, 'item', item.id);
 
     const adder = item.added_by
         ? await db.prepare('SELECT display_name FROM people WHERE id = ?').bind(item.added_by).first()
@@ -501,26 +498,13 @@ items.post('/items/:itemId/comments', async (c) => {
     if (!loaded) return c.notFound();
     const { item, festival } = loaded;
     if (needsSignin(c)) return signinModalResponse(c, { expandId: `item-${item.id}` });
-    const db = c.env.DB;
     const person = c.get('person');
-    const body = await c.req.parseBody();
-    const text = (body.body || '').toString().trim();
-    if (!text) return itemRowResponse(c, festival, item.id, true, true);
-
-    const result = await db.prepare("INSERT INTO comments (target_type, target_id, person_id, body) VALUES ('item', ?, ?, ?)")
-        .bind(item.id, person.id, text).run();
-
-    await logAction(c, {
-        festivalId: festival.id, action: 'create', entityType: 'comments', entityId: result.meta.last_row_id,
-        reversible: true,
+    return handleCommentPost(c, {
+        festival, targetType: 'item', targetId: item.id,
+        ownerPersonId: item.added_by,
         summary: `${person.display_name} commented on ${item.name}`,
+        notifyHeading: `${person.display_name} commented on your item`,
+        notifyBody: (text) => `${person.display_name} said "${text}" on ${item.name} (${festival.name}).`,
+        respond: () => itemRowResponse(c, festival, item.id, true, true),
     });
-
-    await notify(c.env, {
-        festivalId: festival.id, targetPersonId: item.added_by, actorPersonId: person.id,
-        heading: `${person.display_name} commented on your item`,
-        body: `${person.display_name} said "${text}" on ${item.name} (${festival.name}).`,
-    });
-
-    return itemRowResponse(c, festival, item.id, true, true);
 });

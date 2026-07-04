@@ -5,6 +5,7 @@ import { loadFestival, ensureMembershipForPerson } from '../lib/festival.js';
 import { logAction } from '../lib/audit.js';
 import { notify } from '../lib/notify.js';
 import { needsSignin, signinModalResponse } from '../lib/guard.js';
+import { loadComments, handleCommentPost } from '../lib/comments.js';
 import { createPlaceholder } from '../lib/people.js';
 import { msnChat, escapeHtml } from '../render/msn.js';
 import { xpPopup } from '../render/popup.js';
@@ -18,11 +19,7 @@ async function carStats(db, car) {
         WHERE s.car_id = ? AND s.deleted_at IS NULL ORDER BY s.created_at
     `).bind(car.id).all()).results;
 
-    const comments = (await db.prepare(`
-        SELECT c.id, c.body, pe.display_name FROM comments c
-        JOIN people pe ON pe.id = c.person_id
-        WHERE c.target_type = 'car' AND c.target_id = ? AND c.deleted_at IS NULL ORDER BY c.created_at
-    `).bind(car.id).all()).results;
+    const comments = await loadComments(db, 'car', car.id);
 
     return { seats, comments };
 }
@@ -392,26 +389,13 @@ rides.post('/cars/:carId/comments', async (c) => {
     if (!loaded) return c.notFound();
     const { car, festival, driver } = loaded;
     if (needsSignin(c)) return signinModalResponse(c, { expandId: `car-${car.id}` });
-    const db = c.env.DB;
     const person = c.get('person');
-    const body = await c.req.parseBody();
-    const text = (body.body || '').toString().trim();
-    if (!text) return carResponse(c, festival, car.id, true, true);
-
-    const result = await db.prepare("INSERT INTO comments (target_type, target_id, person_id, body) VALUES ('car', ?, ?, ?)")
-        .bind(car.id, person.id, text).run();
-
-    await logAction(c, {
-        festivalId: festival.id, action: 'create', entityType: 'comments', entityId: result.meta.last_row_id,
-        reversible: true,
+    return handleCommentPost(c, {
+        festival, targetType: 'car', targetId: car.id,
+        ownerPersonId: car.driver_person_id,
         summary: `${person.display_name} commented on ${driver.display_name}'s car`,
+        notifyHeading: `${person.display_name} commented on your car`,
+        notifyBody: (text) => `${person.display_name} said "${text}" on your car thread (${festival.name}).`,
+        respond: () => carResponse(c, festival, car.id, true, true),
     });
-
-    await notify(c.env, {
-        festivalId: festival.id, targetPersonId: car.driver_person_id, actorPersonId: person.id,
-        heading: `${person.display_name} commented on your car`,
-        body: `${person.display_name} said "${text}" on your car thread (${festival.name}).`,
-    });
-
-    return carResponse(c, festival, car.id, true, true);
 });
