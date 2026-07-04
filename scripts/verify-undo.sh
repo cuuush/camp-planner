@@ -118,6 +118,57 @@ QTY=$(sql "SELECT needed_qty FROM items WHERE id=$ITEM")
 [ "$QTY" = "8" ] && ok "qty stayed 8 (first edit's undo was skipped)" || bad "qty is $QTY, expected 8 — G5 clobber"
 echo
 
+# ── Scenario 5 — Reversible merge of two reals (G1, G7) ──────────────────────────
+echo "5. Merge two reals (G1): both vote an item, merge B→A, then un-merge"
+signin ma "Alpha" "/f/1/stuff"
+signin mb "Beta" "/f/1/stuff"
+AID=$(sql "SELECT id FROM people WHERE display_name='Alpha'")
+BID=$(sql "SELECT id FROM people WHERE display_name='Beta'")
+ITEM5=$(sql "SELECT id FROM items WHERE festival_id=1 ORDER BY id LIMIT 1 OFFSET 2")
+post ma "/items/$ITEM5/vote"
+post mb "/items/$ITEM5/vote"
+# merge Beta → Alpha (select order: Alpha first = survivor)
+post ma "/f/1/people/merge" --data "person_ids=$AID,$BID"
+BROW=$(sql "SELECT count(*) FROM people WHERE id=$BID")
+BDEL=$(sql "SELECT deleted_at FROM people WHERE id=$BID")
+BINTO=$(sql "SELECT merged_into FROM people WHERE id=$BID")
+BVOTE=$(sql "SELECT count(*) FROM votes WHERE person_id=$BID")
+BSESS=$(sql "SELECT count(*) FROM sessions WHERE person_id=$BID")
+MERGE_ENTRY=$(sql "SELECT id FROM audit_log WHERE action='merge' AND entity_id=$AID ORDER BY id DESC LIMIT 1")
+[ "$BROW" = "1" ] && ok "Beta's person row still exists (soft-deleted, not destroyed)" || bad "Beta row hard-deleted — G1"
+[ -n "$BDEL" ] && [ "$BINTO" = "$AID" ] && ok "Beta soft-deleted + merged_into=Alpha" || bad "Beta not soft-merged (deleted=$BDEL into=$BINTO)"
+[ "$BVOTE" = "1" ] && ok "Beta's vote row preserved (not destroyed)" || bad "Beta's vote row gone ($BVOTE) — G1"
+[ "$BSESS" = "0" ] && ok "Beta's sessions dropped (device can't be the survivor)" || bad "Beta sessions remain ($BSESS) — G7"
+[ -n "$MERGE_ENTRY" ] && ok "merge logged with an undo button (reversible)" || bad "merge not logged reversibly"
+# now UN-MERGE
+post ma "/f/1/log/$MERGE_ENTRY/undo"
+BDEL2=$(sql "SELECT deleted_at FROM people WHERE id=$BID")
+BINTO2=$(sql "SELECT merged_into FROM people WHERE id=$BID")
+BVOTE2=$(sql "SELECT count(*) FROM votes WHERE person_id=$BID AND deleted_at IS NULL")
+[ -z "$BDEL2" ] && [ -z "$BINTO2" ] && ok "un-merge: Beta live again (deleted_at & merged_into cleared)" || bad "un-merge left Beta merged (deleted=$BDEL2 into=$BINTO2)"
+[ "$BVOTE2" = "1" ] && ok "un-merge: Beta's vote back on Beta" || bad "un-merge didn't restore Beta's vote ($BVOTE2)"
+echo
+
+# ── Scenario 9 — Absorb is logged; dead ghosts don't absorb (G8) ─────────────────
+echo "9. Absorb (G8): ghost absorbed+logged; a removed ghost does NOT absorb"
+signin adder "Adder" "/f/1/stuff"
+post adder "/f/1/people/add" --data "name=Casper"
+GID=$(sql "SELECT id FROM people WHERE display_name='Casper' AND is_placeholder=1")
+signin casper "Casper" "/f/1/stuff"    # real Casper signs in → should absorb the ghost
+ABSORB=$(sql "SELECT count(*) FROM audit_log WHERE action='merge' AND summary LIKE '%linked up their pre-added entry%'")
+GHOST_GONE=$(sql "SELECT deleted_at FROM people WHERE id=$GID")
+[ "$ABSORB" -ge "1" ] && ok "absorb was logged as a reversible merge" || bad "absorb not logged — G8"
+[ -n "$GHOST_GONE" ] && ok "ghost soft-merged into the real Casper" || bad "ghost not merged"
+# dead ghost: add + delete a ghost, then sign in with its name → NO absorb, fresh acct
+post adder "/f/1/people/add" --data "name=Wisp"
+WID=$(sql "SELECT id FROM people WHERE display_name='Wisp' AND is_placeholder=1")
+post adder "/f/1/people/delete" --data "person_ids=$WID"
+signin wisp "Wisp" "/f/1/stuff"
+WISP_REAL=$(sql "SELECT count(*) FROM people WHERE placeholder_key IS NULL AND normalized_name NOT LIKE '__ph_%' AND display_name='Wisp'")
+GHOST_STILL_DEAD=$(sql "SELECT count(*) FROM people WHERE id=$WID AND merged_into IS NOT NULL")
+[ "$GHOST_STILL_DEAD" = "0" ] && ok "dead ghost was NOT absorbed by the new sign-in" || bad "dead ghost got glued to sign-in — G8"
+echo
+
 # ── Scenario 8 — Cross-fest forgery is refused (G6) ──────────────────────────────
 echo "8. Cross-fest forgery (G6): undo a fest-1 entry via a fest-2 URL → 404"
 signin s8 "Forger" "/f/1/stuff"

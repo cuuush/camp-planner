@@ -31,7 +31,6 @@ export const SOFT_DELETE_COL = {
 // they live as JSON in the DB forever — validate before interpolating into SQL so a
 // corrupt or hand-edited row can never turn into an injection or a wild write.
 const WRITABLE = {
-    items: ['deleted_at', 'name', 'emoji', 'needed_qty', 'unit', 'description'],
     pledges: ['deleted_at', 'qty', 'person_id'],
     votes: ['deleted_at', 'person_id'],
     comments: ['deleted_at', 'person_id'],
@@ -39,7 +38,8 @@ const WRITABLE = {
     seats: ['deleted_at', 'person_id'],
     checklist_tasks: ['deleted_at'],
     checklist_checks: ['unchecked_at', 'checked_at', 'person_id'],
-    festivals: ['deleted_at', 'name', 'blurb', 'start_date', 'end_date', 'location', 'ticket_url', 'parking_url'],
+    festivals: ['deleted_at', 'name', 'blurb', 'start_date', 'end_date', 'location', 'ticket_url', 'parking_url', 'created_by'],
+    items: ['deleted_at', 'name', 'emoji', 'needed_qty', 'unit', 'description', 'added_by'],
     memberships: ['bailed_at', 'person_id'],
     people: ['deleted_at', 'merged_into'],
     name_reclaim_log: ['person_id'],

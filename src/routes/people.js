@@ -170,9 +170,10 @@ people.post('/f/:id/people/merge', async (c) => {
         // target = the real one (or first-selected if both same kind); source = the other.
         let target = a, source = b;
         if (a.is_placeholder && !b.is_placeholder) { target = b; source = a; }
-        await mergePeople(db, source.id, target.id);
+        const effects = await mergePeople(db, source.id, target.id);
         await logAction(c, {
-            festivalId: festival.id, action: 'update', entityType: 'people', entityId: target.id,
+            festivalId: festival.id, action: 'merge', entityType: 'people', entityId: target.id,
+            effects, reversible: true,
             summary: `${actor.display_name} merged ${source.display_name} into ${target.display_name}`,
         });
     }

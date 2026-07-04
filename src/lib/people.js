@@ -22,57 +22,125 @@ export async function createPlaceholder(c, festivalId, rawName) {
     return { id, display_name: name, placeholder_key: key };
 }
 
-// Merge person `fromId` into person `toId`: reassign every association, deduping
-// unique conflicts (`toId` always wins), then delete the `fromId` row. Used both to
-// absorb a ghost into a real login AND to fold one real account into another when
-// someone accidentally signed in twice — so we reassign EVERY table that FKs to
-// people (including sessions / created festivals / added items, which a ghost never
-// has but a real duplicate might) and delete the source unconditionally.
+// Merge person `fromId` into `toId`, fully reversibly. Used both to absorb a ghost
+// into a real login AND to fold one real account into another (accidental double
+// sign-in). Returns the ordered effects array — callers log it so the merge undoes
+// cleanly (a true un-merge, splitting the two people apart again). Nothing is
+// destroyed: unique-key dupes on the source are soft-hidden (never DELETEd),
+// everything else is reassigned, and the source person row is soft-deleted with a
+// merged_into pointer. The only hard delete is the source's ephemeral sessions —
+// credentials, not undo-domain state — so the merged-away device can't become the
+// survivor (G7); on un-merge that person just signs in again.
+//
+// Deliberately NOT touched: audit_log.person_id keeps true attribution forever
+// (rewriting it is what made the old merge un-reconstructable, G1).
+
+// One table with a UNIQUE/natural key: dedupe against the target, promote the target
+// where "yes wins", reassign the rest. Collects prepared statements (run later as one
+// batch) and the matching effects. `key` are the columns (besides personCol) that
+// must stay unique among active rows; `softCol` marks a soft-hidden dup; `promote`
+// returns target-side cell changes to apply when a live source outranks the target.
+async function mergeUniqueTable(db, { table, personCol = 'person_id', key, softCol, fromId, toId, stamp, promote }, stmts, effects) {
+    const rows = (await db.prepare(`SELECT * FROM ${table} WHERE ${personCol} = ?`).bind(fromId).all()).results;
+    for (const row of rows) {
+        const where = key.map((c) => `${c} = ?`).join(' AND ');
+        const target = await db.prepare(`SELECT * FROM ${table} WHERE ${personCol} = ? AND ${where}`)
+            .bind(toId, ...key.map((c) => row[c])).first();
+        if (target) {
+            // Dup on this key. Promote the target first (checked-wins / un-bail), then
+            // soft-hide the source's dup — keeping person_id on the source so un-merge
+            // can find and un-hide it. Leave an already-hidden source dup alone.
+            for (const chg of (promote ? promote(row, target) : [])) {
+                stmts.push(db.prepare(`UPDATE ${table} SET ${chg.col} = ? WHERE id = ?`).bind(chg.to, target.id));
+                effects.push({ t: table, id: target.id, col: chg.col, from: chg.from, to: chg.to });
+            }
+            if (row[softCol] == null) {
+                stmts.push(db.prepare(`UPDATE ${table} SET ${softCol} = ? WHERE id = ?`).bind(stamp, row.id));
+                effects.push({ t: table, id: row.id, col: softCol, from: null, to: stamp });
+            }
+        } else {
+            stmts.push(db.prepare(`UPDATE ${table} SET ${personCol} = ? WHERE id = ?`).bind(toId, row.id));
+            effects.push({ t: table, id: row.id, col: personCol, from: fromId, to: toId });
+        }
+    }
+}
+
+// A table with no unique constraint on the person — reassign every row wholesale.
+async function reassignAll(db, table, col, fromId, toId, stmts, effects) {
+    const rows = (await db.prepare(`SELECT id FROM ${table} WHERE ${col} = ?`).bind(fromId).all()).results;
+    for (const r of rows) {
+        stmts.push(db.prepare(`UPDATE ${table} SET ${col} = ? WHERE id = ?`).bind(toId, r.id));
+        effects.push({ t: table, id: r.id, col, from: fromId, to: toId });
+    }
+}
+
 export async function mergePeople(db, fromId, toId) {
-    if (!fromId || !toId || fromId === toId) return;
+    if (!fromId || !toId || fromId === toId) return [];
+    const stmts = [];
+    const effects = [];
+    const stamp = sqlNow();
 
-    // memberships — UNIQUE(festival_id, person_id). If the real person is already a
-    // member of a fest, keep theirs (un-bailing it) and drop the ghost's dup.
-    await db.prepare(`UPDATE memberships SET bailed_at = NULL
-        WHERE person_id = ? AND festival_id IN (SELECT festival_id FROM memberships WHERE person_id = ? AND bailed_at IS NULL)`).bind(toId, fromId).run();
-    await db.prepare(`DELETE FROM memberships
-        WHERE person_id = ? AND festival_id IN (SELECT festival_id FROM memberships WHERE person_id = ?)`).bind(fromId, toId).run();
-    await db.prepare('UPDATE memberships SET person_id = ? WHERE person_id = ?').bind(toId, fromId).run();
+    // memberships — UNIQUE(festival_id, person_id). If both are in a fest and the
+    // target had bailed while the source is active, un-bail the target (they're going).
+    await mergeUniqueTable(db, {
+        table: 'memberships', key: ['festival_id'], softCol: 'bailed_at', fromId, toId, stamp,
+        promote: (src, tgt) => (src.bailed_at == null && tgt.bailed_at != null)
+            ? [{ col: 'bailed_at', from: tgt.bailed_at, to: null }] : [],
+    }, stmts, effects);
 
-    // seats — dedupe within a car (keep the real person's), reassign the rest.
-    await db.prepare(`DELETE FROM seats
-        WHERE person_id = ? AND car_id IN (SELECT car_id FROM seats WHERE person_id = ?)`).bind(fromId, toId).run();
-    await db.prepare('UPDATE seats SET person_id = ? WHERE person_id = ?').bind(toId, fromId).run();
+    // seats — natural key car_id+person_id; keep the target's, hide the source's dup.
+    await mergeUniqueTable(db, { table: 'seats', key: ['car_id'], softCol: 'deleted_at', fromId, toId, stamp }, stmts, effects);
 
-    // checklist_checks — UNIQUE(task_id, person_id). "Checked" wins: if the ghost
-    // checked a task the real person left unchecked, flip the real one on; then drop
-    // ghost dups and reassign the remainder.
-    await db.prepare(`UPDATE checklist_checks SET unchecked_at = NULL, checked_at = datetime('now')
-        WHERE person_id = ? AND unchecked_at IS NOT NULL
-          AND task_id IN (SELECT task_id FROM checklist_checks WHERE person_id = ? AND unchecked_at IS NULL)`).bind(toId, fromId).run();
-    await db.prepare(`DELETE FROM checklist_checks
-        WHERE person_id = ? AND task_id IN (SELECT task_id FROM checklist_checks WHERE person_id = ?)`).bind(fromId, toId).run();
-    await db.prepare('UPDATE checklist_checks SET person_id = ? WHERE person_id = ?').bind(toId, fromId).run();
+    // checklist_checks — UNIQUE(task_id, person_id). "Checked" wins: if the source
+    // checked a task the target left unchecked, flip the target on before hiding.
+    await mergeUniqueTable(db, {
+        table: 'checklist_checks', key: ['task_id'], softCol: 'unchecked_at', fromId, toId, stamp,
+        promote: (src, tgt) => (src.unchecked_at == null && tgt.unchecked_at != null)
+            ? [{ col: 'unchecked_at', from: tgt.unchecked_at, to: null }, { col: 'checked_at', from: tgt.checked_at, to: stamp }] : [],
+    }, stmts, effects);
 
     // votes — UNIQUE(item_id, person_id): dedupe then reassign.
-    await db.prepare(`DELETE FROM votes
-        WHERE person_id = ? AND item_id IN (SELECT item_id FROM votes WHERE person_id = ?)`).bind(fromId, toId).run();
-    await db.prepare('UPDATE votes SET person_id = ? WHERE person_id = ?').bind(toId, fromId).run();
+    await mergeUniqueTable(db, { table: 'votes', key: ['item_id'], softCol: 'deleted_at', fromId, toId, stamp }, stmts, effects);
 
-    // No unique constraints on these — plain reassign so the source row has no refs.
-    await db.prepare('UPDATE pledges SET person_id = ? WHERE person_id = ?').bind(toId, fromId).run();
-    await db.prepare('UPDATE comments SET person_id = ? WHERE person_id = ?').bind(toId, fromId).run();
-    await db.prepare('UPDATE cars SET driver_person_id = ? WHERE driver_person_id = ?').bind(toId, fromId).run();
-    await db.prepare('UPDATE name_reclaim_log SET person_id = ? WHERE person_id = ?').bind(toId, fromId).run();
-    await db.prepare('UPDATE audit_log SET person_id = ? WHERE person_id = ?').bind(toId, fromId).run();
+    // No unique constraint on these — plain reassign so the source row has no live refs.
+    await reassignAll(db, 'pledges', 'person_id', fromId, toId, stmts, effects);
+    await reassignAll(db, 'comments', 'person_id', fromId, toId, stmts, effects);
+    await reassignAll(db, 'cars', 'driver_person_id', fromId, toId, stmts, effects);
+    await reassignAll(db, 'name_reclaim_log', 'person_id', fromId, toId, stmts, effects);
+    await reassignAll(db, 'festivals', 'created_by', fromId, toId, stmts, effects);
+    await reassignAll(db, 'items', 'added_by', fromId, toId, stmts, effects);
 
-    // Real-account-only refs — a ghost never has these, but a duplicate login does.
-    // Reassign them too so nothing dangles when we delete the source row below.
-    await db.prepare('UPDATE sessions SET person_id = ? WHERE person_id = ?').bind(toId, fromId).run();
-    await db.prepare('UPDATE festivals SET created_by = ? WHERE created_by = ?').bind(toId, fromId).run();
-    await db.prepare('UPDATE items SET added_by = ? WHERE added_by = ?').bind(toId, fromId).run();
+    // The source person row: soft-delete + point at the survivor. No DELETE.
+    stmts.push(db.prepare('UPDATE people SET deleted_at = ?, merged_into = ? WHERE id = ?').bind(stamp, toId, fromId));
+    effects.push({ t: 'people', id: fromId, col: 'deleted_at', from: null, to: stamp });
+    effects.push({ t: 'people', id: fromId, col: 'merged_into', from: null, to: toId });
 
-    await db.prepare('DELETE FROM people WHERE id = ?').bind(fromId).run();
+    // One transaction for every reversible write (G11). Guards read pre-merge state
+    // above; each source row maps to a distinct target key, so the decisions don't
+    // interfere and are safe to apply together.
+    if (stmts.length) await db.batch(stmts);
+
+    // Sessions are not undo-domain state — drop the source's outside the batch so the
+    // merged-away device can't act as the survivor.
+    await db.prepare('DELETE FROM sessions WHERE person_id = ?').bind(fromId).run();
+
+    return effects;
+}
+
+// Follow a merged_into chain to the surviving, un-merged person. After a merge the
+// source asserts "this is the same human", so honoring their name at sign-in means
+// landing on the survivor. After an un-merge the pointer is nulled, so the name
+// naturally belongs to the restored person again. Loop-guarded against cycles.
+export async function resolveMergedPerson(db, person) {
+    let p = person;
+    const seen = new Set();
+    while (p && p.merged_into && !seen.has(p.id)) {
+        seen.add(p.id);
+        const next = await db.prepare('SELECT * FROM people WHERE id = ?').bind(p.merged_into).first();
+        if (!next) break;
+        p = next;
+    }
+    return p;
 }
 
 // --- reversible person deletion ---
@@ -152,13 +220,28 @@ export async function deletePersonFootprint(db, festivalId, personId) {
 }
 
 // After a real login, find & merge any placeholders that share this person's name
-// (case-insensitive exact match). Returns how many ghosts were absorbed.
+// (case-insensitive exact match). Name-matching stays global across fests — that's
+// the documented "pre-added people" behavior — but a ghost that's already merged
+// away (deleted_at) or was deliberately removed from its fest (no active membership
+// anywhere) is DEAD and must not silently glue itself to whoever signs in with that
+// name later (G8). Returns the merges performed (effects + summary) so the caller
+// can log each as a reversible audit entry — kept out of this module to avoid an
+// import cycle with audit.js.
 export async function absorbPlaceholders(c, personId, normalized) {
-    if (!personId || !normalized) return 0;
+    if (!personId || !normalized) return [];
     const db = c.env.DB;
-    const ghosts = (await db.prepare('SELECT id FROM people WHERE is_placeholder = 1 AND placeholder_key = ?').bind(normalized).all()).results;
+    const ghosts = (await db.prepare('SELECT * FROM people WHERE is_placeholder = 1 AND placeholder_key = ? AND deleted_at IS NULL').bind(normalized).all()).results;
+    const merges = [];
     for (const g of ghosts) {
-        if (g.id !== personId) await mergePeople(db, g.id, personId);
+        if (g.id === personId) continue;
+        const liveFest = await db.prepare('SELECT festival_id FROM memberships WHERE person_id = ? AND bailed_at IS NULL LIMIT 1').bind(g.id).first();
+        if (!liveFest) continue; // dead ghost — leave it be
+        const effects = await mergePeople(db, g.id, personId);
+        merges.push({
+            festivalId: liveFest.festival_id,
+            effects,
+            summary: `${g.display_name} signed in — linked up their pre-added entry`,
+        });
     }
-    return ghosts.length;
+    return merges;
 }
