@@ -44,10 +44,17 @@ async function renderLogBody(c, festival) {
             // phones. That's the UTC no-JS fallback; the .local-time span rewrites
             // it into the viewer's own time zone (and 12h/24h pref) client-side.
             const when = (e.created_at || '').slice(5, 16);
+            // An undo entry may carry a partial-restore note (some effects were
+            // skipped) stashed in after_json — surface it as a quiet hint so the log
+            // is honest about what didn't come back.
+            let skipHint = '';
+            if (e.action === 'undo' && e.after_json) {
+                try { skipHint = (JSON.parse(e.after_json) || {}).skipped || ''; } catch (err) { skipHint = ''; }
+            }
             return html`
         <tr>
           <td class="log-when"><span class="local-time" data-utc="${e.created_at}" data-fmt="datetime">${when}</span></td>
-          <td class="log-what">${e.summary}${e.undone_at ? html` <i>(undone)</i>` : ''}</td>
+          <td class="log-what">${e.summary}${e.undone_at ? html` <i>(undone)</i>` : ''}${skipHint ? html`<div class="log-skip-hint">⚠ ${skipHint}</div>` : ''}</td>
           <td>
             ${e.reversible && !e.undone_at ? html`
               <form hx-post="/f/${festival.id}/log/${e.id}/undo" hx-target="#main" hx-swap="innerHTML" hx-confirm="Are you sure you want to ${label} this?">
