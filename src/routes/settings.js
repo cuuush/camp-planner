@@ -13,17 +13,17 @@ function emailForm(person, saved = false) {
     return html`
     <form class="settings-email-form" method="post" action="/settings/email"
       hx-post="/settings/email" hx-target="this" hx-swap="outerHTML">
-      <p class="settings-hint">get an email when someone grabs a seat in your car, pledges your item, or chats at you. added it at sign-up? change it here.</p>
+      <p class="settings-hint">camp planner can notify you by e-mail when someone takes a seat in your car, pledges your item, or sends you a message. If you entered an address at sign-up, you can change it here.</p>
       <input type="email" name="email" value="${person.email || ''}" placeholder="you@example.com">
       <label class="xp-check-label" style="margin-top:10px;">
         <input type="checkbox" class="xp-check-input" name="notify" value="1" ${person.email_unsubscribed ? '' : 'checked'}>
         <span class="xp-checkbox"></span>
-        email me when stuff happens
+        Notify me by e-mail when something happens
       </label>
       <div class="dialog-buttons" style="margin-top:12px;">
-        <button class="btn btn-primary" type="submit">apply</button>
+        <button class="btn btn-primary" type="submit">Apply</button>
       </div>
-      ${saved ? html`<p class="settings-saved">✅ saved!</p>` : ''}
+      ${saved ? html`<p class="settings-saved">✅ Your changes have been applied.</p>` : ''}
     </form>`;
 }
 
@@ -33,25 +33,25 @@ function emailForm(person, saved = false) {
 function settingsBody(person) {
     return html`
     <fieldset>
-      <legend>date and time</legend>
-      <p class="settings-hint">times around the site show in your device's time zone.</p>
+      <legend>Date and Time</legend>
+      <p class="settings-hint">Times are displayed in this device's time zone.</p>
       <label class="xp-radio-label"><input type="radio" name="camp_time_fmt" value="12" onchange="campSetTimeFmt('12')"> 12-hour (3:04 PM)</label>
       <label class="xp-radio-label"><input type="radio" name="camp_time_fmt" value="24" onchange="campSetTimeFmt('24')"> 24-hour (15:04)</label>
     </fieldset>
     <fieldset>
-      <legend>user accounts</legend>
+      <legend>User Accounts</legend>
       ${person
         ? emailForm(person)
-        : html`<p class="settings-hint">you're not signed in — sign in first, then you can add an email for notifications.</p>
+        : html`<p class="settings-hint">You are not signed in. To set up e-mail notifications, sign in first.</p>
           <button class="btn btn-primary" type="button"
-            hx-get="/signin/modal" hx-target="#signin-modal-overlay" hx-swap="innerHTML">sign in</button>`}
+            hx-get="/signin/modal" hx-target="#signin-modal-overlay" hx-swap="innerHTML">Sign In…</button>`}
     </fieldset>
     <fieldset>
-      <legend>visual effects</legend>
+      <legend>Visual Effects</legend>
       <label class="xp-check-label">
         <input type="checkbox" class="xp-check-input" id="camp-fx-check" onchange="campSetConfetti(this.checked, this.parentElement)">
         <span class="xp-checkbox"></span>
-        confetti &amp; celebrations
+        Show confetti and celebration effects
       </label>
     </fieldset>`;
 }

@@ -93,7 +93,7 @@ function itemRow(festival, item, stats, person, expanded = false, chatOpen = fal
             <details class="edit-toggle">
               <summary class="btn btn-like">edit</summary>
               <form class="edit-panel" hx-post="/items/${item.id}/edit" hx-target="#item-${item.id}" hx-swap="outerHTML">
-                <div class="edit-panel-title">edit item</div>
+                <div class="edit-panel-title">Edit Item</div>
                 <div class="edit-requester">${requestedBy}</div>
                 <div class="edit-field">
                   <label>emoji</label>
@@ -115,8 +115,8 @@ function itemRow(festival, item, stats, person, expanded = false, chatOpen = fal
                   </div>
                 </div>
                 <div class="edit-panel-buttons">
-                  <button class="btn btn-primary" type="submit">save</button>
-                  <button class="btn btn-danger" type="submit" formaction="/items/${item.id}/delete" hx-post="/items/${item.id}/delete" hx-confirm="delete this item?">delete</button>
+                  <button class="btn btn-primary" type="submit">Save</button>
+                  <button class="btn btn-danger" type="submit" formaction="/items/${item.id}/delete" hx-post="/items/${item.id}/delete" hx-confirm="Are you sure you want to delete this item?">Delete</button>
                 </div>
               </form>
             </details>
@@ -150,7 +150,7 @@ function itemRow(festival, item, stats, person, expanded = false, chatOpen = fal
               <div class="pledge-prompt">
                 <img class="xp-dialog-icon" src="/question.png" alt="" aria-hidden="true">
                 <div class="pledge-field-col">
-                  <label class="pledge-label">how many are you bringing?</label>
+                  <label class="pledge-label">How many are you bringing?</label>
                   <div class="pledge-input-row">
                     <input type="number" name="qty" value="${myPledge ? myPledge.qty : remaining}" min="1" class="pledge-modal-input" autofocus>
                     ${item.unit ? html`<span class="pledge-unit">${item.unit}</span>` : ''}
@@ -158,8 +158,8 @@ function itemRow(festival, item, stats, person, expanded = false, chatOpen = fal
                 </div>
               </div>
               <div class="dialog-buttons">
-                <button class="btn btn-primary" type="submit">confirm</button>
-                <button class="btn" type="button" onclick="document.getElementById('pledge-modal-${item.id}').style.display='none'">cancel</button>
+                <button class="btn btn-primary" type="submit">OK</button>
+                <button class="btn" type="button" onclick="document.getElementById('pledge-modal-${item.id}').style.display='none'">Cancel</button>
               </div>
             </form>
           </div>
@@ -193,7 +193,7 @@ async function itemListFragment(c, festival) {
     // redirect replays a comment that was blocked mid-action) — and opens its chat.
     const row = ({ item, stats }) => itemRow(festival, item, stats, person, expand === `item-${item.id}`, expand === `item-${item.id}`);
 
-    if (!withStats.length) return html`<p class="stuff-empty">nothing on the list yet — add the first thing!</p>`;
+    if (!withStats.length) return html`<p class="stuff-empty">There are no items in this view — add the first thing!</p>`;
 
     // XP Explorer "show in groups" style: two grouped sections with a header rule.
     return html`
@@ -221,7 +221,7 @@ async function renderStuffBody(c, festival) {
         <a href="?sort=votes" class="${sort === 'votes' ? 'active' : ''}">votes</a>
         <a href="?sort=name" class="${sort === 'name' ? 'active' : ''}">name</a>
       </div>
-      <button type="button" class="btn expand-all-btn" onclick="campToggleExpandAll(this)">⊞ expand all</button>
+      <button type="button" class="btn expand-all-btn" onclick="campToggleExpandAll(this)">⊞ Expand All</button>
     </div>
 
     <div class="add-stuff-bar">
@@ -250,14 +250,14 @@ async function renderStuffBody(c, festival) {
               i'm bringing this — put me down for it
             </label>
             <div class="dialog-buttons">
-              <button id="add-stuff-submit" class="btn btn-primary" type="submit">add it</button>
-              <button class="btn" type="button" onclick="document.getElementById('add-stuff-modal').style.display='none'">cancel</button>
+              <button id="add-stuff-submit" class="btn btn-primary" type="submit">OK</button>
+              <button class="btn" type="button" onclick="document.getElementById('add-stuff-modal').style.display='none'">Cancel</button>
             </div>
             <!-- Shown by htmx (via hx-indicator) only while the add request is in
                  flight — i.e. while the LLM is picking an emoji/unit for the item. -->
             <div id="add-stuff-spinner" class="xp-spinner-row">
               <span class="xp-spinner" aria-hidden="true"></span>
-              <span>finding the perfect emoji…</span>
+              <span>Please wait while camp planner finds the perfect emoji…</span>
             </div>
           </form>
         </div>

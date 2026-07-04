@@ -64,19 +64,19 @@ function carCard(car, driverName, stats, person, expanded = false, chatOpen = fa
               <button class="btn" type="submit">leave this car</button>
             </form>`}
 
-          <button class="btn" type="button" hx-get="/cars/${car.id}/add-window" hx-target="#popup-layer" hx-swap="beforeend">＋ add person to car</button>
+          <button class="btn" type="button" hx-get="/cars/${car.id}/add-window" hx-target="#popup-layer" hx-swap="beforeend">＋ Add Person to Car…</button>
 
           <details class="edit-toggle">
             <summary class="btn btn-like">edit</summary>
             <form class="edit-panel" hx-post="/cars/${car.id}/edit" hx-target="#car-${car.id}" hx-swap="outerHTML">
-              <div class="edit-panel-title">edit car</div>
+              <div class="edit-panel-title">Edit Car</div>
               <div class="edit-field"><label>seats</label><input type="number" name="seats_total" value="${car.seats_total}" min="1"></div>
               <div class="edit-field"><label>from</label><input type="text" name="leaving_from" value="${car.leaving_from || ''}" placeholder="e.g. oakland"></div>
               <div class="edit-field"><label>day</label><input type="text" name="depart_day" value="${car.depart_day || ''}" placeholder="thu"></div>
               <div class="edit-field"><label>time</label><input type="text" name="depart_time" value="${car.depart_time || ''}" placeholder="9am"></div>
               <div class="edit-panel-buttons">
-                <button class="btn btn-primary" type="submit">save</button>
-                <button class="btn btn-danger" type="submit" formaction="/cars/${car.id}/delete" hx-post="/cars/${car.id}/delete" hx-confirm="delete this car?">delete</button>
+                <button class="btn btn-primary" type="submit">Save</button>
+                <button class="btn btn-danger" type="submit" formaction="/cars/${car.id}/delete" hx-post="/cars/${car.id}/delete" hx-confirm="Are you sure you want to delete this car?">Delete</button>
               </div>
             </form>
           </details>
@@ -113,7 +113,7 @@ async function renderRidesBody(c, festival) {
       <form class="edit-panel" hx-post="/f/${festival.id}/cars" hx-target="#car-list" hx-swap="innerHTML"
         hx-on::after-request="if(event.detail.successful) this.reset();">
         <div class="edit-panel-title">post a car</div>
-        <p class="popup-hint" style="margin:0;">you're the driver — you get the first seat automatically.</p>
+        <p class="popup-hint" style="margin:0;">You are the driver, so the first seat is reserved for you automatically.</p>
         <div class="edit-field"><label>seats</label><input type="number" name="seats_total" value="4" min="1" title="total seats, including yours"></div>
         <div class="edit-field"><label>from</label><input type="text" name="leaving_from" placeholder="e.g. oakland"></div>
         <div class="edit-field"><label>day</label><input type="text" name="depart_day" placeholder="thu"></div>
@@ -123,7 +123,7 @@ async function renderRidesBody(c, festival) {
     </details>
 
     <div id="car-list">
-      ${cars.length === 0 ? html`<p class="stuff-empty">no cars posted yet — post the first one!</p>` : ''}
+      ${cars.length === 0 ? html`<p class="stuff-empty">There are no cars in this view — post the first one!</p>` : ''}
       ${await Promise.all(cars.map(async (car) => carCard(car, car.display_name, await carStats(db, car), person, expand === `car-${car.id}`, expand === `car-${car.id}`)))}
     </div>
   `;
@@ -278,7 +278,7 @@ rides.get('/cars/:carId/add-window', async (c) => {
     `).bind(festival.id, car.id).all()).results;
 
     return c.html(xpPopup({
-        title: 'Add person to car',
+        title: 'Add Person to Car',
         id: `add-car-${car.id}`,
         body: html`
           ${candidates.length ? html`<div class="pick-list">
@@ -289,10 +289,10 @@ rides.get('/cars/:carId/add-window', async (c) => {
                 <span class="pick-emoji">${p.is_placeholder ? '👤' : '🙂'}</span>
                 <span class="pick-name">${p.display_name}${p.is_placeholder ? html`<span class="ghost-badge">not signed up</span>` : ''}</span>
               </button>`)}
-          </div>` : html`<p class="pick-empty">everyone in this fest is already in this car.</p>`}
+          </div>` : html`<p class="pick-empty">There is no one to add — everyone in this fest is already in this car.</p>`}
           <hr class="popup-divider">
           <button class="btn btn-primary" type="button" style="width:100%"
-            hx-get="/cars/${car.id}/add-new-window" hx-target="#popup-layer" hx-swap="beforeend">＋ add someone new</button>`,
+            hx-get="/cars/${car.id}/add-new-window" hx-target="#popup-layer" hx-swap="beforeend">＋ Add Someone New…</button>`,
     }));
 });
 
@@ -328,14 +328,14 @@ rides.get('/cars/:carId/add-new-window', async (c) => {
     if (needsSignin(c)) return signinModalResponse(c, { expandId: `car-${loaded.car.id}` });
     const { car } = loaded;
     return c.html(xpPopup({
-        title: 'New person',
+        title: 'New Person',
         id: `add-car-new-${car.id}`,
         body: html`
-          <p class="popup-hint">someone who hasn't signed up yet — they'll be put in this car and on the ppl list. when they log in with this name, it links up.</p>
+          <p class="popup-hint">Add a camper who has not signed up yet. They will be placed in this car and on the ppl list. When they sign in with this name, everything links up automatically.</p>
           <form class="popup-form" hx-post="/cars/${car.id}/seats/add-new" hx-target="#car-${car.id}" hx-swap="outerHTML"
             hx-on::after-request="if(event.detail.successful) closePopup(this)" autocomplete="off">
-            <input type="text" name="name" placeholder="their name" required data-1p-ignore data-lpignore="true">
-            <button class="btn btn-primary" type="submit">add to car</button>
+            <input type="text" name="name" placeholder="Type their name" required data-1p-ignore data-lpignore="true">
+            <button class="btn btn-primary" type="submit">Add to Car</button>
           </form>`,
     }));
 });

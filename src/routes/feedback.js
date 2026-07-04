@@ -16,7 +16,7 @@ async function feedbackEntries(db) {
 }
 
 // The feedback window body: a Windows-Error-Reporting-style compose box up top
-// ("Send Report" / "Don't Send"), then the log of previously sent reports.
+// ("Send Error Report" / "Don't Send"), then the log of previously sent reports.
 // Shared by the popup and the /feedback full-page fallback; POST re-renders it
 // in place so a fresh report shows up at the top of the list immediately.
 function feedbackBody(person, entries, sent = false) {
@@ -26,20 +26,20 @@ function feedbackBody(person, entries, sent = false) {
       <div class="xp-dialog-prompt" style="margin-bottom:10px;">
         <img class="xp-dialog-icon" src="/notify.png" alt="" aria-hidden="true">
         <div class="xp-dialog-msg">
-          <b>camp planner has encountered your opinion.</b><br>
-          <span class="settings-hint" style="margin:0;">found a bug? got a genius idea? file a report below — sending as <b>${from}</b>. old MSN emoticons work: :) (Y) (8)</span>
+          <b>camp planner has encountered your opinion and needs to hear it. We are sorry for the inconvenience.</b><br>
+          <span class="settings-hint" style="margin:0;">Please tell camp planner about this problem. We have created a report form below that you can send to help us improve camp planner. This report will be sent as <b>${from}</b>.</span>
         </div>
       </div>
       <form class="feedback-form" method="post" action="/feedback"
         hx-post="/feedback" hx-target="#feedback-body" hx-swap="outerHTML"
         hx-on::after-request="if(event.detail.successful) this.reset();">
-        <textarea name="body" rows="3" placeholder="describe what happened (or what should happen)…" required></textarea>
+        <textarea name="body" rows="3" placeholder="Describe what you were doing when the problem (or the idea) occurred." required></textarea>
         <div class="dialog-buttons">
-          <button class="btn btn-primary" type="submit">Send Report</button>
+          <button class="btn btn-primary" type="submit">Send Error Report</button>
           <button class="btn" type="button" onclick="closePopup(this)">Don't Send</button>
         </div>
       </form>
-      ${sent ? html`<p class="settings-saved">✅ report sent — thanks for making camp planner better.</p>` : ''}
+      ${sent ? html`<p class="settings-saved">✅ Thank you for submitting an error report.</p>` : ''}
       <hr class="popup-divider">
       <div class="feedback-log-label">sent reports <span class="section-count">${entries.length}</span></div>
       ${entries.length ? html`<div class="feedback-list">
@@ -52,7 +52,7 @@ function feedbackBody(person, entries, sent = false) {
             </div>
             <div class="feedback-text">${raw(msnify(f.body))}</div>
           </div>`)}
-      </div>` : html`<p class="pick-empty">no reports yet — nothing has crashed and nobody has complained. suspicious.</p>`}
+      </div>` : html`<p class="pick-empty">There are no reports in this view. Nothing has crashed and nobody has complained. Suspicious.</p>`}
     </div>`;
 }
 

@@ -78,7 +78,7 @@ async function renderMineBody(c, festival) {
             <span class="checklist-label">${t.label}</span>
             ${t.is_default
                 ? html`<span class="checklist-req" title="everyone needs this — can't be removed">required</span>`
-                : html`<form hx-post="/f/${festival.id}/mine/checklist/${t.id}/delete" hx-target="#main" hx-swap="innerHTML" class="checklist-del" hx-confirm="remove &quot;${t.label}&quot; from everyone's checklist?">
+                : html`<form hx-post="/f/${festival.id}/mine/checklist/${t.id}/delete" hx-target="#main" hx-swap="innerHTML" class="checklist-del" hx-confirm="Are you sure you want to remove &quot;${t.label}&quot; from everyone's checklist?">
                     <button class="btn btn-danger checklist-del-btn" type="submit" title="remove this item">✕</button>
                   </form>`}
           </div>`;

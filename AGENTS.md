@@ -136,6 +136,15 @@ you in — reclaim only happens on "yep, that's me" (→ `/signin/reclaim`).
 - Prod route is **`camp.cuuush.com/*`** (zone `cuuush.com`), not `track.*`.
 
 ## Conventions
-- Match surrounding code: lowercase, playful copy; comments explain *why*.
+- **UI copy voice: authentic Windows XP.** System chrome — dialogs, popups, the
+  Control Panel, confirms, hints, placeholders, empty states — reads like real XP
+  UI text: Title Case buttons ("OK", "Cancel", "Apply", "Send Error Report"),
+  "Are you sure you want to…" confirms, "Please wait while…" progress text,
+  "There are no X in this view" empty states, "e-mail" with the hyphen, and help
+  copy in the cheery "click Start, and then click…" voice (see `dogTip` in
+  `layout.js`). Fun is still welcome where it's fun — tab names, "i'll bring
+  this", "✔ i'm going!", Rover and the BSOD easter egg stay — but frame the joke
+  in XP phrasing rather than lowercase internet-casual.
+- Code comments explain *why*.
 - Emoji in UI text render via the `.pixmoji` pixel font; `font-variant-emoji: text`.
 - Soft-delete everywhere (`deleted_at`); everything audited + undoable (`reversible`).

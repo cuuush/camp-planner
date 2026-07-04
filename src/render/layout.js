@@ -201,6 +201,10 @@ const RETRO_CSS = `
   .dog-img {
     width: 66px; height: auto; margin: 30px 0 0 34px; image-rendering: auto;
     filter: drop-shadow(1px 2px 2px rgba(0,0,0,0.3));
+    /* Nudge the dog toward the bubble tail: half his own width right, a quarter
+       of his own height up. The standalone translate property (not transform)
+       so the pet-wiggle animation's transform doesn't stomp it mid-wiggle. */
+    translate: 50% -25%;
   }
   .dog-bubble b { color: #0a246a; }
   .dog-title { font-weight: bold; color: #0a246a; display: block; margin-bottom: 2px; }
@@ -1344,11 +1348,11 @@ function campUpdateSelect() {
   var hint = bar.querySelector('.ppl-select-hint');
   var go = bar.querySelector('.ppl-select-go');
   if (mode === 'merge') {
-    go.textContent = 'merge selected'; go.disabled = n !== 2;
-    hint.textContent = 'pick the 2 rows that are the same person — ' + n + '/2';
+    go.textContent = 'Merge Selected'; go.disabled = n !== 2;
+    hint.textContent = 'Select the 2 entries that belong to the same camper — ' + n + ' of 2 selected.';
   } else {
-    go.textContent = 'delete selected'; go.disabled = n < 1;
-    hint.textContent = 'pick people to remove (undoable) — ' + n + ' selected';
+    go.textContent = 'Delete Selected'; go.disabled = n < 1;
+    hint.textContent = 'Select the campers you want to remove (this can be undone) — ' + n + ' selected.';
   }
 }
 document.addEventListener('change', function (e) {
@@ -1379,11 +1383,11 @@ function campRunSelect(go) {
   if (mode === 'merge') {
     if (ids.length !== 2) return;
     var names = checked.map(function (c) { return c.getAttribute('data-name'); });
-    if (!confirm('Merge ' + names.join(' + ') + '? Their stuff combines into one person (the real, logged-in one wins).')) return;
+    if (!confirm('Are you sure you want to merge ' + names.join(' and ') + '? Everything they brought, pledged, and said will be combined into one camper. (The real, signed-in account wins.)')) return;
     htmx.ajax('POST', '/f/' + fest + '/people/merge', { target: '#main', swap: 'innerHTML', values: { person_ids: ids.join(',') } });
   } else {
     if (!ids.length) return;
-    if (!confirm('Remove ' + ids.length + ' ' + (ids.length === 1 ? 'person' : 'people') + '? You can undo this from the log tab — it restores everything they did.')) return;
+    if (!confirm('Are you sure you want to remove ' + ids.length + ' ' + (ids.length === 1 ? 'person' : 'people') + '? This action can be undone from the log tab, which restores everything they did.')) return;
     htmx.ajax('POST', '/f/' + fest + '/people/delete', { target: '#main', swap: 'innerHTML', values: { person_ids: ids.join(',') } });
   }
 }
@@ -1411,7 +1415,7 @@ function campToggleExpandAll(btn) {
     if (chat) chat.removeAttribute('open');
     dets[j].open = anyClosed;
   }
-  btn.textContent = anyClosed ? '⊟ collapse all' : '⊞ expand all';
+  btn.textContent = anyClosed ? '⊟ Collapse All' : '⊞ Expand All';
 }
 
 // Opening a single item card (by clicking its header) pops its chat open too, so
@@ -1444,7 +1448,7 @@ document.addEventListener('input', function (e) {
       .then(function (data) {
         if (input.value.trim() !== val) return;
         notice.textContent = data.taken
-          ? ('heads up — someone already goes by "' + data.display_name + '". if that\\'s you, cool — you\\'ll be signed in as them. otherwise pick something more identifiable.')
+          ? ('The name "' + data.display_name + '" is already in use. If this is you, you will be signed in as them. If not, choose a name that is more identifiable.')
           : '';
       })
       .catch(function () {});
@@ -1551,7 +1555,7 @@ function campBsod() {
 
 export function tickerHtml(entries) {
     if (!entries || !entries.length) {
-        return html`<div class="marquee-wrap"><div class="marquee-track"><span class="marquee" style="animation-duration:20s">nothing's happened yet... be the first!</span></div></div>`;
+        return html`<div class="marquee-wrap"><div class="marquee-track"><span class="marquee" style="animation-duration:20s">There are no announcements to display. Be the first to do something!</span></div></div>`;
     }
     const text = entries.map((e) => e.summary).join('   ·   ');
     // Duration scales with content length so the scroll speed (px/sec) stays roughly
@@ -1569,13 +1573,13 @@ function dogTip(festival) {
     const tips = [
         {
             title: 'Your opinion counts!',
-            body: html`camp planner is always looking for ways to improve. To report a problem or share an idea, click <b>Start</b>, and then click <b>send feedback</b>. Your report helps make camping better for everyone.`,
+            body: html`camp planner is always looking for ways to improve. To report a problem or share an idea, click <b>Start</b>, and then click <b>Send Feedback</b>. Your report helps make camping better for everyone.`,
             links: html`<li><a href="/feedback" hx-get="/feedback/window" hx-target="#popup-layer" hx-swap="beforeend">Send feedback now</a></li>`,
         },
         {
             title: 'Personalize camp planner',
-            body: html`Did you know you can switch between 12-hour and 24-hour time, manage email notifications, and turn confetti on or off? Click <b>Start</b>, and then click <b>control panel</b> to make camp planner truly yours.`,
-            links: html`<li><a href="/settings" hx-get="/settings/window" hx-target="#popup-layer" hx-swap="beforeend">Open the control panel</a></li>`,
+            body: html`Did you know you can switch between 12-hour and 24-hour time, manage e-mail notifications, and turn confetti on or off? Click <b>Start</b>, and then click <b>Control Panel</b> to make camp planner truly yours.`,
+            links: html`<li><a href="/settings" hx-get="/settings/window" hx-target="#popup-layer" hx-swap="beforeend">Open Control Panel</a></li>`,
         },
         {
             title: 'A blast from 2003',
@@ -1589,12 +1593,12 @@ function dogTip(festival) {
     if (festival) {
         tips.push({
             title: 'Bringing a friend?',
-            body: html`You can add people who haven't signed up yet. On the <b>ppl</b> tab, click <b>＋ add person</b> and type their name. When they sign in with that name later, everything they were given links up automatically.`,
+            body: html`You can add people who haven't signed up yet. On the <b>ppl</b> tab, click <b>＋ Add Person</b> and type their name. When they sign in with that name later, everything they were given links up automatically.`,
             links: html`<li><a href="/f/${festival.id}/ppl">Go to the ppl tab</a></li>`,
         });
         tips.push({
             title: 'Seeing double?',
-            body: html`If a camper accidentally signs in under two different names, click <b>merge people</b> on the <b>ppl</b> tab and select both entries. They will be combined into one camper, and nothing they did is lost.`,
+            body: html`If a camper accidentally signs in under two different names, click <b>Merge</b> on the <b>ppl</b> tab and select both entries. They will be combined into one camper, and nothing they did is lost.`,
             links: html`<li><a href="/f/${festival.id}/ppl">Go to the ppl tab</a></li>`,
         });
     }
@@ -1686,7 +1690,7 @@ function taskbar(c, festival, festivals) {
           ${person
             ? html`<span class="xp-startmenu-name">${person.display_name}</span>`
             : html`<a class="xp-startmenu-name" href="/signin?next=${next}" onclick="campCloseStart()"
-                     hx-get="/signin/modal?next=${next}" hx-target="#signin-modal-overlay" hx-swap="innerHTML">sign in…</a>`}
+                     hx-get="/signin/modal?next=${next}" hx-target="#signin-modal-overlay" hx-swap="innerHTML">Sign in…</a>`}
         </div>
         <div class="xp-startmenu-body">
           <div class="xp-startmenu-label">festivals</div>
@@ -1694,15 +1698,15 @@ function taskbar(c, festival, festivals) {
             <a class="xp-startmenu-item ${festival && f.id === festival.id ? 'current' : ''}" href="/f/${f.id}">
               <span class="xp-startmenu-ico">🏕️</span> ${f.name}</a>`)}
           <div class="xp-startmenu-sep"></div>
-          <a class="xp-startmenu-item" href="/"><span class="xp-startmenu-ico">🖥️</span> all festivals</a>
-          <a class="xp-startmenu-item" href="/fests/new"><span class="xp-startmenu-ico">➕</span> create a fest…</a>
+          <a class="xp-startmenu-item" href="/"><span class="xp-startmenu-ico">🖥️</span> My Festivals</a>
+          <a class="xp-startmenu-item" href="/fests/new"><span class="xp-startmenu-ico">➕</span> New Festival…</a>
           <div class="xp-startmenu-sep"></div>
           <a class="xp-startmenu-item" href="/feedback" onclick="campCloseStart()"
             hx-get="/feedback/window" hx-target="#popup-layer" hx-swap="beforeend">
-            <span class="xp-startmenu-ico">📝</span> send feedback</a>
+            <span class="xp-startmenu-ico">📝</span> Send Feedback</a>
           <a class="xp-startmenu-item" href="/settings" onclick="campCloseStart()"
             hx-get="/settings/window" hx-target="#popup-layer" hx-swap="beforeend">
-            <span class="xp-startmenu-ico">⚙️</span> control panel</a>
+            <span class="xp-startmenu-ico">⚙️</span> Control Panel</a>
         </div>
         <div class="xp-startmenu-foot">
           ${person
@@ -1790,7 +1794,7 @@ export async function renderPage(c, { title, activeTab = '', body, festival = nu
       ${festival ? html`<nav class="tabs">${tabs.map(([label, href, key]) => html`<a href="${href}" class="${key === activeTab ? 'active' : ''}">${label}</a>`)}</nav>` : ''}
       ${showJoin ? html`
         <div class="join-banner">
-          <span class="join-banner-text">you're just browsing <b>${festival.name}</b> — you're not on the list yet.</span>
+          <span class="join-banner-text">You are browsing <b>${festival.name}</b> as a guest — you are not on the list yet.</span>
           <form method="post" action="/f/${festival.id}/join" class="join-banner-form">
             <button class="btn btn-primary" type="submit">✔ i'm going!</button>
           </form>
