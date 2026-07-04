@@ -187,6 +187,13 @@ people.post('/f/:id/people/delete', async (c) => {
         const target = await db.prepare('SELECT display_name FROM people WHERE id = ?').bind(pid).first();
         if (!target) continue;
         const manifest = await deletePersonFootprint(db, festival.id, pid);
+        // End their sessions so a removed person can't keep acting on this fest —
+        // otherwise their next click would auto-rejoin them (logAction →
+        // ensureMembership) and spawn fresh rows, which a later undo of THIS delete
+        // would then resurrect alongside, producing states the app forbids (G3).
+        // Sessions are ephemeral credentials, not undo-domain state: on undo the
+        // person simply signs in again. (No-op for ghosts — they have none.)
+        await db.prepare('DELETE FROM sessions WHERE person_id = ?').bind(pid).run();
         await logAction(c, {
             festivalId: festival.id, action: 'delete', entityType: 'people', entityId: pid,
             before: manifest, after: manifest, reversible: true,

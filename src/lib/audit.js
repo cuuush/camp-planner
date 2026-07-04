@@ -98,10 +98,14 @@ async function reapplyEffect(db, entry, after) {
     }
 }
 
-export async function undoAction(c, auditId) {
+export async function undoAction(c, auditId, expectedFestivalId = null) {
     const db = c.env.DB;
     const clicked = await db.prepare('SELECT * FROM audit_log WHERE id = ?').bind(auditId).first();
     if (!clicked) return { error: 'not_found' };
+    // An entry may only be undone through its own festival's log (G6). Without this,
+    // any signed-in user could POST /f/<any>/log/<id>/undo and toggle another fest's
+    // action. Callers pass the URL's festival id; we refuse a mismatch.
+    if (expectedFestivalId != null && clicked.festival_id !== expectedFestivalId) return { error: 'wrong_festival' };
     if (!clicked.reversible) return { error: 'not_reversible' };
 
     // If they clicked an "undo" row, we're toggling the ORIGINAL entry it points to
