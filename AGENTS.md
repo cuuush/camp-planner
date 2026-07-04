@@ -4,20 +4,20 @@ Camp Planner: Cloudflare Worker + Hono, **server-rendered HTML + HTMX**, D1 (SQL
 No build step, no SPA. See `PLAN.md` for product intent. This file is the stuff that
 bit us — read it before touching rendering, the sign-in flow, or the DB.
 
+## 🗺️ Where the frontend lives
+
+- **`public/retro.css`** — ALL the CSS (the XP/Luna theme). Served statically.
+- **`public/camp.js`** — ALL the client JS (popups, select-mode, pixmoji, clock,
+  Start menu, confetti, BSOD…). Served statically, loaded in `<head>` *without*
+  `defer`. Historically these were giant template-literal strings inside
+  `layout.js` (`RETRO_CSS` / `CONFETTI_SCRIPT`) — old comments may still say so.
+- **`src/render/layout.js`** — the page shell (`renderPage`), taskbar/Start menu,
+  ticker, Rover. Server-side markup only; no CSS/JS blobs.
+
 ## ☠️ Gotchas that WILL waste your time
 
-### 1. `RETRO_CSS` and `CONFETTI_SCRIPT` are JS template literals (`` ` `` delimited)
-In `src/render/layout.js`, all the CSS and all the client JS live inside backtick
-template-literal strings. Therefore:
-- **Never put a backtick character inside them** — not even in a comment. Writing
-  `` /* the `big` modifier */ `` in a CSS comment ends the string early and the build
-  dies with a cryptic `Expected ";" but found "..."`. Use plain words ("the big
-  modifier"), never backtick-quoting.
-- **Double every backslash** in regexes inside `CONFETTI_SCRIPT` (`\\d`, `\\s`, …),
-  because the template literal eats one level of escaping.
-
-### 2. `document.body` is `null` inside `CONFETTI_SCRIPT`
-That script tag is emitted in `<head>` (before `<body>` is parsed). So any
+### 1. `document.body` is `null` at the top level of `public/camp.js`
+Its script tag is in `<head>` (before `<body>` is parsed). So any
 **top-level** `document.body.addEventListener(...)` / `document.body.X` **throws**,
 and the throw silently halts the *rest* of the script — meaning every listener
 declared after it never registers. This cost us a long debugging session (popups
@@ -26,9 +26,9 @@ rendered top-left, merge/delete select-mode was dead) because it *looked* fine.
   bubble to `document`. `document.body.*` inside a function that runs later (e.g. a
   `DOMContentLoaded` callback or a click handler) is fine — only top-level use breaks.
 
-### 3. curl only proves the HTML is present, NOT that the JS runs
+### 2. curl only proves the HTML is present, NOT that the JS runs
 Every "verified via curl" check in this repo confirms markup/headers only. It will
-happily pass while the client JS is throwing in the browser (see #2). If a change is
+happily pass while the client JS is throwing in the browser (see #1). If a change is
 behavioral (drag, select-mode, popups, stash/restore), a green curl is necessary but
 **not sufficient** — reason about the JS actually executing, or ask the user to click it.
 
@@ -48,12 +48,12 @@ already wired for dragging + centering.
   `.xp-dialog-prompt` (vertically **centered** icon), deliberately distinct from the
   pledge modal's `.pledge-prompt` (bottom-aligned) — don't merge them.
 
-### Popup mechanics (in `layout.js` `CONFETTI_SCRIPT`)
+### Popup mechanics (in `public/camp.js`)
 - Popups live in `#popup-layer` (fixed, `pointer-events:none`; children re-enable it).
 - The `htmx:afterSwap` handler (bound to `document`) **centers the first popup and
   cascades stacked ones**, sets z-index, focuses the first input. A popup with no
   `left/top` falls to viewport top-left — so if it's mis-positioned, the positioning
-  handler didn't run (usually #2 above).
+  handler didn't run (usually gotcha #1 above).
 - `closePopup(el)`, `closeAllPopups()`, `popupTop()` are the helpers.
 
 ### The name-taken sign-in warning = "stash & restore", not stacking
