@@ -47,10 +47,15 @@ const WRITABLE = {
 
 // Tables where UN-HIDING a soft-deleted row (deleted_at non-null → null) could
 // create a second active row the app forbids. Value = the natural-key columns that
-// must stay unique among active (deleted_at IS NULL) rows. Filled in by Phase 2.
-// (votes and checklist_checks have real UNIQUE constraints and toggle-reuse their
-// rows, so they self-guard and are deliberately absent.)
-const UNHIDE_GUARD = {};
+// must stay unique among active (deleted_at IS NULL) rows. A pledge route already
+// refuses a second live pledge by one person on one item; undo must honor the same
+// rule so restoring an old delete can't smuggle a duplicate past it (G3). (votes and
+// checklist_checks have real UNIQUE constraints and toggle-reuse their rows, so they
+// self-guard and are deliberately absent.)
+const UNHIDE_GUARD = {
+    pledges: ['item_id', 'person_id'],
+    seats: ['car_id', 'person_id'],
+};
 
 // SQLite's datetime('now') format ("YYYY-MM-DD HH:MM:SS", UTC). We generate the
 // stamp in JS so the SAME value goes into both the row and the effect — the revert

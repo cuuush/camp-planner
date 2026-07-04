@@ -86,6 +86,27 @@ MEMB_LIVE=$(sql "SELECT count(*) FROM memberships WHERE person_id=$PID AND festi
 [ "$SEAT_LIVE" = "1" ] && ok "seat restored" || bad "seat NOT restored ($SEAT_LIVE) — G2"
 echo
 
+# ── Scenario 4 — Double-pledge resurrect is refused (G3) ─────────────────────────
+echo "4. Double-pledge resurrect (G3): pledge, get deleted, pledge again, undo delete"
+signin s4 "Dupe" "/f/1/stuff"
+DPID=$(sql "SELECT id FROM people WHERE display_name='Dupe'")
+ITEM4=$(sql "SELECT id FROM items WHERE festival_id=1 ORDER BY id LIMIT 1 OFFSET 1")
+post s4 "/items/$ITEM4/pledge" --data "qty=3"
+# an admin removes Dupe from the fest (their pledge is hidden by the manifest)…
+signin adm "Admin" "/f/1/stuff"
+post adm "/f/1/people/delete" --data "person_ids=$DPID"
+DEL4=$(sql "SELECT id FROM audit_log WHERE action='delete' AND entity_type='people' AND entity_id=$DPID ORDER BY id DESC LIMIT 1")
+# Dupe signs back in (fresh session, since delete ended the old one) and re-pledges…
+signin s4b "Dupe" "/f/1/stuff"
+post s4b "/items/$ITEM4/pledge" --data "qty=5"
+# …now undo the delete. The old pledge must STAY hidden (a live one exists).
+post adm "/f/1/log/$DEL4/undo"
+LIVE_PLEDGES=$(sql "SELECT count(*) FROM pledges WHERE item_id=$ITEM4 AND person_id=$DPID AND deleted_at IS NULL")
+LIVE_QTY=$(sql "SELECT qty FROM pledges WHERE item_id=$ITEM4 AND person_id=$DPID AND deleted_at IS NULL")
+[ "$LIVE_PLEDGES" = "1" ] && ok "exactly one live pledge (no resurrection)" || bad "found $LIVE_PLEDGES live pledges — G3 corruption"
+[ "$LIVE_QTY" = "5" ] && ok "the surviving pledge is the new one (5)" || bad "surviving pledge qty is $LIVE_QTY, expected 5"
+echo
+
 # ── Scenario 7 — Stale update undo skips instead of clobbering (G5) ───────────────
 echo "7. Stale update (G5): qty 3→6→8, undo the FIRST edit → stays 8"
 signin s7 "Editor" "/f/1/stuff"
