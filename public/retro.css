@@ -512,21 +512,37 @@
   .action-buttons > .btn-primary { flex: 2 1 0; min-width: 0; margin: 0; }
   .action-buttons > .edit-toggle { flex: 1 1 0; min-width: 0; margin: 0; }
   .edit-toggle > summary.btn-like { width: 100%; box-sizing: border-box; justify-content: center; text-align: center; }
-  /* Only stretch the CLOSED edit button to match the pledge button's height. When
-     OPEN it must stay auto-height, or height:100% balloons it to the whole panel. */
+  /* Only stretch the CLOSED edit button to match its row siblings' height. When
+     OPEN it must stay auto-height (its natural button size) — the toggle's own
+     box now also contains the edit panel stacked below it, and height:100%
+     there would blow the button up to fill that whole (edit panel included) box. */
   .action-buttons > .edit-toggle:not([open]) > summary.btn-like { height: 100%; }
-  /* When OPEN, the edit button shrinks back to its natural size and sits at the left
-     of its row — only the edit panel below spans full width, not the button. */
-  .action-buttons > .edit-toggle[open] > summary.btn-like { width: auto; }
+  /* The edit button must never move or resize when opened — only its label/color
+     change (see edit-summary rules below). So the toggle's own flex slot
+     (flex: 1 1 0, above) never changes between open/closed; the edit panel just
+     stacks underneath the button inside that same slot, wrapping to whatever
+     column width the toggle already has. (display:contents on <details> would
+     let the panel escape to its own full-width row, but Chrome doesn't flatten
+     <details>/<summary> children into the flex layout — their box tree is a
+     browser-defined special case — so that approach silently breaks instead.) */
+  /* Prevent siblings from being stretched to the edit panel's full height once
+     it's open — align-items:stretch would otherwise balloon "grab a seat" /
+     "add person" to match the tall form next to them. */
+  .action-buttons:has(> .edit-toggle[open]) > :not(.edit-toggle) { align-self: flex-start; }
+  /* Toggle "edit" <-> "save changes" purely off the native [open] attribute —
+     no JS needed. Blue XP-primary theming signals the button now saves. */
+  .edit-toggle .edit-label-open { display: none; }
+  .edit-toggle[open] .edit-label-closed { display: none; }
+  .edit-toggle[open] .edit-label-open { display: inline; }
+  .edit-toggle[open] > summary.edit-summary {
+    border-color: #3c7fb1; font-weight: bold; color: #0b2f5c;
+    box-shadow: inset 0 0 0 1px #cfe4fb, inset 0 -6px 6px -6px rgba(0,60,116,0.25), 0 0 2px 1px rgba(60,127,177,0.5);
+  }
   /* Collapsed chat = a button sitting to the right of edit, stretched to match. */
   .action-buttons > .msn-chat { margin: 0; }
   .action-buttons > .msn-chat:not([open]) { flex: 1.5 1 auto; align-self: stretch; display: flex; }
   .action-buttons > .msn-chat:not([open]) > summary.msn-titlebar { flex: 1; }
-  /* When edit is open, "i'll bring this" takes the whole first row and the edit
-     panel drops to its own full-width row below it. Open chat likewise gets a full row. */
-  .action-buttons:has(.edit-toggle[open]) > .btn-primary { flex-basis: 100%; }
-  .action-buttons > .edit-toggle[open] { flex-basis: 100%; order: 4; }
-  .action-buttons > .msn-chat[open] { flex-basis: 100%; order: 5; }
+  .action-buttons > .msn-chat[open] { flex: 0 0 100%; order: 5; }
   @media (max-width: 600px) {
     /* Chat button drops to its own full-width row BELOW pledge+edit. pledge/edit
        need a non-zero basis here, otherwise 0 + 0 + 100% all fit on one line and
@@ -542,8 +558,10 @@
      slot, then edit, then the chat button — same flex behaviour. */
   .action-buttons > .car-seat-form { flex: 2 1 0; min-width: 0; margin: 0; display: flex; }
   .action-buttons > .car-seat-form > .btn { width: 100%; justify-content: center; text-align: center; }
-  .action-buttons:has(.edit-toggle[open]) > .car-seat-form { flex-basis: 100%; }
-  .car-riders { font-size: 0.9em; color: #333; margin: 0 0 4px; }
+  .action-buttons > .btn-add-person { flex: 1 1 0; min-width: 0; margin: 0; }
+  @media (max-width: 600px) {
+    .action-buttons > .btn-add-person { flex: 1 0 100%; }
+  }
   .post-car-summary { cursor: pointer; font-family: var(--fun-font); color: #0a246a; padding: 2px 0; }
   @media (max-width: 600px) { .action-buttons > .car-seat-form { flex: 2 1 auto; } }
 
@@ -826,18 +844,38 @@
   .xp-tb-btn.min, .xp-tb-btn.max { background: linear-gradient(180deg,#4aa3ff 0%,#1c6fe0 45%,#0d59d6 100%); }
   .xp-tb-btn.close { background: linear-gradient(180deg,#f9b38c 0%,#e0632f 8%,#e14f28 45%,#d0330f 100%); }
   .xp-window-body { background: #ece9d8; padding: 4px 6px 8px; }
-  .xp-window-body main { max-width: none; margin: 0; padding: 6px 4px; }
+  .xp-window-body main { max-width: none; margin: 0; padding: 6px 4px; min-height: 0; }
   @media (max-width: 600px) { .xp-titlebar-text { font-size: 0.95em; } }
+
+  /* The "me" tab's mini windows render outside the main .xp-window frame (see
+     #mine-floating in layout.js). Mobile-first: .mine-col wrappers are inert
+     (display:contents) so their children fall into one flat centered column in
+     DOM order, each nudged left/right by --mini-offset (margin, not transform —
+     dragging already claims transform for its own delta, see camp.js, and the two
+     would otherwise stomp each other). Desktop (601px+) turns each .mine-col into
+     its own real column — checklist+ride stacked on the left with a fixed gap,
+     bringing alone on the right — so the left column's spacing is never coupled
+     to (stretched by) the right column's height the way a spanning grid item
+     would do. */
+  .mine-floating { max-width: 900px; width: calc(100% - 44px); margin: 0 auto 30px; display: flex; flex-direction: column; align-items: center; }
+  .mine-floating:empty { margin: 0; }
+  .mine-col { display: contents; }
+  @media (min-width: 601px) {
+    .mine-floating { display: grid; grid-template-columns: 1fr 1fr; align-items: start; gap: 0 24px; }
+    .mine-col { display: flex; flex-direction: column; }
+    .mine-col-left { gap: 50px; }
+  }
 
   /* Little draggable XP windows used for the "me" tab sections — each section is
      its own Luna window (title bar + caption buttons) instead of a flat card, and
-     they're staggered slightly so they read like real stacked windows on a desktop.
-     Grab a title bar to drag it around. */
+     they're staggered slightly so they read like real stacked windows on a
+     desktop. Grab a title bar to drag it around. */
   .xp-mini {
-    position: relative; margin: 16px 0; max-width: 580px;
+    position: relative; margin: 16px 0 16px var(--mini-offset, 0px); max-width: 580px; width: 100%;
     background: #0831d9; padding: 0 3px 3px; border-radius: 8px 8px 0 0;
     box-shadow: 0 8px 22px rgba(0,0,0,0.42);
   }
+  @media (min-width: 601px) { .xp-mini { margin: 0; max-width: none; } }
   .xp-mini-titlebar {
     height: 26px; display: flex; align-items: center; gap: 6px;
     margin: 0 -3px; padding: 0 3px 0 9px; border-radius: 8px 8px 0 0;
@@ -851,7 +889,7 @@
   .xp-mini-body { background: #ece9d8; padding: 12px 14px; }
   .xp-mini-body > h3:first-child { margin-top: 0; }
   .xp-mini.dragging { opacity: 0.94; box-shadow: 0 16px 38px rgba(0,0,0,0.55); z-index: 60; }
-  @media (max-width: 600px) { .xp-mini { margin-left: 0 !important; max-width: 100%; } }
+  @media (max-width: 600px) { .xp-mini { transform: translateX(calc(var(--mini-offset, 0px) * 0.4)); max-width: 100%; } }
 
   /* Floating, draggable XP popup windows (add person / merge / add-to-car). They
      live in #popup-layer, are positioned + cascaded by JS on insert, and share the

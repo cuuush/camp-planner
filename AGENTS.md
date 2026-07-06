@@ -26,7 +26,31 @@ rendered top-left, merge/delete select-mode was dead) because it *looked* fine.
   bubble to `document`. `document.body.*` inside a function that runs later (e.g. a
   `DOMContentLoaded` callback or a click handler) is fine — only top-level use breaks.
 
-### 2. curl only proves the HTML is present, NOT that the JS runs
+### 2. Flexbox "full width on open" tricks in `.action-buttons` are fragile
+The car/item card action row (`.action-buttons` in `public/retro.css`) uses a pile of
+`order` / `flex-basis` overrides to make the edit `<details>` toggle, chat `<details>`,
+etc. reflow differently when open vs closed. Two specific traps bit us fixing the
+"edit button shifts column and resizes" bug (2026-07-06):
+- **`flex-basis: 100%` alone will NOT force a line wrap** if its row siblings have
+  `flex-basis: 0` (e.g. `flex: 1 1 0`). Line-wrapping is decided on hypothetical
+  (pre-grow) main size, so the 0-basis siblings "don't count," and the 100% item gets
+  silently squeezed into whatever space is left instead of wrapping to its own row.
+  Fix: also set `flex-shrink: 0` (e.g. `flex: 0 0 100%`) so it can't be squeezed.
+- **`display: contents` on `<details>` does not flatten `<summary>`/content into the
+  parent flex layout in Chrome**, even though `getComputedStyle` reports
+  `display: contents` on the element itself. This is a real browser bug/limitation
+  specific to `<details>`/`<summary>`, not a CSS mistake — don't spend time debugging
+  your selectors first. If you need a toggle's content to become independent flex
+  items of the grandparent, this technique doesn't work; instead keep the `<details>`
+  as one pinned-size flex item (`flex: 1 1 0`, never changing between open/closed) and
+  let its content stack normally underneath, using `align-self: flex-start` on
+  siblings (via `:has(> .edit-toggle[open])`) so they don't get stretched to match the
+  open panel's height.
+- General lesson: every new "when open, reorder/resize row N" rule added here compounds
+  the fragility of the ones before it. Prefer NOT changing a toggle button's own size/
+  position at all (only its label/color) over adding more flex choreography.
+
+### 3. curl only proves the HTML is present, NOT that the JS runs
 Every "verified via curl" check in this repo confirms markup/headers only. It will
 happily pass while the client JS is throwing in the browser (see #1). If a change is
 behavioral (drag, select-mode, popups, stash/restore), a green curl is necessary but

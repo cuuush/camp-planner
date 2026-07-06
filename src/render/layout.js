@@ -172,7 +172,7 @@ function taskbar(c, festival, festivals) {
     </div>`;
 }
 
-export async function renderPage(c, { title, activeTab = '', body, festival = null }) {
+export async function renderPage(c, { title, activeTab = '', body, festival = null, floating = '' }) {
     const db = c.env.DB;
     const person = c.get('person');
 
@@ -259,6 +259,7 @@ export async function renderPage(c, { title, activeTab = '', body, festival = nu
       </main>
     </div>
   </div>
+  <div id="mine-floating" class="mine-floating">${floating}</div>
   <footer class="site">
     <div class="badge-row">
       ${['under construction', 'best viewed IE/Netscape', 'valid html', 'NEW!', 'mailbox', 'rave on'].map((label) => html`<div class="badge">${label}</div>`)}

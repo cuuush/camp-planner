@@ -9,12 +9,14 @@ import { isCarPassTask } from './people.js';
 export const mine = new Hono();
 
 // Wrap a "me"-tab section in a little draggable XP window (title bar + caption
-// buttons). `offset` nudges each window left/right (negative = left) so they read
-// like loose, floating windows on a desktop rather than a flush stack; the caption
-// buttons are decorative, like the app frame.
-function miniWindow(title, offset, inner) {
+// buttons). `offset` nudges each window left/right (negative = left) on mobile,
+// where they stack in one column; `slug` places it in the 2-column desktop grid
+// (see .mine-floating in retro.css: checklist+ride stack on the left, bringing
+// takes the right column). These live outside the main app window (see
+// #mine-floating in layout.js) so they never render on top of it.
+function miniWindow(title, slug, offset, inner) {
     return html`
-    <div class="xp-mini" style="margin-left:${offset}px">
+    <div class="xp-mini xp-mini-${slug}" style="--mini-offset:${offset}px">
       <div class="xp-mini-titlebar">
         <span class="xp-mini-title">${title}</span>
         <span class="xp-mini-btns">
@@ -27,15 +29,22 @@ function miniWindow(title, offset, inner) {
     </div>`;
 }
 
+// htmx fragment for partial updates: swaps the primary target (#main) as usual,
+// plus an out-of-band swap for #mine-floating, which lives outside the main
+// .xp-window and isn't reachable by an ordinary hx-target.
+function mineFragment({ main, floating }) {
+    return html`${main}<div id="mine-floating" hx-swap-oob="innerHTML">${floating}</div>`;
+}
+
 async function renderMineBody(c, festival) {
     const db = c.env.DB;
     const person = c.get('person');
     if (!person) {
-        return html`<div class="card">
+        return { main: html`<div class="card">
           <p>sign in to see your packing list, your ride, and your checklist.</p>
           <button class="btn btn-primary" type="button"
             hx-get="/signin/modal?next=/f/${festival.id}/mine" hx-target="#signin-modal-overlay" hx-swap="innerHTML">sign in</button>
-        </div>`;
+        </div>`, floating: '' };
     }
 
     const daysToGo = festival.start_date ? Math.ceil((new Date(festival.start_date) - new Date()) / 86400000) : null;
@@ -62,10 +71,13 @@ async function renderMineBody(c, festival) {
         WHERE s.person_id = ? AND s.deleted_at IS NULL AND c.festival_id = ?
     `).bind(person.id, festival.id).first();
 
-    return html`
+    const main = html`
     ${near ? html`<p class="rainbow">it's almost time — here's your 7am packing checklist!</p>` : ''}
+    `;
 
-    ${miniWindow('festival checklist', -26, html`
+    const floating = html`
+    <div class="mine-col mine-col-left">
+    ${miniWindow('festival checklist', 'checklist', -12, html`
       <div class="checklist-rows">
         ${tasks.map((t) => {
             // A car pass only matters if you're driving — if not, just don't show it.
@@ -91,7 +103,15 @@ async function renderMineBody(c, festival) {
       </form>
     `)}
 
-    ${miniWindow('what im bringing', 30, html`
+    ${miniWindow('my ride', 'ride', -6, html`
+      ${drivingCar ? html`<a class="ride-panel" href="/f/${festival.id}/rides"><span class="ride-icon">🚗</span><div class="ride-info"><b>you're driving!</b><br>${drivingCar.seats_total} seats · leaving from ${drivingCar.leaving_from || '?'}</div><span class="ride-go">cars ›</span></a>` : ''}
+      ${ridingSeat ? html`<a class="ride-panel" href="/f/${festival.id}/rides"><span class="ride-icon">🚗</span><div class="ride-info"><b>riding with ${ridingSeat.driver_name}</b></div><span class="ride-go">cars ›</span></a>` : ''}
+      ${!drivingCar && !ridingSeat ? html`<a class="ride-panel ride-empty" href="/f/${festival.id}/rides"><span class="ride-icon">🚗</span><div class="ride-info">no ride yet — head to the cars tab!</div><span class="ride-go">cars ›</span></a>` : ''}
+    `)}
+    </div>
+
+    <div class="mine-col mine-col-right">
+    ${miniWindow('what im bringing', 'bringing', 14, html`
       ${pledges.length === 0
             ? html`<p class="mine-empty">nothing pledged yet — go grab something on the stuff tab!</p>`
             : html`<div class="bringing-list">
@@ -108,20 +128,17 @@ async function renderMineBody(c, festival) {
             </div>`)}
         </div>`}
     `)}
-
-    ${miniWindow('my ride', -14, html`
-      ${drivingCar ? html`<a class="ride-panel" href="/f/${festival.id}/rides"><span class="ride-icon">🚗</span><div class="ride-info"><b>you're driving!</b><br>${drivingCar.seats_total} seats · leaving from ${drivingCar.leaving_from || '?'}</div><span class="ride-go">cars ›</span></a>` : ''}
-      ${ridingSeat ? html`<a class="ride-panel" href="/f/${festival.id}/rides"><span class="ride-icon">🚗</span><div class="ride-info"><b>riding with ${ridingSeat.driver_name}</b></div><span class="ride-go">cars ›</span></a>` : ''}
-      ${!drivingCar && !ridingSeat ? html`<a class="ride-panel ride-empty" href="/f/${festival.id}/rides"><span class="ride-icon">🚗</span><div class="ride-info">no ride yet — head to the cars tab!</div><span class="ride-go">cars ›</span></a>` : ''}
-    `)}
+    </div>
   `;
+
+    return { main, floating };
 }
 
 mine.get('/f/:id/mine', async (c) => {
     const festival = await loadFestival(c);
     if (!festival) return c.notFound();
-    const body = await renderMineBody(c, festival);
-    return c.html(await renderPage(c, { title: `${festival.name} — my list`, festival, activeTab: 'mine', body }));
+    const { main, floating } = await renderMineBody(c, festival);
+    return c.html(await renderPage(c, { title: `${festival.name} — my list`, festival, activeTab: 'mine', body: main, floating }));
 });
 
 // Toggle your own checklist item from the "my list" tab. Same effect as the ppl
@@ -140,7 +157,7 @@ mine.post('/f/:id/mine/check/:taskId', async (c) => {
     // Car pass is driver-only — ignore the toggle if they haven't posted a car.
     if (isCarPassTask(task)) {
         const driving = await db.prepare('SELECT 1 FROM cars WHERE festival_id = ? AND driver_person_id = ? AND deleted_at IS NULL').bind(festival.id, person.id).first();
-        if (!driving) return c.html(await renderMineBody(c, festival));
+        if (!driving) return c.html(mineFragment(await renderMineBody(c, festival)));
     }
 
     const existing = await db.prepare('SELECT * FROM checklist_checks WHERE task_id = ? AND person_id = ?').bind(taskId, person.id).first();
@@ -161,7 +178,7 @@ mine.post('/f/:id/mine/check/:taskId', async (c) => {
         summary: `${person.display_name} ${nowChecked ? 'checked off' : 'unchecked'} "${task.label}"`,
     });
 
-    return c.html(await renderMineBody(c, festival));
+    return c.html(mineFragment(await renderMineBody(c, festival)));
 });
 
 // Anyone signed in can add a shared checklist item (it applies to everyone's list).
@@ -173,7 +190,7 @@ mine.post('/f/:id/mine/checklist/tasks', async (c) => {
     const person = c.get('person');
     const body = await c.req.parseBody();
     const label = (body.label || '').toString().trim();
-    if (!label) return c.html(await renderMineBody(c, festival));
+    if (!label) return c.html(mineFragment(await renderMineBody(c, festival)));
 
     const result = await db.prepare('INSERT INTO checklist_tasks (festival_id, label) VALUES (?, ?)').bind(festival.id, label).run();
 
@@ -183,7 +200,7 @@ mine.post('/f/:id/mine/checklist/tasks', async (c) => {
         summary: `${person ? person.display_name : 'someone'} added checklist item "${label}"`,
     });
 
-    return c.html(await renderMineBody(c, festival));
+    return c.html(mineFragment(await renderMineBody(c, festival)));
 });
 
 // Remove a checklist item for everyone — but the default festival/car passes
@@ -197,8 +214,8 @@ mine.post('/f/:id/mine/checklist/:taskId/delete', async (c) => {
     const taskId = Number(c.req.param('taskId'));
 
     const task = await db.prepare('SELECT * FROM checklist_tasks WHERE id = ? AND festival_id = ? AND deleted_at IS NULL').bind(taskId, festival.id).first();
-    if (!task) return c.html(await renderMineBody(c, festival));
-    if (task.is_default) return c.html(await renderMineBody(c, festival)); // required — not deletable
+    if (!task) return c.html(mineFragment(await renderMineBody(c, festival)));
+    if (task.is_default) return c.html(mineFragment(await renderMineBody(c, festival))); // required — not deletable
 
     await db.prepare("UPDATE checklist_tasks SET deleted_at = datetime('now') WHERE id = ?").bind(taskId).run();
 
@@ -208,7 +225,7 @@ mine.post('/f/:id/mine/checklist/:taskId/delete', async (c) => {
         summary: `${person ? person.display_name : 'someone'} removed checklist item "${task.label}"`,
     });
 
-    return c.html(await renderMineBody(c, festival));
+    return c.html(mineFragment(await renderMineBody(c, festival)));
 });
 
 mine.post('/pledges/:pledgeId/packed', async (c) => {
@@ -229,5 +246,5 @@ mine.post('/pledges/:pledgeId/packed', async (c) => {
         summary: `${person ? person.display_name : 'someone'} ${nowPacked ? 'packed' : 'unpacked'} ${item.name}`,
     });
 
-    return c.html(await renderMineBody(c, festival));
+    return c.html(mineFragment(await renderMineBody(c, festival)));
 });

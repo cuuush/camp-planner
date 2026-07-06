@@ -89,7 +89,10 @@ function itemRow(festival, item, stats, person, expanded = false, chatOpen = fal
                   </button>`}
 
             <details class="edit-toggle">
-              <summary class="btn btn-like">edit</summary>
+              <summary class="btn btn-like edit-summary">
+                <span class="edit-label-closed">edit</span>
+                <span class="edit-label-open">save changes</span>
+              </summary>
               <form class="edit-panel" hx-post="/items/${item.id}/edit" hx-target="#item-${item.id}" hx-swap="outerHTML">
                 <div class="edit-panel-title">Edit Item</div>
                 <div class="edit-requester">${requestedBy}</div>

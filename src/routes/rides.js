@@ -40,32 +40,32 @@ function carCard(car, driverName, stats, person, expanded = false, chatOpen = fa
           <span class="item-emoji">🚗</span>
           <div class="item-headline">
             <div class="item-name">${driverName}'s car</div>
-            <div class="item-tally">
-              ${seats.length}/${car.seats_total} seats taken
-              ${openSeats > 0 ? html`<span class="tally-covered">· ${openSeats} open!</span>` : html`<span style="color:#888">· full</span>`}
-            </div>
             <div class="item-description">leaving from ${car.leaving_from || '?'} on ${car.depart_day || '?'} ${car.depart_time || ''}</div>
+            <div class="item-description">
+              ${riders.length ? riders.map((s) => `${s.display_name}${isDriver(s) ? ' (driver)' : ''}`).join(', ') : 'empty — even the driver bailed'}
+              ${openSeats > 0 ? html`<span class="tally-covered">· ${openSeats} open</span>` : ''}
+            </div>
           </div>
         </div>
       </summary>
 
       <div class="item-actions">
-        <p class="car-riders"><b>in the car:</b> ${riders.length ? riders.map((s) => `${s.display_name}${isDriver(s) ? ' (driver)' : ''}`).join(', ') : '(empty — even the driver bailed)'}</p>
-
         <div class="action-buttons">
           ${!myTakenSeat ? html`
             <form class="car-seat-form" hx-post="/cars/${car.id}/seats/claim" hx-target="#car-${car.id}" hx-swap="outerHTML">
               <button class="btn btn-primary" type="submit">${openSeats > 0 ? 'grab an open seat' : 'squeeze in anyway'}</button>
-            </form>` : person && person.id === car.driver_person_id ? html`
-            <form class="car-seat-form"><button class="btn" type="button" disabled>you're driving 🚗</button></form>` : html`
-            <form class="car-seat-form" hx-post="/seats/${myTakenSeat.id}/leave" hx-target="#car-${car.id}" hx-swap="outerHTML">
-              <button class="btn" type="submit">leave this car</button>
+            </form>` : html`
+            <form class="car-seat-form" hx-post="/seats/${myTakenSeat.id}/leave" hx-target="#car-${car.id}" hx-swap="outerHTML" ${person && person.id === car.driver_person_id ? `hx-confirm="You're the driver — leave this car anyway? It'll stay listed but riderless until you rejoin."` : ''}>
+              <button class="btn" type="submit">${person && person.id === car.driver_person_id ? "leave (you're driving)" : 'leave this car'}</button>
             </form>`}
 
-          <button class="btn" type="button" hx-get="/cars/${car.id}/add-window" hx-target="#popup-layer" hx-swap="beforeend">＋ Add Person to Car…</button>
+          <button class="btn btn-add-person" type="button" hx-get="/cars/${car.id}/add-window" hx-target="#popup-layer" hx-swap="beforeend">＋ Add Person to Car…</button>
 
           <details class="edit-toggle">
-            <summary class="btn btn-like">edit</summary>
+            <summary class="btn btn-like edit-summary">
+              <span class="edit-label-closed">edit</span>
+              <span class="edit-label-open">save changes</span>
+            </summary>
             <form class="edit-panel" hx-post="/cars/${car.id}/edit" hx-target="#car-${car.id}" hx-swap="outerHTML">
               <div class="edit-panel-title">Edit Car</div>
               <div class="edit-field"><label>seats</label><input type="number" name="seats_total" value="${car.seats_total}" min="1"></div>
@@ -104,6 +104,13 @@ async function renderRidesBody(c, festival) {
         WHERE c.festival_id = ? AND c.deleted_at IS NULL ORDER BY c.created_at
     `).bind(festival.id).all()).results;
 
+    const members = person ? (await db.prepare(`
+        SELECT pe.id, pe.display_name FROM memberships m
+        JOIN people pe ON pe.id = m.person_id
+        WHERE m.festival_id = ? AND m.bailed_at IS NULL
+        ORDER BY pe.id = ? DESC, pe.display_name
+    `).bind(festival.id, person.id).all()).results : [];
+
     return html`
 
     <details class="card post-car">
@@ -111,7 +118,12 @@ async function renderRidesBody(c, festival) {
       <form class="edit-panel" hx-post="/f/${festival.id}/cars" hx-target="#car-list" hx-swap="innerHTML"
         hx-on::after-request="if(event.detail.successful) this.reset();">
         <div class="edit-panel-title">post a car</div>
-        <p class="popup-hint" style="margin:0;">You are the driver, so the first seat is reserved for you automatically.</p>
+        <p class="popup-hint" style="margin:0;">You're the driver by default, and get the first seat reserved automatically — pick someone else below if you're posting on their behalf.</p>
+        <div class="edit-field"><label>driver</label>
+          <select name="driver_person_id">
+            ${members.map((m) => html`<option value="${m.id}" ${person && m.id === person.id ? 'selected' : ''}>${m.id === person?.id ? `${m.display_name} (you)` : m.display_name}</option>`)}
+          </select>
+        </div>
         <div class="edit-field"><label>seats</label><input type="number" name="seats_total" value="4" min="1" title="total seats, including yours"></div>
         <div class="edit-field"><label>from</label><input type="text" name="leaving_from" placeholder="e.g. oakland"></div>
         <div class="edit-field"><label>day</label><input type="text" name="depart_day" placeholder="thu"></div>
@@ -142,11 +154,24 @@ rides.post('/f/:id/cars', async (c) => {
     const person = c.get('person');
     const body = await c.req.parseBody();
 
+    // Default the driver to whoever's posting, but allow picking a fellow member
+    // to post on their behalf (must already belong to this festival).
+    let driverId = person.id;
+    const requestedDriverId = Number(body.driver_person_id);
+    if (requestedDriverId && requestedDriverId !== person.id) {
+        const member = await db.prepare(`
+            SELECT 1 FROM memberships WHERE festival_id = ? AND person_id = ? AND bailed_at IS NULL
+        `).bind(festival.id, requestedDriverId).first();
+        if (member) driverId = requestedDriverId;
+    }
+    const driverPerson = driverId === person.id ? person
+        : await db.prepare('SELECT display_name FROM people WHERE id = ?').bind(driverId).first();
+
     const result = await db.prepare(`
         INSERT INTO cars (festival_id, driver_person_id, seats_total, leaving_from, depart_day, depart_time)
         VALUES (?, ?, ?, ?, ?, ?)
     `).bind(
-        festival.id, person.id,
+        festival.id, driverId,
         Math.max(1, Number(body.seats_total) || 1),
         (body.leaving_from || '').toString() || null,
         (body.depart_day || '').toString() || null,
@@ -157,7 +182,7 @@ rides.post('/f/:id/cars', async (c) => {
     // The driver rides in their own car — seat them right away so the riders
     // list starts with them instead of looking empty.
     const seatResult = await db.prepare('INSERT INTO seats (car_id, person_id) VALUES (?, ?)')
-        .bind(carId, person.id).run();
+        .bind(carId, driverId).run();
 
     await logAction(c, {
         festivalId: festival.id, action: 'create', entityType: 'cars', entityId: carId,
@@ -165,7 +190,9 @@ rides.post('/f/:id/cars', async (c) => {
         // Posting a car creates two rows (the car AND the driver's seat); undo hides
         // both so it comes apart exactly as it went in.
         effects: [createEffect('cars', carId, sqlNow()), createEffect('seats', seatResult.meta.last_row_id, sqlNow())],
-        summary: `${person.display_name} posted a car (${body.seats_total || 1} seats)`,
+        summary: driverId === person.id
+            ? `${person.display_name} posted a car (${body.seats_total || 1} seats)`
+            : `${person.display_name} posted a car for ${driverPerson.display_name} (${body.seats_total || 1} seats)`,
     });
 
     const body2 = await renderRidesBody(c, festival);
