@@ -334,7 +334,7 @@ function campRunSelect(go) {
 function msnEmote(el, txt) {
   var chat = el.closest('.msn-chat');
   var input = chat && chat.querySelector('input[name=body]');
-  if (input) { input.value += (input.value && !input.value.endsWith(' ') ? ' ' : '') + txt; input.focus(); }
+  if (input) { input.value += (input.value && !input.value.endsWith(' ') ? ' ' : '') + txt; }
 }
 
 // Expand-all / collapse-all toggle above the stuff list. Expands every card if
