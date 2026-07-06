@@ -290,7 +290,7 @@ function campUpdateSelect() {
     hint.textContent = 'Select the 2 entries that belong to the same camper — ' + n + ' of 2 selected.';
   } else {
     go.textContent = 'Delete Selected'; go.disabled = n < 1;
-    hint.textContent = 'Select the campers you want to remove (this can be undone) — ' + n + ' selected.';
+    hint.textContent = 'Select the campers you want to remove ' + n + ' selected.';
   }
 }
 document.addEventListener('change', function (e) {
@@ -329,6 +329,69 @@ function campRunSelect(go) {
     htmx.ajax('POST', '/f/' + fest + '/people/delete', { target: '#main', swap: 'innerHTML', values: { person_ids: ids.join(',') } });
   }
 }
+
+// Car-roster remove mode — the same "reveal a checkbox on every row, pick some,
+// confirm" flow as the ppl tab, but scoped to the ONE expanded car card the button
+// lives in (a page shows many cars at once, so nothing here is global). Unlike ppl,
+// the final confirm is an authentic XP dialog: campCarConfirmRemove hands the picked
+// seat ids to the server, which renders the xpDialogPopup and owns the actual delete.
+function campCarCard(el) { return el.closest('.car-details'); }
+function campCarChecks(card) { return card.querySelectorAll('.car-select-check'); }
+function campCarChecked(card) {
+  return Array.prototype.slice.call(card.querySelectorAll('.car-select-check:checked'));
+}
+function campCarSelect(btn) {
+  var card = campCarCard(btn); if (!card) return;
+  var roster = card.querySelector('.car-roster'), bar = card.querySelector('.car-select-bar');
+  if (!roster || !bar) return;
+  // Remove mode and edit mode are mutually exclusive — opening one closes the other
+  // so their panels never stack/overlap. (The Edit label's onclick calls the cancel
+  // side.) Close the edit panel by un-checking its CSS toggle.
+  var editToggle = card.querySelector('.edit-toggle-checkbox');
+  if (editToggle) editToggle.checked = false;
+  roster.classList.add('selecting');
+  bar.hidden = false;
+  var checks = campCarChecks(card);
+  for (var i = 0; i < checks.length; i++) checks[i].checked = false;
+  campCarSelUpdate(card);
+}
+function campCarSelCancel(btn) {
+  var card = campCarCard(btn); if (!card) return;
+  var roster = card.querySelector('.car-roster'), bar = card.querySelector('.car-select-bar');
+  if (roster) roster.classList.remove('selecting');
+  var checks = campCarChecks(card);
+  for (var i = 0; i < checks.length; i++) checks[i].checked = false;
+  if (bar) bar.hidden = true;
+}
+function campCarSelUpdate(card) {
+  var bar = card.querySelector('.car-select-bar'); if (!bar) return;
+  var n = campCarChecked(card).length;
+  var go = bar.querySelector('.car-select-go'), hint = bar.querySelector('.car-select-hint');
+  go.disabled = n < 1;
+  hint.textContent = 'Pick who to remove, ' + n + ' selected.';
+}
+function campCarConfirmRemove(go) {
+  var card = campCarCard(go); if (!card) return;
+  var ids = campCarChecked(card).map(function (c) { return c.value; });
+  if (!ids.length) return;
+  var carId = (card.id || '').replace('car-', '');
+  htmx.ajax('GET', '/cars/' + carId + '/seats/remove-window?ids=' + ids.join(','), { target: '#popup-layer', swap: 'beforeend' });
+}
+// Same delegated toggles the ppl list uses, for the car roster's own checkboxes.
+document.addEventListener('change', function (e) {
+  if (!e.target.classList || !e.target.classList.contains('car-select-check')) return;
+  var card = campCarCard(e.target); if (card) campCarSelUpdate(card);
+});
+document.addEventListener('click', function (e) {
+  if (!e.target.closest) return;
+  var roster = e.target.closest('.car-roster');
+  if (!roster || !roster.classList.contains('selecting')) return;
+  var row = e.target.closest('.roster-row'); if (!row) return;
+  if (e.target.closest('.car-select-box')) return; // the box toggles itself natively
+  var cb = row.querySelector('.car-select-check'); if (!cb) return;
+  cb.checked = !cb.checked;
+  var card = campCarCard(row); if (card) campCarSelUpdate(card);
+});
 
 // MSN emoticon toolbar: append the typed emoticon into the chat's compose box.
 function msnEmote(el, txt) {

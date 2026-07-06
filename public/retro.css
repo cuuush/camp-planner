@@ -547,25 +547,46 @@
   .withdraw-form { margin: 0; }
   .withdraw-form > .btn { width: 100%; justify-content: center; text-align: center; }
 
-  /* Cars get their own row: the seat button on its own full-width row up top
-     (it's the primary action), then "add person" + edit share the row below
-     (flex-shrink:0 so the 100% basis actually wraps — see gotcha #2 in
-     AGENTS.md about 0-basis siblings not forcing a wrap on their own). */
-  .action-buttons > .car-seat-form { flex: 1 0 100%; min-width: 0; margin: 0; display: flex; }
+  /* Car action row — four equal buttons: [join/leave][add] / [remove][edit].
+     Mobile default: each takes calc(50% - 4px) so exactly two sit per row and it
+     wraps into a 2×2 grid (a 0-basis wouldn't force the wrap — gotcha #2; the -4px
+     accounts for half the 8px gap). Desktop (≥601px): all four collapse onto one
+     row (1/4 each). The edit slot's label⇄save pair counts as the one 4th button
+     since only one shows at a time. The chat window drops to its own full-width
+     row underneath (order:10). Classes .car-seat-form/.btn-add-person/
+     .btn-remove-person are car-only, so `.action-buttons >` is already car-scoped;
+     .edit-*-btn is shared with items, hence the `.car-details` qualifier there. */
+  .action-buttons > .car-seat-form { min-width: 0; margin: 0; display: flex; }
   .action-buttons > .car-seat-form > .btn { width: 100%; justify-content: center; text-align: center; }
-  .action-buttons > .btn-add-person { flex: 2 1 0; min-width: 0; margin: 0; }
+  .car-details .action-buttons > .car-seat-form,
+  .car-details .action-buttons > .btn-add-person,
+  .car-details .action-buttons > .btn-remove-person,
+  .car-details .action-buttons > .edit-open-btn,
+  .car-details .action-buttons > .edit-save-btn {
+    flex: 1 1 calc(50% - 4px); min-width: 0; margin: 0;
+  }
+  .car-details .action-buttons > .msn-chat:not([open]) { flex: 0 0 100%; }
+  @media (min-width: 601px) {
+    .car-details .action-buttons > .car-seat-form,
+    .car-details .action-buttons > .btn-add-person,
+    .car-details .action-buttons > .btn-remove-person,
+    .car-details .action-buttons > .edit-open-btn,
+    .car-details .action-buttons > .edit-save-btn {
+      flex: 1 1 0;
+    }
+  }
   .post-car-summary { cursor: pointer; font-family: var(--fun-font); color: #0a246a; padding: 2px 0; }
 
-  /* Proper Windows default button: the same Luna chrome as a normal button,
-     but emphasized as the default action with a blue highlight ring + bold
-     label — not a coloured "Start button". */
+  /* Proper Windows default button: the same Luna chrome as a normal button, marked
+     as the default action with just a slightly darker border + inner highlight.
+     Real XP default buttons are NOT bold and do NOT glow — no ring, no halo. */
   .btn-primary {
-    border-color: #3c7fb1; font-weight: bold; color: #0b2f5c;
-    box-shadow: inset 0 0 0 1px #cfe4fb, inset 0 -6px 6px -6px rgba(0,60,116,0.25), 0 0 2px 1px rgba(60,127,177,0.5);
+    border-color: #3c7fb1; color: #0b2f5c;
+    box-shadow: inset 0 0 0 1px #cfe4fb, inset 0 -6px 6px -6px rgba(0,60,116,0.25);
   }
   .btn-primary:hover {
     border-color: #3c7fb1;
-    box-shadow: inset 0 0 0 1px #cfe4fb, 0 0 4px 1px rgba(255,177,40,0.7);
+    box-shadow: inset 0 0 0 1px #cfe4fb, inset 0 -6px 6px -6px rgba(0,60,116,0.25);
   }
   /* Delete stays a plain Luna button (Windows doesn't colour destructive
      buttons); just a red label so it reads as the dangerous one. */
@@ -591,11 +612,19 @@
     padding: 5px 8px !important;
   }
   .pledge-unit { flex-shrink: 0; color: #333; }
+  /* XP message-box buttons: always centered along the bottom (even a lone OK, or a
+     Yes/No pair — both sit centered, never hugging the right edge). The default
+     button gets XP's understated treatment: a slightly darker border only — no bold
+     label and no outer glow (real XP dialog buttons don't glow). */
   .dialog-buttons {
-    display: flex; justify-content: flex-end; gap: 8px;
+    display: flex; justify-content: center; gap: 8px;
     margin-top: 20px;
   }
   .dialog-buttons .btn { min-width: 82px; text-align: center; }
+  .dialog-buttons .btn-primary {
+    font-weight: normal;
+    box-shadow: inset 0 0 0 1px #cfe4fb, inset 0 -6px 6px -6px rgba(0,60,116,0.25);
+  }
 
   /* Edit is a proper little XP dialog: a group-box face, right-aligned field
      labels lined up in a column, and an OK/Cancel-style button bar at the
@@ -901,6 +930,12 @@
   .xp-dialog-prompt .xp-dialog-icon { margin: 0; }
   .xp-dialog-icon.big { width: 68px; height: 68px; }
   .xp-dialog-msg { flex: 1; min-width: 0; line-height: 1.45; }
+  /* Icon-less dialog (e.g. the "added to car" success notice): with no icon to
+     balance against, center the message and its buttons instead of leaving them
+     hugging the left/right edges. */
+  .xp-dialog-prompt:not(:has(.xp-dialog-icon)) { justify-content: center; }
+  .xp-dialog-prompt:not(:has(.xp-dialog-icon)) .xp-dialog-msg { flex: 0 1 auto; text-align: center; }
+  .xp-popup-body:has(> .xp-dialog-prompt:not(:has(.xp-dialog-icon))) .dialog-buttons { justify-content: center; }
   .xp-popup-titlebar {
     height: 26px; display: flex; align-items: center; gap: 6px;
     margin: 0 -3px; padding: 0 4px 0 9px; border-radius: 8px 8px 0 0;
@@ -958,6 +993,94 @@
   .ppl-list.selecting .ppl-row:hover { background: #f2f7ff; }
   .ppl-list.selecting .ppl-row:has(.ppl-select-check:checked) { background: #dbeaff; border-color: #6f9fda; }
   .ppl-select-check { width: 16px; height: 16px; }
+
+  /* Car header: glossy Luna status pills instead of the old comma list of names —
+     riders in blue, open seats in green, a full car in amber, each with the classic
+     XP two-stop gloss (bright top half, a crisp 50% seam, a white inner highlight). */
+  .car-headcount { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+  .rider-badge, .seats-open, .seats-full {
+    display: inline-flex; align-items: center; gap: 4px;
+    padding: 1px 10px; border-radius: 10px; font-size: 0.82em; font-weight: bold;
+    box-shadow: inset 0 1px 0 rgba(255,255,255,0.85), 0 1px 1px rgba(0,0,0,0.12);
+  }
+  .rider-badge {
+    color: #0a3d7a; border: 1px solid #6f9fda;
+    background: linear-gradient(180deg,#f2f8ff 0%,#d3e6fb 48%,#bcd8f7 52%,#d6ebff 100%);
+  }
+  .seats-open {
+    color: #196b19; border: 1px solid #6fb06a;
+    background: linear-gradient(180deg,#f1fbef 0%,#cdeecb 48%,#b6e4b2 52%,#d6f4d2 100%);
+  }
+  .seats-full {
+    color: #7a5a12; border: 1px solid #d0b256;
+    background: linear-gradient(180deg,#fdf7e2 0%,#f6e6b8 48%,#f0dc9c 52%,#faefcb 100%);
+  }
+
+  /* Passenger roster = an authentic XP Explorer "details" list: a sunken white
+     field, a raised grey Luna column-header bar (bright top, etched bottom rule),
+     zebra rows, and a blue selection highlight on hover. */
+  .xp-listview {
+    background: #fff; border: 1px solid #7f9db9;
+    box-shadow: inset 1px 1px 2px rgba(0,0,0,0.18); overflow: hidden;
+  }
+  .xp-listview-head {
+    display: flex; align-items: center; gap: 6px;
+    background: linear-gradient(180deg,#ffffff 0%,#f3f1e6 48%,#e8e5d3 52%,#ded9c4 100%);
+    color: #37352c; font-weight: bold; font-size: 0.8em; letter-spacing: 0.2px;
+    padding: 3px 8px; border-bottom: 1px solid #aca591;
+    box-shadow: inset 0 1px 0 #fff; text-shadow: 0 1px 0 rgba(255,255,255,0.7);
+  }
+  .xp-listview-head .roster-count { font-weight: normal; color: #6b6552; }
+  /* "Add" / "Remove" sit right-justified in the column header as XP task-pane
+     hyperlinks (blue, underlined, orange on hover) — not buttons. */
+  .lv-head-title { flex: 1; min-width: 0; }
+  .lv-head-actions { margin-left: auto; display: inline-flex; gap: 12px; flex-shrink: 0; }
+  /* These are <button>s (for htmx), so they inherit the global Luna push-button
+     chrome — override ALL of it (border, radius, and the inset bevel + amber hover
+     box-shadow that otherwise draws a "ghost outline") back to plain link text. */
+  .lv-link, .lv-link:hover, .lv-link:active {
+    background: none; border: none; border-radius: 0; box-shadow: none;
+    padding: 0; margin: 0; cursor: pointer;
+    font: inherit; font-weight: normal; text-decoration: underline; text-shadow: none;
+  }
+  .lv-link { color: #1c5fb4; }
+  .lv-link:hover { color: #d5620a; }
+  .lv-link:focus { outline: none; }
+  .lv-link:focus-visible { outline: 1px dotted #4a4a3c; outline-offset: 2px; }
+  .roster-row {
+    display: flex; align-items: center; gap: 8px; padding: 4px 8px;
+    border-bottom: 1px solid #eef1f5;
+  }
+  .roster-row:last-child { border-bottom: none; }
+  .roster-row:nth-child(even) { background: #f6f8fb; }
+  /* Explorer highlights the hovered row in Luna blue (skipped in select mode, which
+     paints its own hover further down). */
+  .car-roster:not(.selecting) .roster-row:hover {
+    background: linear-gradient(180deg,#eaf3ff,#d4e6fb);
+  }
+  .roster-emoji { font-size: 1.1em; line-height: 1; }
+  .roster-name { flex: 1; min-width: 0; }
+  .driver-badge {
+    margin-left: 6px; font-size: 0.72em; font-weight: bold; text-transform: uppercase;
+    letter-spacing: 0.5px; color: #0a3d7a; padding: 0 5px; border-radius: 7px;
+    background: linear-gradient(180deg,#fdf6d8 0%,#fbeeb0 100%); border: 1px solid #d9bd5a;
+  }
+  .roster-empty { padding: 8px; color: #555; font-style: italic; font-size: 0.9em; }
+
+  /* Remove mode: reuse the ppl tab's checkbox reveal + selected-row highlight. */
+  .car-select-box { display: none; align-items: center; }
+  .car-roster.selecting .car-select-box { display: inline-flex; }
+  .car-roster.selecting .roster-row { cursor: pointer; user-select: none; }
+  .car-roster.selecting .roster-row:hover { background: #eaf2ff; }
+  .car-roster.selecting .roster-row:has(.car-select-check:checked) { background: #dbeaff; }
+  .car-select-check { width: 16px; height: 16px; }
+  .car-select-bar {
+    display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 7px 10px;
+    background: linear-gradient(180deg,#fdf6d8 0%,#fbeeb0 100%);
+    border: 1px solid #d9bd5a; border-radius: 4px;
+  }
+  .car-select-bar[hidden] { display: none; }
+  .car-select-hint { flex: 1 1 160px; font-size: 0.85em; color: #4a3d12; }
 
   /* me-tab: festival checklist rows (inside its window) */
   .checklist-rows { display: flex; flex-direction: column; gap: 1px; margin: 2px 0 8px; }

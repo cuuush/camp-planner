@@ -51,28 +51,53 @@ function carCard(car, driverName, stats, person, expanded = false, chatOpen = fa
           <div class="item-headline">
             <div class="item-name">${driverName}'s car</div>
             <div class="item-description">leaving from ${car.leaving_from || '?'} on ${car.depart_day || '?'} ${car.depart_time || ''}</div>
-            <div class="item-description">
-              ${riders.length ? riders.map((s) => `${s.display_name}${isDriver(s) ? ' (driver)' : ''}`).join(', ') : 'empty — even the driver bailed'}
-              ${openSeats > 0 ? html`<span class="tally-covered">· ${openSeats} open</span>` : ''}
+            <div class="item-description car-headcount">
+              <span class="rider-badge">👥 ${seats.length} aboard</span>
+              ${openSeats > 0
+                  ? html`<span class="seats-open">${openSeats} seat${openSeats === 1 ? '' : 's'} open</span>`
+                  : html`<span class="seats-full">car full</span>`}
             </div>
           </div>
         </div>
       </summary>
 
       <div class="item-actions">
+        ${seats.length ? html`
+          <div class="car-select-bar" hidden>
+            <span class="car-select-hint"></span>
+            <button class="btn btn-primary car-select-go" type="button" disabled onclick="campCarConfirmRemove(this)">Remove Selected</button>
+            <button class="btn" type="button" onclick="campCarSelCancel(this)">Cancel</button>
+          </div>` : ''}
+        <div class="xp-listview car-roster">
+          <div class="xp-listview-head">
+            <span class="lv-head-title">Passengers <span class="roster-count">(${seats.length})</span></span>
+            <span class="lv-head-actions">
+              <button type="button" class="lv-link" hx-get="/cars/${car.id}/add-window" hx-target="#popup-layer" hx-swap="beforeend">Add</button>
+              ${seats.length ? html`<button type="button" class="lv-link" onclick="campCarSelect(this)">Remove</button>` : ''}
+            </span>
+          </div>
+          ${riders.length ? riders.map((s) => html`
+            <div class="roster-row">
+              <label class="car-select-box"><input type="checkbox" class="car-select-check" value="${s.id}" data-name="${s.display_name}"></label>
+              <span class="roster-emoji">${isDriver(s) ? '🧑‍✈️' : '🙂'}</span>
+              <span class="roster-name">${s.display_name}${isDriver(s) ? html`<span class="driver-badge">driver</span>` : ''}</span>
+            </div>`) : html`<div class="roster-empty">empty — even the driver bailed</div>`}
+        </div>
+
         <div class="action-buttons">
           ${!myTakenSeat ? html`
-            <form class="car-seat-form" hx-post="/cars/${car.id}/seats/claim" hx-target="#car-${car.id}" hx-swap="outerHTML">
-              <button class="btn btn-primary" type="submit">${openSeats > 0 ? 'Grab a Seat' : 'Squeeze in Anyway?'}</button>
+            <form class="car-seat-form" hx-post="/cars/${car.id}/seats/claim" hx-target="#car-${car.id}" hx-swap="outerHTML" hx-vals='js:{chat_open: document.getElementById("chat-car-${car.id}")?.open ? 1 : 0}'>
+              <button class="btn btn-primary" type="submit">Join Car</button>
+            </form>` : (person && person.id === car.driver_person_id ? html`
+            <form class="car-seat-form" hx-get="/cars/${car.id}/leave-window" hx-target="#popup-layer" hx-swap="beforeend">
+              <button class="btn" type="submit">Leave Car (you're driving)</button>
             </form>` : html`
-            <form class="car-seat-form" hx-post="/seats/${myTakenSeat.id}/leave" hx-target="#car-${car.id}" hx-swap="outerHTML" ${person && person.id === car.driver_person_id ? `hx-confirm="You're the driver — leave this car anyway? It'll stay listed but riderless until you rejoin."` : ''}>
-              <button class="btn" type="submit">${person && person.id === car.driver_person_id ? "leave (you're driving)" : 'leave this car'}</button>
-            </form>`}
-
-          <button class="btn btn-add-person" type="button" hx-get="/cars/${car.id}/add-window" hx-target="#popup-layer" hx-swap="beforeend">Add Passenger</button>
+            <form class="car-seat-form" hx-post="/seats/${myTakenSeat.id}/leave" hx-target="#car-${car.id}" hx-swap="outerHTML" hx-vals='js:{chat_open: document.getElementById("chat-car-${car.id}")?.open ? 1 : 0}'>
+              <button class="btn" type="submit">Leave Car</button>
+            </form>`)}
 
           <input type="checkbox" class="edit-toggle-checkbox" id="edit-toggle-car-${car.id}">
-          <label class="btn edit-open-btn" for="edit-toggle-car-${car.id}">Edit</label>
+          <label class="btn edit-open-btn" for="edit-toggle-car-${car.id}" onclick="campCarSelCancel(this)">Edit</label>
           <button class="btn btn-primary edit-save-btn" type="submit" form="edit-form-car-${car.id}">Save</button>
             <form id="edit-form-car-${car.id}" class="edit-panel" hx-post="/cars/${car.id}/edit" hx-target="#car-${car.id}" hx-swap="outerHTML" hx-vals='js:{chat_open: document.getElementById("chat-car-${car.id}")?.open ? 1 : 0}'>
               <div class="edit-panel-title">Edit Car</div>
@@ -125,7 +150,7 @@ async function renderRidesBody(c, festival) {
       <form class="edit-panel" hx-post="/f/${festival.id}/cars" hx-target="#car-list" hx-swap="innerHTML"
         hx-on::after-request="if(event.detail.successful) this.reset();">
         <div class="edit-panel-title">post a car</div>
-        <p class="popup-hint" style="margin:0;">You're the driver by default, and get the first seat reserved automatically — pick someone else below if you're posting on their behalf.</p>
+        <p class="popup-hint" style="margin:0 0 12px;">You're the driver by default, and get the first seat reserved automatically — pick someone else below if you're posting on their behalf.</p>
         <div class="edit-field"><label>driver</label>
           <select name="driver_person_id">
             ${members.map((m) => html`<option value="${m.id}" ${person && m.id === person.id ? 'selected' : ''}>${m.id === person?.id ? `${m.display_name} (you)` : m.display_name}</option>`)}
@@ -231,7 +256,7 @@ rides.post('/cars/:carId/edit', async (c) => {
     const loaded = await loadCar(c);
     if (!loaded) return c.notFound();
     if (needsSignin(c)) return signinModalResponse(c, { expandId: `car-${loaded.car.id}` });
-    const { car, festival } = loaded;
+    const { car, festival, driver } = loaded;
     const db = c.env.DB;
     const person = c.get('person');
     const body = await c.req.parseBody();
@@ -250,7 +275,7 @@ rides.post('/cars/:carId/edit', async (c) => {
     await logAction(c, {
         festivalId: festival.id, action: 'update', entityType: 'cars', entityId: car.id,
         before, after, reversible: true, effects: fieldEffects('cars', car.id, before, after),
-        summary: `${person ? person.display_name : 'someone'} updated a car's details`,
+        summary: `${person ? person.display_name : 'someone'} updated ${driver.display_name}'s car`,
     });
 
     return carResponse(c, festival, car.id, true, body.chat_open === '1');
@@ -298,7 +323,8 @@ rides.post('/cars/:carId/seats/claim', async (c) => {
         body: `${person.display_name} grabbed a seat in your car for ${festival.name}.`,
     });
 
-    return carResponse(c, festival, car.id);
+    const body = await c.req.parseBody();
+    return carResponse(c, festival, car.id, true, body.chat_open === '1');
 });
 
 // Popup: pick a fest person to add to this car, or open the "new person" cascade.
@@ -398,6 +424,104 @@ rides.post('/cars/:carId/seats/add-new', async (c) => {
     return carResponse(c, festival, car.id, true, false, addedDialog(`${name} was successfully added to ${driver.display_name}'s car.`));
 });
 
+// XP "are you sure?" dialog for kicking selected passengers out of a car. The
+// roster's checkboxes gather the seat ids client-side (campCarConfirmRemove) and
+// hand them here as ?ids=; we look the names up server-side so the message can't be
+// spoofed and reuse the shared xpDialogPopup chrome with a warning icon + Yes/No.
+rides.get('/cars/:carId/seats/remove-window', async (c) => {
+    const loaded = await loadCar(c);
+    if (!loaded) return c.notFound();
+    if (needsSignin(c)) return signinModalResponse(c, { expandId: `car-${loaded.car.id}` });
+    const { car, driver } = loaded;
+    const db = c.env.DB;
+    const ids = (c.req.query('ids') || '').split(',').map(Number).filter(Boolean);
+    if (!ids.length) return c.html('');
+    const seats = (await db.prepare(`
+        SELECT s.id, pe.display_name FROM seats s
+        JOIN people pe ON pe.id = s.person_id
+        WHERE s.car_id = ? AND s.deleted_at IS NULL AND s.id IN (${ids.map(() => '?').join(',')})
+        ORDER BY s.created_at
+    `).bind(car.id, ...ids).all()).results;
+    if (!seats.length) return c.html('');
+
+    const who = seats.length === 1 ? html`<b>${seats[0].display_name}</b>` : html`these <b>${seats.length}</b> passengers`;
+    return c.html(xpDialogPopup({
+        title: seats.length === 1 ? 'Remove Passenger' : 'Remove Passengers',
+        id: `remove-seats-${car.id}`,
+        icon: '/Alert.png',
+        message: html`Are you sure you want to remove ${who} from ${driver.display_name}'s car?`,
+        buttons: html`
+          <button class="btn btn-primary" type="button"
+            hx-post="/cars/${car.id}/seats/remove" hx-vals='${JSON.stringify({ seat_ids: seats.map((s) => s.id).join(',') })}'
+            hx-target="#car-${car.id}" hx-swap="outerHTML"
+            hx-on::after-request="if(event.detail.successful) closePopup(this)">Yes, Remove</button>
+          <button class="btn" type="button" onclick="closePopup(this)">Cancel</button>`,
+    }));
+});
+
+// Soft-hide one or more seats in a car — fully undoable. One audit entry carries a
+// deleteEffect per seat (same shape the single-seat "leave" logs), so the engine
+// restores the whole batch in one revert.
+rides.post('/cars/:carId/seats/remove', async (c) => {
+    const loaded = await loadCar(c);
+    if (!loaded) return c.notFound();
+    if (needsSignin(c)) return signinModalResponse(c, { expandId: `car-${loaded.car.id}` });
+    const { car, festival, driver } = loaded;
+    const db = c.env.DB;
+    const actor = c.get('person');
+    const ids = ((await c.req.parseBody()).seat_ids || '').toString().split(',').map(Number).filter(Boolean);
+    if (!ids.length) return carResponse(c, festival, car.id, true);
+
+    const seats = (await db.prepare(`
+        SELECT s.id, pe.display_name FROM seats s
+        JOIN people pe ON pe.id = s.person_id
+        WHERE s.car_id = ? AND s.deleted_at IS NULL AND s.id IN (${ids.map(() => '?').join(',')})
+        ORDER BY s.created_at
+    `).bind(car.id, ...ids).all()).results;
+    if (!seats.length) return carResponse(c, festival, car.id, true);
+
+    const stamp = sqlNow();
+    await db.batch(seats.map((s) => db.prepare('UPDATE seats SET deleted_at = ? WHERE id = ?').bind(stamp, s.id)));
+
+    const names = seats.map((s) => s.display_name);
+    await logAction(c, {
+        festivalId: festival.id, action: 'delete', entityType: 'seats', entityId: seats[0].id,
+        reversible: true, effects: seats.map((s) => deleteEffect('seats', s.id, stamp)),
+        summary: `${actor ? actor.display_name : 'someone'} removed ${names.join(', ')} from ${driver.display_name}'s car`,
+    });
+
+    return carResponse(c, festival, car.id, true);
+});
+
+// XP "are you sure?" dialog for a driver leaving their own car — replaces the old
+// native hx-confirm. We look up the driver's own seat here so the Yes button knows
+// which seat to release, and pass chat_open through so the re-rendered card keeps
+// the chat window in whatever state it was.
+rides.get('/cars/:carId/leave-window', async (c) => {
+    const loaded = await loadCar(c);
+    if (!loaded) return c.notFound();
+    if (needsSignin(c)) return signinModalResponse(c, { expandId: `car-${loaded.car.id}` });
+    const { car } = loaded;
+    const db = c.env.DB;
+    const person = c.get('person');
+    if (!person) return c.html('');
+    const seat = await db.prepare('SELECT id FROM seats WHERE car_id = ? AND person_id = ? AND deleted_at IS NULL').bind(car.id, person.id).first();
+    if (!seat) return c.html('');
+
+    return c.html(xpDialogPopup({
+        title: 'Leave Car',
+        id: `leave-car-${car.id}`,
+        icon: '/Alert.png',
+        message: html`You're the driver of this car. Leave anyway? It'll stay listed but riderless until you rejoin.`,
+        buttons: html`
+          <button class="btn btn-primary" type="button"
+            hx-post="/seats/${seat.id}/leave" hx-vals='js:{chat_open: document.getElementById("chat-car-${car.id}")?.open ? 1 : 0}'
+            hx-target="#car-${car.id}" hx-swap="outerHTML"
+            hx-on::after-request="if(event.detail.successful) closePopup(this)">Leave Car</button>
+          <button class="btn" type="button" onclick="closePopup(this)">Cancel</button>`,
+    }));
+});
+
 rides.post('/seats/:seatId/leave', async (c) => {
     const id = Number(c.req.param('seatId'));
     const db = c.env.DB;
@@ -424,7 +548,8 @@ rides.post('/seats/:seatId/leave', async (c) => {
         body: `${person ? person.display_name : 'someone'} left your car for ${festival.name} — seat's open again.`,
     });
 
-    return carResponse(c, festival, car.id);
+    const body = await c.req.parseBody();
+    return carResponse(c, festival, car.id, true, body.chat_open === '1');
 });
 
 rides.post('/cars/:carId/comments', async (c) => {

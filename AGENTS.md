@@ -138,6 +138,32 @@ you in — reclaim only happens on "yep, that's me" (→ `/signin/reclaim`).
   a manifest of exactly which rows flipped. `audit.js` has a special `entity_type ===
   'people'` branch in revert/reapply that restores from the manifest (stored in BOTH
   `before_json` and `after_json`). This is how "undo restores literally everything" works.
+- **Making a mutation undoable = one `logAction` call with effects** (`src/lib/effects.js`).
+  Generate `const stamp = sqlNow()` **once**, write it into the row(s)' soft-delete
+  column, then pass `reversible: true` + `effects: [...]` to `logAction`. Builders:
+  `createEffect(t,id,stamp)` (undo hides), `deleteEffect(t,id,stamp)` (undo un-hides),
+  `fieldEffects(t,id,before,after)` (one effect per *changed* column). A **batch** delete
+  is just N effects on one entry — e.g. car passenger-removal (`POST /cars/:id/seats/remove`)
+  soft-hides every selected seat in one `db.batch(...)` and logs
+  `effects: seats.map((s) => deleteEffect('seats', s.id, stamp))`; the generic engine
+  restores them all on one undo. **The stamp written into the row and the stamp in the
+  effect must be byte-identical** — the revert guard compares the cell against the effect's
+  `to` and silently skips (`changed_since`) if they differ. Reuse the same `stamp`
+  variable; never call `sqlNow()` twice in one action.
+- **TODO (undo DX):** emission sites still hand-repeat "make stamp → write the soft-delete
+  column → build a matching `deleteEffect`" for every delete, so a drifted stamp silently
+  no-ops the undo. A `softDelete(db, table, ids)` helper that writes the rows AND returns
+  the effects with one shared stamp would remove that footgun — see UNDO_PLAN.md §6 Phase 4.
+- **Multi-select "remove mode" is a reusable client pattern** (`public/camp.js`): a button
+  reveals a checkbox on every row, a `.selecting` class flips the per-row `.*-select-box`
+  from `display:none` to shown, delegated `change` + whole-row `click` keep a live count in
+  a selection bar that enables the action, and a confirm finishes. Two instances share this
+  shape: the ppl tab (`campEnterSelect`/`campRunSelect`, global against `#main`'s single
+  `.ppl-list`) and the car roster (`campCarSelect`/`campCarConfirmRemove`, scoped to the one
+  `.car-details` the button lives in — a page shows many cars). Reuse it for any "pick some
+  rows and act". The car flow's confirm is a **server-rendered `xpDialogPopup`** (the client
+  hands the picked ids to a `.../remove-window` GET that renders the dialog, so the names in
+  it can't be spoofed) instead of a native `confirm()` — copy that when you want the XP look.
 - **Signed-out → immediate sign-in**: guard the *window* GET routes (e.g.
   `/cars/:id/add-window`, `/f/:id/people/add-window`) with `signinModalResponse` so the
   button pops the modal via `HX-Retarget` instead of showing a form that fails on POST.
