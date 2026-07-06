@@ -9,9 +9,19 @@ import { needsSignin, signinModalResponse } from '../lib/guard.js';
 import { loadComments, handleCommentPost } from '../lib/comments.js';
 import { createPlaceholder } from '../lib/people.js';
 import { msnChat, escapeHtml } from '../render/msn.js';
-import { xpPopup } from '../render/popup.js';
+import { xpPopup, xpDialogPopup } from '../render/popup.js';
 
 export const rides = new Hono();
+
+// The classic XP "operation complete" notice — no icon, just the good news.
+function addedDialog(message) {
+    return xpDialogPopup({
+        title: 'Camp Planner',
+        id: 'seat-added',
+        message,
+        buttons: html`<button class="btn btn-primary" type="button" onclick="closePopup(this)">OK</button>`,
+    });
+}
 
 async function carStats(db, car) {
     const seats = (await db.prepare(`
@@ -209,13 +219,15 @@ async function loadCar(c) {
     return { car, festival, driver };
 }
 
-async function carResponse(c, festival, carId, expanded = true, chatOpen = false) {
+async function carResponse(c, festival, carId, expanded = true, chatOpen = false, dialog = '') {
     const db = c.env.DB;
     const person = c.get('person');
     const car = await db.prepare('SELECT * FROM cars WHERE id = ?').bind(carId).first();
     if (!car || car.deleted_at) return c.html('');
     const driver = await db.prepare('SELECT display_name FROM people WHERE id = ?').bind(car.driver_person_id).first();
-    return c.html(carCard(car, driver.display_name, await carStats(db, car), person, expanded, chatOpen));
+    const card = carCard(car, driver.display_name, await carStats(db, car), person, expanded, chatOpen);
+    if (!dialog) return c.html(card);
+    return c.html(html`${card}<div hx-swap-oob="beforeend:#popup-layer">${dialog}</div>`);
 }
 
 rides.post('/cars/:carId/edit', async (c) => {
@@ -348,7 +360,7 @@ rides.post('/cars/:carId/seats/add', async (c) => {
             summary: `${actor.display_name} added ${target.display_name} to ${driver.display_name}'s car`,
         });
     }
-    return carResponse(c, festival, car.id, true);
+    return carResponse(c, festival, car.id, true, false, addedDialog(`${target.display_name} was successfully added to ${driver.display_name}'s car.`));
 });
 
 // Cascading popup: type a brand-new name to add them to this car (and the ppl list).
@@ -386,7 +398,7 @@ rides.post('/cars/:carId/seats/add-new', async (c) => {
         festivalId: festival.id, action: 'create', entityType: 'people', entityId: ghost.id,
         summary: `${actor.display_name} added ${name} to ${driver.display_name}'s car`,
     });
-    return carResponse(c, festival, car.id, true);
+    return carResponse(c, festival, car.id, true, false, addedDialog(`${name} was successfully added to ${driver.display_name}'s car.`));
 });
 
 rides.post('/seats/:seatId/leave', async (c) => {
