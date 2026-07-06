@@ -476,13 +476,6 @@
     100% { opacity: 0; transform: translateX(-50%) translateY(-12px); }
   }
 
-  .edit-toggle summary.btn-like {
-    display: inline-flex; align-items: center; justify-content: center; list-style: none; cursor: pointer;
-    margin: 0;
-  }
-  .edit-toggle summary.btn-like::-webkit-details-marker { display: none; }
-  .edit-toggle summary.btn-like::marker { content: ''; }
-
   /* --- item card: collapsed by default, click the header to reveal actions --- */
   .item-details { }
   .item-summary {
@@ -509,61 +502,59 @@
   /* Desktop: pledge + edit + chat button all share one row (pledge widest).
      Mobile: pledge+edit on row 1, chat button full-width on row 2. */
   .action-buttons { display: flex; flex-wrap: wrap; align-items: stretch; gap: 8px; }
-  .action-buttons > .btn-primary { flex: 2 1 0; min-width: 0; margin: 0; }
-  .action-buttons > .edit-toggle { flex: 1 1 0; min-width: 0; margin: 0; }
-  .edit-toggle > summary.btn-like { width: 100%; box-sizing: border-box; justify-content: center; text-align: center; }
-  /* Only stretch the CLOSED edit button to match its row siblings' height. When
-     OPEN it must stay auto-height (its natural button size) — the toggle's own
-     box now also contains the edit panel stacked below it, and height:100%
-     there would blow the button up to fill that whole (edit panel included) box. */
-  .action-buttons > .edit-toggle:not([open]) > summary.btn-like { height: 100%; }
-  /* The edit button must never move or resize when opened — only its label/color
-     change (see edit-summary rules below). So the toggle's own flex slot
-     (flex: 1 1 0, above) never changes between open/closed; the edit panel just
-     stacks underneath the button inside that same slot, wrapping to whatever
-     column width the toggle already has. (display:contents on <details> would
-     let the panel escape to its own full-width row, but Chrome doesn't flatten
-     <details>/<summary> children into the flex layout — their box tree is a
-     browser-defined special case — so that approach silently breaks instead.) */
-  /* Prevent siblings from being stretched to the edit panel's full height once
-     it's open — align-items:stretch would otherwise balloon "grab a seat" /
-     "add person" to match the tall form next to them. */
-  .action-buttons:has(> .edit-toggle[open]) > :not(.edit-toggle) { align-self: flex-start; }
-  /* Toggle "edit" <-> "save changes" purely off the native [open] attribute —
-     no JS needed. Blue XP-primary theming signals the button now saves. */
-  .edit-toggle .edit-label-open { display: none; }
-  .edit-toggle[open] .edit-label-closed { display: none; }
-  .edit-toggle[open] .edit-label-open { display: inline; }
-  .edit-toggle[open] > summary.edit-summary {
-    border-color: #3c7fb1; font-weight: bold; color: #0b2f5c;
-    box-shadow: inset 0 0 0 1px #cfe4fb, inset 0 -6px 6px -6px rgba(0,60,116,0.25), 0 0 2px 1px rgba(60,127,177,0.5);
+  .action-buttons > .btn-primary:not(.edit-save-btn) { flex: 2 1 0; min-width: 0; margin: 0; }
+  /* Edit toggle = a hidden checkbox with TWO sibling controls that share the same
+     ~1/3 slot: a <label for=...> ("edit") that reveals the panel, and a REAL submit
+     <button> ("save", form-associated via form=) shown only while editing. The label
+     alone can't submit a form, so a plain "save" label would just collapse the panel
+     without saving — hence the separate submit button. Deliberately NOT
+     <details>/<summary>: Chrome has a real bug where a <details>'s children don't
+     participate in the parent flex layout (AGENTS.md gotcha #2). Checkbox + label +
+     button are true, independent flex siblings, so the toggle stays pinned to its slot
+     (same size open or closed) while the panel escapes to its own full-width row. */
+  .action-buttons > .edit-toggle-checkbox { display: none; }
+  .action-buttons > .edit-open-btn,
+  .action-buttons > .edit-save-btn {
+    flex: 1 1 0; min-width: 0; margin: 0; box-sizing: border-box;
+    display: inline-flex; align-items: center; justify-content: center; text-align: center;
   }
-  /* Collapsed chat = a button sitting to the right of edit, stretched to match. */
-  .action-buttons > .msn-chat { margin: 0; }
+  .action-buttons > .edit-open-btn { cursor: pointer; }
+  /* Swap edit <-> save off the checkbox's checked state — no JS. Same slot, same
+     size, so the toggle never reflows; only which control is visible changes. */
+  .action-buttons > .edit-save-btn { display: none; }
+  .action-buttons:has(> .edit-toggle-checkbox:checked) > .edit-open-btn { display: none; }
+  .action-buttons:has(> .edit-toggle-checkbox:checked) > .edit-save-btn { display: inline-flex; }
+  /* flex-shrink:0 (via 0 0 100%) so the panel actually wraps to its own row instead
+     of being squeezed onto the button line by 0-basis siblings (AGENTS.md gotcha #2).
+     order:5 puts the panel BELOW the button row but ABOVE the chat button (order:10). */
+  .action-buttons > .edit-panel { display: none; flex: 0 0 100%; order: 5; }
+  .action-buttons:has(> .edit-toggle-checkbox:checked) > .edit-panel { display: flex; }
+  /* Collapsed chat = a button sitting to the right of edit, stretched to match.
+     order:10 keeps chat below the edit panel (order:5) once editing opens. */
+  .action-buttons > .msn-chat { margin: 0; order: 10; }
   .action-buttons > .msn-chat:not([open]) { flex: 1.5 1 auto; align-self: stretch; display: flex; }
   .action-buttons > .msn-chat:not([open]) > summary.msn-titlebar { flex: 1; }
-  .action-buttons > .msn-chat[open] { flex: 0 0 100%; order: 5; }
+  .action-buttons > .msn-chat[open] { flex: 0 0 100%; order: 10; }
   @media (max-width: 600px) {
     /* Chat button drops to its own full-width row BELOW pledge+edit. pledge/edit
        need a non-zero basis here, otherwise 0 + 0 + 100% all fit on one line and
        the chat gets squished onto the row instead of wrapping under it. */
-    .action-buttons > .btn-primary { flex: 2 1 auto; }
-    .action-buttons > .edit-toggle { flex: 1 1 auto; }
+    .action-buttons > .btn-primary:not(.edit-save-btn) { flex: 2 1 auto; }
+    .action-buttons > .edit-open-btn,
+    .action-buttons > .edit-save-btn { flex: 1 1 auto; }
     .action-buttons > .msn-chat:not([open]) { flex: 1 0 100%; }
   }
   .withdraw-form { margin: 0; }
   .withdraw-form > .btn { width: 100%; justify-content: center; text-align: center; }
 
-  /* Cars reuse the item action-buttons row: the seat button sits in the "pledge"
-     slot, then edit, then the chat button — same flex behaviour. */
-  .action-buttons > .car-seat-form { flex: 2 1 0; min-width: 0; margin: 0; display: flex; }
+  /* Cars get their own row: the seat button on its own full-width row up top
+     (it's the primary action), then "add person" + edit share the row below
+     (flex-shrink:0 so the 100% basis actually wraps — see gotcha #2 in
+     AGENTS.md about 0-basis siblings not forcing a wrap on their own). */
+  .action-buttons > .car-seat-form { flex: 1 0 100%; min-width: 0; margin: 0; display: flex; }
   .action-buttons > .car-seat-form > .btn { width: 100%; justify-content: center; text-align: center; }
-  .action-buttons > .btn-add-person { flex: 1 1 0; min-width: 0; margin: 0; }
-  @media (max-width: 600px) {
-    .action-buttons > .btn-add-person { flex: 1 0 100%; }
-  }
+  .action-buttons > .btn-add-person { flex: 2 1 0; min-width: 0; margin: 0; }
   .post-car-summary { cursor: pointer; font-family: var(--fun-font); color: #0a246a; padding: 2px 0; }
-  @media (max-width: 600px) { .action-buttons > .car-seat-form { flex: 2 1 auto; } }
 
   /* Proper Windows default button: the same Luna chrome as a normal button,
      but emphasized as the default action with a blue highlight ring + bold

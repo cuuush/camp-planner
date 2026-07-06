@@ -88,12 +88,10 @@ function itemRow(festival, item, stats, person, expanded = false, chatOpen = fal
                     i'll bring this
                   </button>`}
 
-            <details class="edit-toggle">
-              <summary class="btn btn-like edit-summary">
-                <span class="edit-label-closed">edit</span>
-                <span class="edit-label-open">save changes</span>
-              </summary>
-              <form class="edit-panel" hx-post="/items/${item.id}/edit" hx-target="#item-${item.id}" hx-swap="outerHTML">
+            <input type="checkbox" class="edit-toggle-checkbox" id="edit-toggle-item-${item.id}">
+            <label class="btn edit-open-btn" for="edit-toggle-item-${item.id}">edit</label>
+            <button class="btn btn-primary edit-save-btn" type="submit" form="edit-form-item-${item.id}">save</button>
+              <form id="edit-form-item-${item.id}" class="edit-panel" hx-post="/items/${item.id}/edit" hx-target="#item-${item.id}" hx-swap="outerHTML" hx-vals='js:{chat_open: document.getElementById("chat-item-${item.id}")?.open ? 1 : 0}'>
                 <div class="edit-panel-title">Edit Item</div>
                 <div class="edit-requester">${requestedBy}</div>
                 <div class="edit-field">
@@ -116,11 +114,9 @@ function itemRow(festival, item, stats, person, expanded = false, chatOpen = fal
                   </div>
                 </div>
                 <div class="edit-panel-buttons">
-                  <button class="btn btn-primary" type="submit">Save</button>
                   <button class="btn btn-danger" type="submit" formaction="/items/${item.id}/delete" hx-post="/items/${item.id}/delete" hx-confirm="Are you sure you want to delete this item?">Delete</button>
                 </div>
               </form>
-            </details>
 
             ${msnChat({
                 title: `Chat (${comments.length} message${comments.length === 1 ? '' : 's'})`,
@@ -130,6 +126,7 @@ function itemRow(festival, item, stats, person, expanded = false, chatOpen = fal
                 postUrl: `/items/${item.id}/comments`,
                 target: `#item-${item.id}`,
                 chatOpen,
+                id: `chat-item-${item.id}`,
             })}
           </div>
 
@@ -393,7 +390,7 @@ items.post('/items/:itemId/edit', async (c) => {
         summary: `${person ? person.display_name : 'someone'} changed ${after.name}`,
     });
 
-    return itemRowResponse(c, festival, item.id, true);
+    return itemRowResponse(c, festival, item.id, true, body.chat_open === '1');
 });
 
 items.post('/items/:itemId/delete', async (c) => {

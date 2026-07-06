@@ -63,31 +63,27 @@ function carCard(car, driverName, stats, person, expanded = false, chatOpen = fa
         <div class="action-buttons">
           ${!myTakenSeat ? html`
             <form class="car-seat-form" hx-post="/cars/${car.id}/seats/claim" hx-target="#car-${car.id}" hx-swap="outerHTML">
-              <button class="btn btn-primary" type="submit">${openSeats > 0 ? 'grab an open seat' : 'squeeze in anyway'}</button>
+              <button class="btn btn-primary" type="submit">${openSeats > 0 ? 'Grab a Seat' : 'Squeeze in Anyway?'}</button>
             </form>` : html`
             <form class="car-seat-form" hx-post="/seats/${myTakenSeat.id}/leave" hx-target="#car-${car.id}" hx-swap="outerHTML" ${person && person.id === car.driver_person_id ? `hx-confirm="You're the driver — leave this car anyway? It'll stay listed but riderless until you rejoin."` : ''}>
               <button class="btn" type="submit">${person && person.id === car.driver_person_id ? "leave (you're driving)" : 'leave this car'}</button>
             </form>`}
 
-          <button class="btn btn-add-person" type="button" hx-get="/cars/${car.id}/add-window" hx-target="#popup-layer" hx-swap="beforeend">＋ Add Person to Car…</button>
+          <button class="btn btn-add-person" type="button" hx-get="/cars/${car.id}/add-window" hx-target="#popup-layer" hx-swap="beforeend">Add Passenger</button>
 
-          <details class="edit-toggle">
-            <summary class="btn btn-like edit-summary">
-              <span class="edit-label-closed">edit</span>
-              <span class="edit-label-open">save changes</span>
-            </summary>
-            <form class="edit-panel" hx-post="/cars/${car.id}/edit" hx-target="#car-${car.id}" hx-swap="outerHTML">
+          <input type="checkbox" class="edit-toggle-checkbox" id="edit-toggle-car-${car.id}">
+          <label class="btn edit-open-btn" for="edit-toggle-car-${car.id}">Edit</label>
+          <button class="btn btn-primary edit-save-btn" type="submit" form="edit-form-car-${car.id}">Save</button>
+            <form id="edit-form-car-${car.id}" class="edit-panel" hx-post="/cars/${car.id}/edit" hx-target="#car-${car.id}" hx-swap="outerHTML" hx-vals='js:{chat_open: document.getElementById("chat-car-${car.id}")?.open ? 1 : 0}'>
               <div class="edit-panel-title">Edit Car</div>
               <div class="edit-field"><label>seats</label><input type="number" name="seats_total" value="${car.seats_total}" min="1"></div>
               <div class="edit-field"><label>from</label><input type="text" name="leaving_from" value="${car.leaving_from || ''}" placeholder="e.g. oakland"></div>
               <div class="edit-field"><label>day</label><input type="text" name="depart_day" value="${car.depart_day || ''}" placeholder="thu"></div>
               <div class="edit-field"><label>time</label><input type="text" name="depart_time" value="${car.depart_time || ''}" placeholder="9am"></div>
               <div class="edit-panel-buttons">
-                <button class="btn btn-primary" type="submit">Save</button>
                 <button class="btn btn-danger" type="submit" formaction="/cars/${car.id}/delete" hx-post="/cars/${car.id}/delete" hx-confirm="Are you sure you want to delete this car?">Delete</button>
               </div>
             </form>
-          </details>
 
           ${msnChat({
               title: `Chat (${comments.length} message${comments.length === 1 ? '' : 's'})`,
@@ -97,6 +93,7 @@ function carCard(car, driverName, stats, person, expanded = false, chatOpen = fa
               postUrl: `/cars/${car.id}/comments`,
               target: `#car-${car.id}`,
               chatOpen,
+              id: `chat-car-${car.id}`,
           })}
         </div>
       </div>
@@ -256,7 +253,7 @@ rides.post('/cars/:carId/edit', async (c) => {
         summary: `${person ? person.display_name : 'someone'} updated a car's details`,
     });
 
-    return carResponse(c, festival, car.id);
+    return carResponse(c, festival, car.id, true, body.chat_open === '1');
 });
 
 rides.post('/cars/:carId/delete', async (c) => {
@@ -329,7 +326,7 @@ rides.get('/cars/:carId/add-window', async (c) => {
                 hx-target="#car-${car.id}" hx-swap="outerHTML"
                 hx-on::after-request="if(event.detail.successful) this.remove()">
                 <span class="pick-emoji">${p.is_placeholder ? '👤' : '🙂'}</span>
-                <span class="pick-name">${p.display_name}${p.is_placeholder ? html`<span class="ghost-badge">not signed up</span>` : ''}</span>
+                <span class="pick-name">${p.display_name}${p.is_placeholder ? html`<span class="ghost-badge">added manually</span>` : ''}</span>
               </button>`)}
           </div>` : html`<p class="pick-empty">There is no one to add — everyone in this fest is already in this car.</p>`}
           <hr class="popup-divider">

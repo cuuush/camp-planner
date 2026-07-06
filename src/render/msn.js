@@ -87,10 +87,10 @@ export function msnify(text) {
 
 // The full MSN Messenger chat window (title bar, menu bar, contact bar, message
 // log, emoticon toolbar, compose box). Shared by item comments and car comments.
-// opts: { title, dpEmoji, toLabel, comments, postUrl, target, chatOpen }
-export function msnChat({ title, dpEmoji, toLabel, comments, postUrl, target, chatOpen = false }) {
+// opts: { title, dpEmoji, toLabel, comments, postUrl, target, chatOpen, id }
+export function msnChat({ title, dpEmoji, toLabel, comments, postUrl, target, chatOpen = false, id }) {
     return html`
-    <details class="msn-chat" ${chatOpen ? 'open' : ''}>
+    <details class="msn-chat" ${id ? `id="${id}"` : ''} ${chatOpen ? 'open' : ''}>
       <summary class="msn-titlebar">
         <span class="msn-title-text">${title}</span>
         <span class="msn-winbtns">

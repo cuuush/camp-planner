@@ -26,29 +26,42 @@ rendered top-left, merge/delete select-mode was dead) because it *looked* fine.
   bubble to `document`. `document.body.*` inside a function that runs later (e.g. a
   `DOMContentLoaded` callback or a click handler) is fine — only top-level use breaks.
 
-### 2. Flexbox "full width on open" tricks in `.action-buttons` are fragile
-The car/item card action row (`.action-buttons` in `public/retro.css`) uses a pile of
-`order` / `flex-basis` overrides to make the edit `<details>` toggle, chat `<details>`,
-etc. reflow differently when open vs closed. Two specific traps bit us fixing the
-"edit button shifts column and resizes" bug (2026-07-06):
+### 2. The edit toggle in `.action-buttons` is a checkbox+label+submit — NOT `<details>`
+The car/item card action row (`.action-buttons` in `public/retro.css`) uses `order` /
+`flex-basis` overrides so the edit toggle and chat reflow differently open vs closed.
+The edit control (rebuilt 2026-07-06) is deliberately **three flex siblings**, all
+direct children of `.action-buttons`:
+1. a hidden `<input type=checkbox class=edit-toggle-checkbox>` that holds open state,
+2. a `<label class=edit-open-btn for=…>` ("edit") that reveals the panel, and
+3. a real `<button type=submit class=edit-save-btn form=edit-form-…>` ("save") that is
+   shown only while editing and actually posts the form. It sits OUTSIDE the `<form>`
+   and is wired to it via the `form=` attribute (so it can be a flex sibling of the
+   toggle for sizing, while still submitting the edit form). htmx's `hx-post` on the
+   form fires on its submit event as normal.
+
+edit and save occupy the same ~1/3 slot (`flex: 1 1 0`), so the toggle never changes
+size open↔closed; the `<form class=edit-panel>` escapes to its own full-width row
+(`flex: 0 0 100%; order: 5`, above chat's `order: 10`). There is **one** save button
+(the toggle) — the old duplicate `Save` next to `Delete` inside the panel was removed;
+the panel keeps only `Delete`. Traps that bit us:
 - **`flex-basis: 100%` alone will NOT force a line wrap** if its row siblings have
   `flex-basis: 0` (e.g. `flex: 1 1 0`). Line-wrapping is decided on hypothetical
   (pre-grow) main size, so the 0-basis siblings "don't count," and the 100% item gets
   silently squeezed into whatever space is left instead of wrapping to its own row.
   Fix: also set `flex-shrink: 0` (e.g. `flex: 0 0 100%`) so it can't be squeezed.
-- **`display: contents` on `<details>` does not flatten `<summary>`/content into the
-  parent flex layout in Chrome**, even though `getComputedStyle` reports
-  `display: contents` on the element itself. This is a real browser bug/limitation
-  specific to `<details>`/`<summary>`, not a CSS mistake — don't spend time debugging
-  your selectors first. If you need a toggle's content to become independent flex
-  items of the grandparent, this technique doesn't work; instead keep the `<details>`
-  as one pinned-size flex item (`flex: 1 1 0`, never changing between open/closed) and
-  let its content stack normally underneath, using `align-self: flex-start` on
-  siblings (via `:has(> .edit-toggle[open])`) so they don't get stretched to match the
-  open panel's height.
+- **Do NOT go back to `<details>`/`<summary>` for this.** `display: contents` on a
+  `<details>` does not flatten its children into the parent flex layout in Chrome (a
+  real browser bug — `getComputedStyle` still reports `display: contents`), so the
+  toggle and panel fight over size/height. The checkbox+label+button sidesteps this
+  entirely because there's nothing to flatten. (An earlier version had the CSS already
+  on checkbox+label while the JS still emitted `<details>` — a silent mismatch that made
+  the whole thing render as a dropdown arrow with none of the flex rules applying.)
+- Note there is currently no "cancel" — once editing, the only ways out are Save or
+  Delete (submitting re-renders the card, resetting the checkbox). Add one deliberately
+  if wanted; don't assume it exists.
 - General lesson: every new "when open, reorder/resize row N" rule added here compounds
   the fragility of the ones before it. Prefer NOT changing a toggle button's own size/
-  position at all (only its label/color) over adding more flex choreography.
+  position at all (only which sibling is visible) over adding more flex choreography.
 
 ### 3. curl only proves the HTML is present, NOT that the JS runs
 Every "verified via curl" check in this repo confirms markup/headers only. It will
