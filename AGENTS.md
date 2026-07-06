@@ -69,6 +69,19 @@ happily pass while the client JS is throwing in the browser (see #1). If a chang
 behavioral (drag, select-mode, popups, stash/restore), a green curl is necessary but
 **not sufficient** — reason about the JS actually executing, or ask the user to click it.
 
+### 4. Interpolating a whole `attr="value"` string into `html\`\`` escapes the quotes
+Hono's `html` tagged template HTML-escapes every `${...}` interpolation. So building a
+conditional attribute as a plain string and dropping it in — e.g.
+`` <details ${id ? `id="${id}"` : ''}> `` — renders `id=&quot;chat-item-5&quot;`, a
+dead attribute. It LOOKS fine in the source and the element renders, so it silently
+breaks anything relying on that attribute (this bit us: a `hx-vals='js:…getElementById…'`
+lookup always returned null → the chat collapsed on every save because `chat_open` was
+never sent). Fixes: keep the quotes as STATIC template text (`id="${id}"` where only the
+value is interpolated), or wrap the attribute in its own nested `html\`id="${id}"\`` (a
+nested `html` result is an already-safe `HtmlEscapedString` and isn't re-escaped). Same
+applies to `raw()`. Static-quote attributes like `id="car-${car.id}"` are already safe
+precisely because the quotes aren't part of the interpolated value.
+
 ## 🧱 Shared UI components (`src/render/popup.js`)
 
 Prefer these over hand-rolling dialogs — they're the "nice window" look and are
