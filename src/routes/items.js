@@ -146,7 +146,7 @@ function itemRow(festival, item, stats, person, expanded = false, chatOpen = fal
           <div class="xp-dialog-body">
             <form hx-post="/items/${item.id}/pledge" hx-target="#item-${item.id}" hx-swap="outerHTML">
               <div class="pledge-prompt">
-                <img class="xp-dialog-icon" src="/question.png" alt="" aria-hidden="true">
+                <img class="xp-dialog-icon" src="/xp/dlg-question.png" alt="" aria-hidden="true">
                 <div class="pledge-field-col">
                   <label class="pledge-label">How many are you bringing?</label>
                   <div class="pledge-input-row">

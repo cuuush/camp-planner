@@ -318,15 +318,15 @@ function campRunSelect(go) {
   var mode = bar.getAttribute('data-mode'), fest = bar.getAttribute('data-fest');
   var checked = campSelChecked();
   var ids = checked.map(function (c) { return c.value; });
+  // Both actions now confirm through an authentic XP message dialog (server-rendered
+  // into #popup-layer, names/counts looked up server-side) instead of a native
+  // confirm() box — its Yes button owns the real POST. See people.js *-window routes.
   if (mode === 'merge') {
     if (ids.length !== 2) return;
-    var names = checked.map(function (c) { return c.getAttribute('data-name'); });
-    if (!confirm('Are you sure you want to merge ' + names.join(' and ') + '? Everything they brought, pledged, and said will be combined into one camper. (The real, signed-in account wins.) This can be undone from the log tab.')) return;
-    htmx.ajax('POST', '/f/' + fest + '/people/merge', { target: '#main', swap: 'innerHTML', values: { person_ids: ids.join(',') } });
+    htmx.ajax('GET', '/f/' + fest + '/people/merge-window?ids=' + encodeURIComponent(ids.join(',')), { target: '#popup-layer', swap: 'beforeend' });
   } else {
     if (!ids.length) return;
-    if (!confirm('Are you sure you want to remove ' + ids.length + ' ' + (ids.length === 1 ? 'person' : 'people') + '? This action can be undone from the log tab, which restores everything they did.')) return;
-    htmx.ajax('POST', '/f/' + fest + '/people/delete', { target: '#main', swap: 'innerHTML', values: { person_ids: ids.join(',') } });
+    htmx.ajax('GET', '/f/' + fest + '/people/delete-window?ids=' + encodeURIComponent(ids.join(',')), { target: '#popup-layer', swap: 'beforeend' });
   }
 }
 

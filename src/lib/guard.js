@@ -69,7 +69,7 @@ export function nameTakenWarning(reclaimName, ctx) {
     return xpDialogPopup({
         title: 'Name Already in Use',
         id: 'name-taken',
-        icon: '/notify.png',
+        icon: 'warning',
         big: true,
         // While this is up, the sign-in form is stashed; dismissing (✕ or "Choose
         // Another") brings it back with whatever they'd typed still there.

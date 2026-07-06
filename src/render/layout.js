@@ -136,7 +136,12 @@ function taskbar(c, festival, festivals) {
         aria-haspopup="true" aria-controls="xp-startmenu" title="start">
         <img src="/start.png" alt="start">
       </button>
-      <span class="xp-tray"><span id="xp-clock"></span></span>
+      <span class="xp-tray">
+        <img class="xp-tray-ico" src="/xp/tray-shield.png" alt="Security Center" title="Security Center: your computer is protected">
+        <img class="xp-tray-ico" src="/xp/tray-media.png" alt="Media" title="Windows Media Connect">
+        <img class="xp-tray-ico" src="/xp/tray-volume.png" alt="Volume" title="Volume">
+        <span id="xp-clock"></span>
+      </span>
       <div class="xp-startmenu" id="xp-startmenu" hidden>
         <div class="xp-startmenu-head">
           <span class="xp-user-pic"><img src="/spaceman.png" alt=""></span>
@@ -149,24 +154,24 @@ function taskbar(c, festival, festivals) {
           <div class="xp-startmenu-label">festivals</div>
           ${(festivals || []).map((f) => html`
             <a class="xp-startmenu-item ${festival && f.id === festival.id ? 'current' : ''}" href="/f/${f.id}">
-              <span class="xp-startmenu-ico">🏕️</span> ${f.name}</a>`)}
+              <img class="xp-startmenu-ico" src="/xp/folder.png" alt=""> ${f.name}</a>`)}
           <div class="xp-startmenu-sep"></div>
-          <a class="xp-startmenu-item" href="/"><span class="xp-startmenu-ico">🖥️</span> My Festivals</a>
-          <a class="xp-startmenu-item" href="/fests/new"><span class="xp-startmenu-ico">➕</span> New Festival…</a>
+          <a class="xp-startmenu-item" href="/"><img class="xp-startmenu-ico" src="/xp/my-computer.png" alt=""> My Festivals</a>
+          <a class="xp-startmenu-item" href="/fests/new"><img class="xp-startmenu-ico" src="/xp/new-folder.png" alt=""> New Festival…</a>
           <div class="xp-startmenu-sep"></div>
           <a class="xp-startmenu-item" href="/feedback" onclick="campCloseStart()"
             hx-get="/feedback/window" hx-target="#popup-layer" hx-swap="beforeend">
-            <span class="xp-startmenu-ico">📝</span> Send Feedback</a>
+            <img class="xp-startmenu-ico" src="/xp/feedback.png" alt=""> Send Feedback</a>
           <a class="xp-startmenu-item" href="/settings" onclick="campCloseStart()"
             hx-get="/settings/window" hx-target="#popup-layer" hx-swap="beforeend">
-            <span class="xp-startmenu-ico">⚙️</span> Control Panel</a>
+            <img class="xp-startmenu-ico" src="/xp/control-panel.png" alt=""> Control Panel</a>
         </div>
         <div class="xp-startmenu-foot">
           ${person
-            ? html`<a class="xp-logoff" href="/signout"><span class="xp-logoff-ico">⏻</span> Log Off</a>`
+            ? html`<a class="xp-logoff" href="/signout"><img class="xp-logoff-ico" src="/xp/logoff.png" alt=""> Log Off</a>`
             : html`<a class="xp-logoff" href="/signin?next=${next}" onclick="campCloseStart()"
                      hx-get="/signin/modal?next=${next}" hx-target="#signin-modal-overlay" hx-swap="innerHTML">
-                     <span class="xp-logoff-ico" style="background: radial-gradient(circle at 50% 32%, #7fd35c, #3a9427);">⏻</span> Log On</a>`}
+                     <img class="xp-logoff-ico" src="/xp/logon.png" alt=""> Log On</a>`}
         </div>
       </div>
     </div>`;

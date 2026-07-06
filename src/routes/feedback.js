@@ -24,7 +24,7 @@ function feedbackBody(person, entries, sent = false) {
     return html`
     <div id="feedback-body">
       <div class="xp-dialog-prompt" style="margin-bottom:10px;">
-        <img class="xp-dialog-icon" src="/notify.png" alt="" aria-hidden="true">
+        <img class="xp-dialog-icon" src="/xp/dlg-error.png" alt="" aria-hidden="true">
         <div class="xp-dialog-msg">
           <b>camp planner has encountered your opinion and needs to hear it. We are sorry for the inconvenience.</b><br>
           <span class="settings-hint" style="margin:0;">Please tell camp planner about this problem. We have created a report form below that you can send to help us improve camp planner. This report will be sent as <b>${from}</b>.</span>

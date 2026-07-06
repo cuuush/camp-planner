@@ -81,9 +81,20 @@
     border-bottom: 1px solid #0a246a;
     box-shadow: inset 0 1px 0 rgba(255,255,255,0.25), 0 2px 5px rgba(0,0,0,0.35);
   }
+  /* A soft lighter-blue glow band running across the bar near the top. It's not a
+     top-down gradient from y=0 — it's centered a few px down and feathers both up
+     AND down (blur), so it reads as a horizontal light streak sitting just below
+     the bar's crest, like the sheen on the real Luna taskbar. */
+  .xp-taskbar::before {
+    content: ''; position: absolute; left: 0; right: 0; top: 3px; height: 5px;
+    background: linear-gradient(180deg,
+      rgba(140,200,255,0) 0%, rgba(150,212,255,0.85) 50%, rgba(140,200,255,0) 100%);
+    filter: blur(2px); pointer-events: none; z-index: 0;
+  }
   @media (max-width: 600px) { .xp-taskbar { --taskbar-h: 37px; } }
   /* The Start button is the start.png artwork itself — kill the Luna button chrome. */
   .xp-taskbar .xp-start-btn { background: none; border: none; padding: 0; margin: 0;
+    position: relative; z-index: 1;
     align-self: stretch; display: flex; align-items: center; box-shadow: none; border-radius: 0; }
   .xp-taskbar .xp-start-btn img { height: var(--taskbar-h); width: auto; display: block;
     filter: drop-shadow(1px 1px 2px rgba(0,0,20,0.45)); }
@@ -92,12 +103,18 @@
   .xp-taskbar .xp-start-btn:active { background: none; box-shadow: none; }
   .xp-taskbar .xp-start-btn:active img { filter: brightness(0.88); }
   .xp-tray {
-    margin-left: auto; align-self: stretch; display: flex; align-items: center; padding: 0 12px 0 14px;
+    position: relative; z-index: 1;
+    margin-left: auto; align-self: stretch; display: flex; align-items: center; gap: 7px; padding: 0 12px 0 14px;
     background: linear-gradient(180deg,#0c59b9 0%,#18b5f2 6%,#0d8dea 14%,#0d8dea 72%,#0f8adf 90%,#094fb1 100%);
-    border-left: 1px solid #092e73; box-shadow: inset 1px 1px 1px rgba(255,255,255,0.35);
+    border-left: 1px solid #0a4fa6;
+    box-shadow: inset 0 1px 1px rgba(255,255,255,0.35);
     color: #fff; font-family: Tahoma, sans-serif; font-size: 0.9em;
     text-shadow: 1px 1px 1px rgba(0,0,30,0.5);
   }
+  /* System-tray notification icons — genuine 16px XP notification-area glyphs,
+     sized down from 32px art. A 1px downward nudge sits them square on the clock's
+     optical center instead of riding high. */
+  .xp-tray-ico { width: 16px; height: 16px; display: block; flex: 0 0 auto; position: relative; top: 1px; }
 
   /* ——— The fake Start menu: blue header band with the signed-in account (pic +
      name) over the classic thin orange rule, a white column of festivals to jump
@@ -137,7 +154,9 @@
   .xp-startmenu-item:visited { color: #111; }
   .xp-startmenu-item:hover { background: #316ac5; color: #fff; }
   .xp-startmenu-item.current { font-weight: bold; }
-  .xp-startmenu-ico { width: 1.4em; text-align: center; font-size: 1.1em; flex: 0 0 auto; }
+  /* Real XP program icons in the menu — em-sized so they track the menu's font
+     bump, rendered from 44px art so they stay crisp on retina. */
+  .xp-startmenu-ico { width: 1.55em; height: 1.55em; object-fit: contain; flex: 0 0 auto; }
   .xp-startmenu-sep { height: 1px; margin: 5px 10px; background: #d6d6cf; }
   .xp-startmenu-foot {
     display: flex; justify-content: flex-end; padding: 7px 10px;
@@ -151,10 +170,10 @@
     font-family: Tahoma, Verdana, sans-serif; }
   .xp-logoff:visited { color: #fff; }
   .xp-logoff:hover { background: rgba(255,255,255,0.16); }
-  .xp-logoff-ico { display: inline-flex; align-items: center; justify-content: center;
-    width: 16px; height: 16px; border-radius: 50%; color: #fff; font-size: 10px; font-weight: bold;
-    background: radial-gradient(circle at 50% 32%, #ea6a45, #c0392b);
-    box-shadow: inset 0 1px 0 rgba(255,255,255,0.5), 0 1px 1px rgba(0,0,0,0.3); }
+  /* The Log Off / Log On glyph is now the authentic XP icon art (a little drop
+     shadow so it reads against the blue footer band), replacing the old CSS roundel. */
+  .xp-logoff-ico { width: 18px; height: 18px; object-fit: contain; display: block; flex: 0 0 auto;
+    filter: drop-shadow(0 1px 1px rgba(0,0,0,0.4)); }
 
   /* The fest-name title band used to live here; it's gone so the desktop wallpaper
      shows through above the window. Keep the same vertical gap it occupied. */
@@ -1198,6 +1217,9 @@
   /* XP "group box" — the etched fieldset used across Control Panel dialogs. */
   fieldset { border: 1px solid #d6d3c3; border-top-color: #b7b4a5; border-radius: 3px; margin: 10px 0; padding: 10px 12px; background: rgba(255,255,255,0.35); }
   legend { color: #0a246a; font-weight: bold; padding: 0 4px; }
+  /* The little Control Panel category icon that sits inline with a group-box
+     title, baseline-aligned with the label text. */
+  .cp-legend-ico { width: 16px; height: 16px; object-fit: contain; vertical-align: -3px; margin-right: 3px; }
 
   /* Luna text selection + scrollbars — the little touches that sell it. */
   ::selection { background: #316ac5; color: #fff; }

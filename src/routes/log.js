@@ -15,7 +15,7 @@ function partialUndoDialog(message) {
     return xpDialogPopup({
         title: 'Undo',
         id: 'partial-undo',
-        icon: '/notify.png',
+        icon: 'info',
         message,
         buttons: html`<button class="btn btn-primary" type="button" onclick="closePopup(this)">OK</button>`,
     });

@@ -6,7 +6,7 @@ import { logAction } from '../lib/audit.js';
 import { sqlNow, createEffect, deleteEffect } from '../lib/effects.js';
 import { needsSignin, signinModalResponse, signinRedirect } from '../lib/guard.js';
 import { createPlaceholder, mergePeople, deletePersonFootprint } from '../lib/people.js';
-import { xpPopup } from '../render/popup.js';
+import { xpPopup, xpDialogPopup } from '../render/popup.js';
 
 export const people = new Hono();
 
@@ -154,6 +154,63 @@ people.post('/f/:id/people/add', async (c) => {
 // absorbed into it. Two real accounts CAN be merged too — for when someone signed
 // in twice under slightly different names — in which case the first-selected one
 // survives. If both are placeholders, the first stays and the second folds in.
+// XP "are you sure?" dialogs for the ppl-tab merge / remove actions — the authentic
+// replacement for the old native confirm() boxes. Names/counts are looked up here
+// server-side (from the picked ids) so the message can't be spoofed, then the Yes
+// button hx-posts to the real merge/delete handler and closes the popup. Mirrors the
+// car-roster remove dialog in rides.js.
+people.get('/f/:id/people/merge-window', async (c) => {
+    const festival = await loadFestival(c);
+    if (!festival) return c.notFound();
+    if (needsSignin(c)) return signinModalResponse(c);
+    const db = c.env.DB;
+    const ids = (c.req.query('ids') || '').split(',').map((s) => Number(s.trim())).filter(Boolean);
+    if (ids.length !== 2) return c.html('');
+    const rows = (await db.prepare(`SELECT display_name FROM people WHERE id IN (${ids.map(() => '?').join(',')})`)
+        .bind(...ids).all()).results;
+    if (rows.length !== 2) return c.html('');
+    const [a, b] = rows.map((r) => r.display_name);
+    return c.html(xpDialogPopup({
+        title: 'Merge People',
+        id: 'merge-people',
+        icon: 'warning',
+        message: html`Merge <b>${a}</b> and <b>${b}</b> into one camper? Everything they brought, pledged, and said will be combined. The real, signed-in account wins. You can undo this from the <b>log</b> tab.`,
+        buttons: html`
+          <button class="btn btn-primary" type="button"
+            hx-post="/f/${festival.id}/people/merge" hx-vals='${JSON.stringify({ person_ids: ids.join(',') })}'
+            hx-target="#main" hx-swap="innerHTML"
+            hx-on::after-request="if(event.detail.successful) closePopup(this)">Yes, Merge</button>
+          <button class="btn" type="button" onclick="closePopup(this)">Cancel</button>`,
+    }));
+});
+
+people.get('/f/:id/people/delete-window', async (c) => {
+    const festival = await loadFestival(c);
+    if (!festival) return c.notFound();
+    if (needsSignin(c)) return signinModalResponse(c);
+    const db = c.env.DB;
+    const ids = (c.req.query('ids') || '').split(',').map((s) => Number(s.trim())).filter(Boolean);
+    if (!ids.length) return c.html('');
+    const rows = (await db.prepare(`SELECT display_name FROM people WHERE id IN (${ids.map(() => '?').join(',')})`)
+        .bind(...ids).all()).results;
+    if (!rows.length) return c.html('');
+    const who = rows.length === 1
+        ? html`<b>${rows[0].display_name}</b>`
+        : html`these <b>${rows.length}</b> people`;
+    return c.html(xpDialogPopup({
+        title: rows.length === 1 ? 'Remove Person' : 'Remove People',
+        id: 'remove-people',
+        icon: 'warning',
+        message: html`Are you sure you want to remove ${who} from <b>${festival.name}</b>? This can be undone from the <b>log</b> tab, which restores everything they did.`,
+        buttons: html`
+          <button class="btn btn-primary" type="button"
+            hx-post="/f/${festival.id}/people/delete" hx-vals='${JSON.stringify({ person_ids: ids.join(',') })}'
+            hx-target="#main" hx-swap="innerHTML"
+            hx-on::after-request="if(event.detail.successful) closePopup(this)">Yes, Remove</button>
+          <button class="btn" type="button" onclick="closePopup(this)">Cancel</button>`,
+    }));
+});
+
 people.post('/f/:id/people/merge', async (c) => {
     const festival = await loadFestival(c);
     if (!festival) return c.notFound();

@@ -33,13 +33,13 @@ function emailForm(person, saved = false) {
 function settingsBody(person) {
     return html`
     <fieldset>
-      <legend>Date and Time</legend>
+      <legend><img class="cp-legend-ico" src="/xp/cp-datetime.png" alt=""> Date and Time</legend>
       <p class="settings-hint">Times are displayed in this device's time zone.</p>
       <label class="xp-radio-label"><input type="radio" name="camp_time_fmt" value="12" onchange="campSetTimeFmt('12')"> 12-hour (3:04 PM)</label>
       <label class="xp-radio-label"><input type="radio" name="camp_time_fmt" value="24" onchange="campSetTimeFmt('24')"> 24-hour (15:04)</label>
     </fieldset>
     <fieldset>
-      <legend>User Accounts</legend>
+      <legend><img class="cp-legend-ico" src="/xp/cp-accounts.png" alt=""> User Accounts</legend>
       ${person
         ? emailForm(person)
         : html`<p class="settings-hint">You are not signed in. To set up e-mail notifications, sign in first.</p>
@@ -47,7 +47,7 @@ function settingsBody(person) {
             hx-get="/signin/modal" hx-target="#signin-modal-overlay" hx-swap="innerHTML">Sign In…</button>`}
     </fieldset>
     <fieldset>
-      <legend>Visual Effects</legend>
+      <legend><img class="cp-legend-ico" src="/xp/cp-appearance.png" alt=""> Visual Effects</legend>
       <label class="xp-check-label">
         <input type="checkbox" class="xp-check-input" id="camp-fx-check" onchange="campSetConfetti(this.checked, this.parentElement)">
         <span class="xp-checkbox"></span>

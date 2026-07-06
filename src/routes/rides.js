@@ -448,7 +448,7 @@ rides.get('/cars/:carId/seats/remove-window', async (c) => {
     return c.html(xpDialogPopup({
         title: seats.length === 1 ? 'Remove Passenger' : 'Remove Passengers',
         id: `remove-seats-${car.id}`,
-        icon: '/Alert.png',
+        icon: 'warning',
         message: html`Are you sure you want to remove ${who} from ${driver.display_name}'s car?`,
         buttons: html`
           <button class="btn btn-primary" type="button"
@@ -511,7 +511,7 @@ rides.get('/cars/:carId/leave-window', async (c) => {
     return c.html(xpDialogPopup({
         title: 'Leave Car',
         id: `leave-car-${car.id}`,
-        icon: '/Alert.png',
+        icon: 'warning',
         message: html`You're the driver of this car. Leave anyway? It'll stay listed but riderless until you rejoin.`,
         buttons: html`
           <button class="btn btn-primary" type="button"
