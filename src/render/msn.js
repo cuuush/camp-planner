@@ -90,7 +90,7 @@ export function msnify(text) {
 // opts: { title, dpEmoji, toLabel, comments, postUrl, target, chatOpen, id }
 export function msnChat({ title, dpEmoji, toLabel, comments, postUrl, target, chatOpen = false, id }) {
     return html`
-    <details class="msn-chat" ${id ? `id="${id}"` : ''} ${chatOpen ? 'open' : ''}>
+    <details class="msn-chat" ${id ? html`id="${id}"` : ''} ${chatOpen ? 'open' : ''}>
       <summary class="msn-titlebar">
         <span class="msn-title-text">${title}</span>
         <span class="msn-winbtns">
