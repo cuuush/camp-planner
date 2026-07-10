@@ -53,7 +53,7 @@ function itemRow(festival, item, stats, person, expanded = false, chatOpen = fal
     const requestedBy = item.is_seed ? (item.seed_label || '') : `requested by ${adderName || 'someone'}`;
 
     return html`
-    <div class="card item-card ${unclaimed ? 'unclaimed' : ''}" id="item-${item.id}">
+    <div class="card item-card ${unclaimed ? 'unclaimed' : ''}" id="item-${item.id}" data-complete="${pledgedQty >= item.needed_qty ? '1' : '0'}">
       <details class="item-details" ${expanded ? 'open' : ''}>
         <summary class="item-summary">
           <div class="item-top-row">
@@ -194,17 +194,19 @@ async function itemListFragment(c, festival) {
     if (!withStats.length) return html`<p class="stuff-empty">There are no items in this view — add the first thing!</p>`;
 
     // XP Explorer "show in groups" style: two grouped sections with a header rule.
+    // BOTH sections are always emitted (empty ones hidden via .is-empty) and carry
+    // stable ids, so the client can relocate a card between them — e.g. bumping an
+    // item's needed_qty flips it from "all covered" back into "still need these"
+    // without a full re-render (see campReflowItems in camp.js).
+    const section = (id, headerClass, label, group) => html`
+      <div class="stuff-section ${group.length ? '' : 'is-empty'}" id="${id}">
+        <div class="stuff-section-header ${headerClass}">${label} <span class="section-count">${group.length}</span></div>
+        ${group.map(row)}
+      </div>`;
+
     return html`
-      ${incomplete.length ? html`
-        <div class="stuff-section">
-          <div class="stuff-section-header">still need these <span class="section-count">${incomplete.length}</span></div>
-          ${incomplete.map(row)}
-        </div>` : ''}
-      ${complete.length ? html`
-        <div class="stuff-section">
-          <div class="stuff-section-header done">all covered <span class="section-count">${complete.length}</span></div>
-          ${complete.map(row)}
-        </div>` : ''}
+      ${section('stuff-incomplete', '', 'still need these', incomplete)}
+      ${section('stuff-complete', 'done', 'all covered', complete)}
     `;
 }
 
@@ -225,7 +227,7 @@ async function renderStuffBody(c, festival) {
     <div class="add-stuff-bar">
       <button type="button" class="btn btn-primary add-stuff-btn"
         onclick="var m=document.getElementById('add-stuff-modal'); m.style.display='flex'; var i=m.querySelector('input[name=name]'); if(i) i.focus();">
-        ➕ add an item…
+        Add an Item…
       </button>
     </div>
 

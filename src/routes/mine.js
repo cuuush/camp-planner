@@ -64,12 +64,16 @@ async function renderMineBody(c, festival) {
     const isChecked = (taskId) => checks.some((ch) => ch.task_id === taskId && !ch.unchecked_at);
 
     const drivingCar = await db.prepare('SELECT * FROM cars WHERE festival_id = ? AND driver_person_id = ? AND deleted_at IS NULL').bind(festival.id, person.id).first();
+    // Exclude a seat in your OWN car: if you added yourself to the car you drive,
+    // the "you're driving!" panel already covers it — a second "riding with
+    // <yourself>" panel is just a confusing duplicate.
     const ridingSeat = await db.prepare(`
         SELECT s.*, c.driver_person_id, pe.display_name as driver_name FROM seats s
         JOIN cars c ON c.id = s.car_id
         JOIN people pe ON pe.id = c.driver_person_id
         WHERE s.person_id = ? AND s.deleted_at IS NULL AND c.festival_id = ?
-    `).bind(person.id, festival.id).first();
+          AND c.deleted_at IS NULL AND c.driver_person_id != ?
+    `).bind(person.id, festival.id, person.id).first();
 
     const main = html`
     ${near ? html`<p class="rainbow">it's almost time — here's your 7am packing checklist!</p>` : ''}
@@ -99,7 +103,7 @@ async function renderMineBody(c, festival) {
       <form class="checklist-add" hx-post="/f/${festival.id}/mine/checklist/tasks" hx-target="#main" hx-swap="innerHTML"
         hx-on::after-request="if(event.detail.successful) this.reset();">
         <input type="text" name="label" placeholder="add a checklist item…" required>
-        <button class="btn" type="submit">＋ add</button>
+        <button class="btn" type="submit">Add</button>
       </form>
     `)}
 

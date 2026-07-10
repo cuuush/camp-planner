@@ -34,7 +34,7 @@ const WRITABLE = {
     pledges: ['deleted_at', 'qty', 'person_id'],
     votes: ['deleted_at', 'person_id'],
     comments: ['deleted_at', 'person_id'],
-    cars: ['deleted_at', 'seats_total', 'leaving_from', 'depart_day', 'depart_time', 'driver_person_id'],
+    cars: ['deleted_at', 'seats_total', 'seats_unknown', 'leaving_from', 'description', 'depart_day', 'depart_time', 'driver_person_id'],
     seats: ['deleted_at', 'person_id'],
     checklist_tasks: ['deleted_at'],
     checklist_checks: ['unchecked_at', 'checked_at', 'person_id'],

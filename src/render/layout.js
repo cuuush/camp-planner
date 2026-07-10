@@ -41,7 +41,7 @@ function dogTip(festival) {
     if (festival) {
         tips.push({
             title: 'Bringing a friend?',
-            body: html`You can add people who haven't signed up yet. On the <b>ppl</b> tab, click <b>＋ Add Person</b> and type their name. When they sign in with that name later, everything they were given links up automatically.`,
+            body: html`You can add people who haven't signed up yet. On the <b>ppl</b> tab, click <b>Add Person</b> and type their name. When they sign in with that name later, everything they were given links up automatically.`,
             links: html`<li><a href="/f/${festival.id}/ppl">Go to the ppl tab</a></li>`,
         });
         tips.push({
@@ -165,6 +165,8 @@ function taskbar(c, festival, festivals) {
           <a class="xp-startmenu-item" href="/settings" onclick="campCloseStart()"
             hx-get="/settings/window" hx-target="#popup-layer" hx-swap="beforeend">
             <img class="xp-startmenu-ico" src="/xp/control-panel.png" alt=""> Control Panel</a>
+          <a class="xp-startmenu-item" href="/admin" onclick="campCloseStart()">
+            <img class="xp-startmenu-ico" src="/xp/admin.png" alt=""> Administrative Tools</a>
         </div>
         <div class="xp-startmenu-foot">
           ${person
@@ -265,13 +267,7 @@ export async function renderPage(c, { title, activeTab = '', body, festival = nu
     </div>
   </div>
   <div id="mine-floating" class="mine-floating">${floating}</div>
-  <footer class="site">
-    <div class="badge-row">
-      ${['under construction', 'best viewed IE/Netscape', 'valid html', 'NEW!', 'mailbox', 'rave on'].map((label) => html`<div class="badge">${label}</div>`)}
-    </div>
-    <div class="webring">← <a href="/webring/${festival ? festival.id : ''}/prev">prev</a> | <a href="/webring/${festival ? festival.id : ''}/random">random</a> | <a href="/webring/${festival ? festival.id : ''}/next">next</a> →</div>
-    <div style="margin-top:8px;font-size:0.8em;"><a href="/admin">admin</a> · we totally log your ip, fyi, lol</div>
-  </footer>
+  <div class="site-foot-space" aria-hidden="true"></div>
 </body>
 </html>`;
 }

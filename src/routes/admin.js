@@ -21,22 +21,45 @@ admin.get('/admin', async (c) => {
     }
 
     const body = html`
-    <p>we totally log your ip, fyi, lol. (hidden here — only kept around in case of fraud shenanigans.)</p>
-    <table>
-      <tr><th>name</th><th>email?</th><th>joined</th><th>last seen</th><th>last location</th><th>last device</th></tr>
-      ${rows.map(({ p, lastEvent }) => html`
-        <tr>
-          <td>${p.display_name}${p.merged_into ? html` <span style="color:#888">(merged into ${nameById.get(p.merged_into) || `#${p.merged_into}`})</span>` : ''}</td>
-          <td>${p.email ? 'yes' : 'no'}</td>
-          <td>${p.created_at}</td>
-          <td>${p.last_seen_at}</td>
-          <td>${lastEvent && (lastEvent.geo_city || lastEvent.geo_country) ? `${lastEvent.geo_city || '?'}, ${lastEvent.geo_country || '?'}` : '?'}</td>
-          <td style="font-size:0.75em">${lastEvent ? (lastEvent.user_agent || '').slice(0, 40) : ''}</td>
-        </tr>`)}
-    </table>
+    <div class="admin-console">
+      <div class="admin-head">
+        <img class="admin-head-ico" src="/xp/admin.png" alt="">
+        <div class="admin-head-text">
+          <div class="admin-head-title">Camper Management</div>
+          <div class="admin-head-sub">Administrative Tools &middot; ${people.length} user${people.length === 1 ? '' : 's'} on this computer</div>
+        </div>
+      </div>
+
+      <div class="admin-notice">
+        <img class="admin-notice-ico" src="/xp/tray-shield.png" alt="">
+        <span>Windows is logging IP addresses on this computer for your protection. (Only kept around in case of fraud shenanigans, lol.)</span>
+      </div>
+
+      <div class="admin-listview">
+        <table class="admin-table">
+          <thead>
+            <tr><th>Name</th><th>E-mail</th><th>Joined</th><th>Last Seen</th><th>Last Location</th><th>Last Device</th></tr>
+          </thead>
+          <tbody>
+            ${rows.map(({ p, lastEvent }) => html`
+              <tr>
+                <td class="admin-name">
+                  <img class="admin-user-ico" src="/xp/cp-accounts.png" alt="">
+                  <span>${p.display_name}${p.merged_into ? html`<span class="admin-merged">→ ${nameById.get(p.merged_into) || `#${p.merged_into}`}</span>` : ''}</span>
+                </td>
+                <td>${p.email ? html`<span class="admin-yes">Yes</span>` : html`<span class="admin-no">No</span>`}</td>
+                <td class="admin-date">${p.created_at}</td>
+                <td class="admin-date">${p.last_seen_at}</td>
+                <td>${lastEvent && (lastEvent.geo_city || lastEvent.geo_country) ? `${lastEvent.geo_city || '?'}, ${lastEvent.geo_country || '?'}` : '—'}</td>
+                <td class="admin-device">${lastEvent ? (lastEvent.user_agent || '').slice(0, 40) : ''}</td>
+              </tr>`)}
+          </tbody>
+        </table>
+      </div>
+    </div>
   `;
 
-    return c.html(await renderPage(c, { title: 'admin', body }));
+    return c.html(await renderPage(c, { title: 'Administrative Tools', body }));
 });
 
 admin.get('/unsubscribe/:personId/:token', async (c) => {

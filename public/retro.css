@@ -349,11 +349,9 @@
       repeating-linear-gradient(90deg, rgba(255,255,255,0) 0 6px, rgba(255,255,255,0.9) 6px 8px);
   }
   .divider { text-align: center; color: #0a246a; margin: 14px 0; font-weight: bold; font-family: var(--fun-font); }
-  footer.site { background: linear-gradient(180deg,#1941d6,#0a246a); color: #dbe8ff; padding: 14px; text-align: center; margin-top: 24px; border-top: 2px solid #0a246a; }
-  footer.site a { color: #ffe94d; }
-  .badge-row { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; margin: 10px 0; }
-  .badge-row .badge { width: 88px; height: 31px; background: #fff; border: 1px solid #000; display: flex; align-items: center; justify-content: center; font-size: 8px; color: #000; text-align: center; font-family: Tahoma, sans-serif; }
-  .webring { margin-top: 10px; font-size: 0.9em; }
+  /* The old GeoCities webring footer is gone (off-theme for XP); all we need at the
+     bottom is a little breathing room below the last card. */
+  .site-foot-space { height: 40px; }
   .hitcounter { font-family: 'Courier New', monospace; background: #000; color: #00ff2a; padding: 2px 8px; border: 2px inset #888; letter-spacing: 2px; }
   input[type=text], input[type=number], input[type=email], select, textarea {
     background: #fff; border: 1px solid #7f9db9; padding: 5px 8px; font-family: inherit; border-radius: 0; color: #000;
@@ -594,7 +592,34 @@
       flex: 1 1 0;
     }
   }
-  .post-car-summary { cursor: pointer; font-family: var(--fun-font); color: #0a246a; padding: 2px 0; }
+  /* "Post a Car" is now a proper Luna button that pops the XP window open, not an
+     inline dropdown. Plain Tahoma XP button chrome (inherited from .btn) — no fun
+     font, no emoji; XP wouldn't put either on a system button. */
+  .post-car-bar { margin: 0 0 12px; }
+
+  /* The post-a-car form inside its XP window: the same stacked labelled fields as
+     the edit dialog, just without the group-box face (the window IS the frame). */
+  .popup-form-car { display: flex; flex-direction: column; gap: 8px; min-width: 260px; }
+  .popup-form-car .edit-field + .edit-field { margin-top: 2px; }
+  /* the "type their name" row only appears when the driver dropdown is set to
+     "someone who hasn't signed up" (display:grid on .edit-field would otherwise
+     defeat the hidden attribute). */
+  .new-driver-row[hidden] { display: none; }
+
+  /* seats row: the number field sits beside an "idk yet" checkbox. When checked,
+     campSeatsUnknown() disables (greys) the number field. */
+  .seats-input { display: flex; align-items: center; gap: 10px; min-width: 0; }
+  .seats-input input[type=number] { width: 72px !important; flex: 0 0 auto; }
+  .seats-input input[type=number]:disabled { opacity: 0.5; }
+  .seats-unknown-toggle {
+    display: inline-flex; align-items: center; gap: 4px;
+    font-size: 0.82em; color: #333; white-space: nowrap; cursor: pointer;
+  }
+  .seats-unknown-toggle input { margin: 0; }
+
+  /* A car's free-text planning note ("not confirmed yet"), shown in quotes just
+     under the leaving-from line. */
+  .car-note { font-style: italic; color: #5a5a4c; }
 
   /* Proper Windows default button: the same Luna chrome as a normal button, marked
      as the default action with just a slightly darker border + inner highlight.
@@ -810,6 +835,19 @@
      rule running out to the right and a little count chip. */
   .stuff-section { margin-top: 16px; }
   .stuff-section:first-child { margin-top: 8px; }
+  /* Both sections are always in the DOM (so cards can move between them); an empty
+     one hides itself. Keep the first VISIBLE section snug to the controls above. */
+  .stuff-section.is-empty { display: none; }
+  .stuff-section.is-empty + .stuff-section { margin-top: 8px; }
+  /* A card that just jumped to the other section: slide down into place and flash
+     the same yellow as :target so the eye follows it (paired with a smooth scroll). */
+  .item-card.item-moved { animation: item-move-land 1.5s ease; }
+  @keyframes item-move-land {
+    0% { transform: translateY(-16px) scale(0.97); box-shadow: 0 0 0 3px #ffd54a, 0 0 16px 4px rgba(255,183,0,0.9); }
+    18% { transform: translateY(0) scale(1); }
+    70% { box-shadow: 0 0 0 3px #ffd54a, 0 0 16px 4px rgba(255,183,0,0.9); }
+    100% { box-shadow: 2px 2px 5px rgba(0,0,0,0.25); }
+  }
   .stuff-section-header {
     display: flex; align-items: center; gap: 8px;
     color: #2360cc; font-weight: bold; font-size: 0.95em; margin: 0 2px 4px;
@@ -1017,10 +1055,15 @@
      riders in blue, open seats in green, a full car in amber, each with the classic
      XP two-stop gloss (bright top half, a crisp 50% seam, a white inner highlight). */
   .car-headcount { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
-  .rider-badge, .seats-open, .seats-full {
+  .rider-badge, .seats-open, .seats-full, .seats-unknown {
     display: inline-flex; align-items: center; gap: 4px;
     padding: 1px 10px; border-radius: 10px; font-size: 0.82em; font-weight: bold;
     box-shadow: inset 0 1px 0 rgba(255,255,255,0.85), 0 1px 1px rgba(0,0,0,0.12);
+  }
+  /* Unknown seat count — a neutral grey badge, not a promise of open seats. */
+  .seats-unknown {
+    color: #555; border: 1px solid #b3b3a8;
+    background: linear-gradient(180deg,#fafaf6 0%,#e4e4da 48%,#d6d6ca 52%,#eeeee6 100%);
   }
   .rider-badge {
     color: #0a3d7a; border: 1px solid #6f9fda;
@@ -1034,6 +1077,44 @@
     color: #7a5a12; border: 1px solid #d0b256;
     background: linear-gradient(180deg,#fdf7e2 0%,#f6e6b8 48%,#f0dc9c 52%,#faefcb 100%);
   }
+
+  /* Admin page = an authentic XP "Administrative Tools" MMC console: an icon+title
+     banner, a pale-yellow security information bar, and a real Explorer detailed
+     list-view table (raised Luna column headers, zebra rows, blue hover). */
+  .admin-head { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
+  .admin-head-ico { width: 40px; height: 40px; flex: 0 0 auto; }
+  .admin-head-title { font-size: 1.2em; font-weight: bold; color: #0a246a; }
+  .admin-head-sub { font-size: 0.8em; color: #5a5a4c; }
+  /* XP's pale-yellow "information bar" — the strip IE/Explorer used for notices. */
+  .admin-notice {
+    display: flex; align-items: center; gap: 10px; margin-bottom: 12px;
+    padding: 7px 12px; background: #fdf9d7; border: 1px solid #e6d97a; border-radius: 2px;
+  }
+  .admin-notice-ico { width: 20px; height: 20px; flex: 0 0 auto; }
+  .admin-notice span { font-size: 0.82em; color: #4a4a3c; }
+  /* Sunken white Explorer field; scrolls sideways on mobile instead of squishing. */
+  .admin-listview {
+    background: #fff; border: 1px solid #7f9db9;
+    box-shadow: inset 1px 1px 2px rgba(0,0,0,0.18); overflow-x: auto;
+  }
+  .admin-table { width: 100%; border-collapse: collapse; font-size: 0.85em; white-space: nowrap; }
+  .admin-table thead th {
+    text-align: left; padding: 4px 12px;
+    background: linear-gradient(180deg,#ffffff 0%,#f3f1e6 48%,#e8e5d3 52%,#ded9c4 100%);
+    color: #37352c; font-weight: bold;
+    border-bottom: 1px solid #aca591; border-right: 1px solid #cfc8b0;
+    box-shadow: inset 0 1px 0 #fff; text-shadow: 0 1px 0 rgba(255,255,255,0.7);
+  }
+  .admin-table tbody td { padding: 4px 12px; border-bottom: 1px solid #eef1f5; }
+  .admin-table tbody tr:nth-child(even) { background: #f6f8fb; }
+  .admin-table tbody tr:hover { background: linear-gradient(180deg,#eaf3ff,#d4e6fb); }
+  .admin-name { display: flex; align-items: center; gap: 7px; }
+  .admin-user-ico { width: 16px; height: 16px; flex: 0 0 auto; }
+  .admin-merged { color: #888; margin-left: 6px; }
+  .admin-date { color: #4a4a3c; }
+  .admin-device { color: #6b6552; font-size: 0.92em; }
+  .admin-yes { color: #196b19; font-weight: bold; }
+  .admin-no { color: #9a1616; }
 
   /* Passenger roster = an authentic XP Explorer "details" list: a sunken white
      field, a raised grey Luna column-header bar (bright top, etched bottom rule),

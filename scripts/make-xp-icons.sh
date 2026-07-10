@@ -23,6 +23,7 @@ resize "Folder Closed"      "folder"         44
 resize "New Folder"         "new-folder"     44
 resize "OE Create Mail"     "feedback"       44
 resize "Control Panel"      "control-panel"  44
+resize "Administrative Tools" "admin"        44
 resize "Logout"             "logoff"         44
 resize "Switch User"        "logon"          44
 

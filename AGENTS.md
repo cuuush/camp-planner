@@ -212,15 +212,29 @@ you in — reclaim only happens on "yep, that's me" (→ `/signin/reclaim`).
 - Prod route is **`camp.cuuush.com/*`** (zone `cuuush.com`), not `track.*`.
 
 ## Conventions
-- **UI copy voice: authentic Windows XP.** System chrome — dialogs, popups, the
-  Control Panel, confirms, hints, placeholders, empty states — reads like real XP
-  UI text: Title Case buttons ("OK", "Cancel", "Apply", "Send Error Report"),
-  "Are you sure you want to…" confirms, "Please wait while…" progress text,
-  "There are no X in this view" empty states, "e-mail" with the hyphen, and help
-  copy in the cheery "click Start, and then click…" voice (see `dogTip` in
-  `layout.js`). Fun is still welcome where it's fun — tab names, "i'll bring
-  this", "✔ i'm going!", Rover and the BSOD easter egg stay — but frame the joke
-  in XP phrasing rather than lowercase internet-casual.
+- **UI copy voice: authentic Windows XP — NO EXCEPTIONS.** Write **every** string the
+  user can see as if you are shipping the OS itself: you are programming Windows XP from
+  scratch, and this text is going into the actual product. This applies to **ALL COPY**,
+  everywhere — button labels, dialog titles, confirms, hints, tooltips, placeholders,
+  empty states, error/success messages, notifications, log summaries, chat chrome. When
+  you add or touch any user-facing string, stop and ask "would this exact wording have
+  shipped in Windows XP?" If not, rewrite it before moving on.
+  - **Title Case buttons**: "OK", "Cancel", "Apply", "Post Car", "Send Error Report".
+  - **Confirms**: "Are you sure you want to…". **Progress**: "Please wait while…".
+  - **Empty states**: "There are no X in this view.". **Spelling**: "e-mail" (hyphen).
+  - **Placeholders are SAMPLE VALUES, not instructions** — mimic XP's grey example text:
+    a "from" town shows `Redmond, WA` (Microsoft's own HQ town, all over XP sample data,
+    right next to "One Microsoft Way"), a time shows `9:00 AM`, a day shows `Thu`, a name
+    shows `Type their name`. Never meta-hints like "blank = idk" in a placeholder.
+  - **No decorative glyphs on buttons/labels.** XP buttons are plain text — no "＋"
+    prefix, no emoji, no `➕`/`✚`. It's "Add Person…", "Add an Item…", "Add" — never
+    "＋ Add Person". A trailing `…` on a button that opens a dialog IS authentic XP
+    ("Add…", "Browse…", "Properties…"); use that instead of a leading plus.
+  - **Help/tip copy** uses the cheery "click **Start**, and then click…" voice (see
+    `dogTip` in `layout.js`).
+  - Fun is still welcome where it's fun — tab names, "i'll bring this", "✔ i'm going!",
+    Rover and the BSOD easter egg stay — but frame the joke in XP phrasing, never
+    lowercase internet-casual.
 - Code comments explain *why*.
 - Emoji in UI text render via the `.pixmoji` pixel font; `font-variant-emoji: text`.
 - Soft-delete everywhere (`deleted_at`); everything audited + undoable (`reversible`).

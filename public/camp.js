@@ -162,8 +162,72 @@ function campInitSettings(root) {
   if (fx) fx.checked = campConfettiOn();
 }
 
+// After a swap, an item card carries data-complete="1|0" but may still be sitting
+// in the wrong grouped section — e.g. editing needed_qty up flips a covered item
+// back to incomplete. Move any such card to the section it belongs in, fix both
+// section counts, then flash + scroll it into view so you SEE where it landed.
+function campSectionCards(sec) { return sec ? sec.querySelectorAll(':scope > .item-card') : []; }
+function campSyncSection(sec) {
+  if (!sec) return;
+  var n = campSectionCards(sec).length;
+  var badge = sec.querySelector('.section-count');
+  if (badge) badge.textContent = n;
+  sec.classList.toggle('is-empty', n === 0);
+}
+// A hand-rolled smooth scroll to an absolute Y. We don't use scrollIntoView
+// ({behavior:'smooth'}) because it's a silent no-op inside htmx's afterSwap (and
+// in some automation contexts) — this rAF tween runs the same everywhere. Honors
+// prefers-reduced-motion by jumping straight there.
+function campSmoothScrollTo(targetY) {
+  var max = Math.max(0, document.documentElement.scrollHeight - window.innerHeight);
+  var to = Math.max(0, Math.min(targetY, max));
+  var reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  if (reduce) { window.scrollTo(0, to); return; }
+  var from = window.scrollY, dist = to - from, start = null, dur = 500;
+  function step(ts) {
+    if (start === null) start = ts;
+    var p = Math.min(1, (ts - start) / dur);
+    var e = p < 0.5 ? 2 * p * p : 1 - Math.pow(-2 * p + 2, 2) / 2; // easeInOutQuad
+    window.scrollTo(0, from + dist * e);
+    if (p < 1) requestAnimationFrame(step);
+  }
+  requestAnimationFrame(step);
+}
+
+function campFlashMove(card) {
+  card.classList.remove('item-moved');
+  void card.offsetWidth; // force reflow so the animation restarts every move
+  card.classList.add('item-moved');
+  setTimeout(function () { card.classList.remove('item-moved'); }, 1600);
+  // Defer a frame so layout has settled after the move, then glide the card to
+  // the vertical center of the viewport so you see where it landed.
+  requestAnimationFrame(function () {
+    var rect = card.getBoundingClientRect();
+    var targetY = window.scrollY + rect.top - (window.innerHeight - rect.height) / 2;
+    campSmoothScrollTo(targetY);
+  });
+}
+function campReflowItems() {
+  var list = document.getElementById('stuff-list');
+  if (!list) return;
+  var want = { '1': document.getElementById('stuff-complete'), '0': document.getElementById('stuff-incomplete') };
+  var cards = list.querySelectorAll('.item-card');
+  for (var i = 0; i < cards.length; i++) {
+    var card = cards[i];
+    var target = want[card.getAttribute('data-complete') === '1' ? '1' : '0'];
+    if (!target || card.parentElement === target) continue; // already in the right group
+    var from = card.closest('.stuff-section');
+    var header = target.querySelector('.stuff-section-header');
+    if (header && header.nextSibling) target.insertBefore(card, header.nextSibling); // land at the top
+    else target.appendChild(card);
+    campSyncSection(from);
+    campSyncSection(target);
+    campFlashMove(card);
+  }
+}
+
 document.addEventListener('DOMContentLoaded', function () { pixmojify(document.body); suppressPwManagers(document.body); campAutoOpenPledge(); campLocalizeTimes(document.body); campInitSettings(document.body); });
-document.addEventListener('htmx:afterSwap', function (e) { pixmojify(e.target); suppressPwManagers(e.target); campLocalizeTimes(e.target); campInitSettings(e.target); });
+document.addEventListener('htmx:afterSwap', function (e) { pixmojify(e.target); suppressPwManagers(e.target); campLocalizeTimes(e.target); campInitSettings(e.target); campReflowItems(); });
 
 // Make the little "me"-tab XP windows draggable by their title bar. Position is
 // tracked as an accumulated translate on each window (dataset.dx/dy) so repeated
@@ -377,6 +441,27 @@ function campCarConfirmRemove(go) {
   var carId = (card.id || '').replace('car-', '');
   htmx.ajax('GET', '/cars/' + carId + '/seats/remove-window?ids=' + ids.join(','), { target: '#popup-layer', swap: 'beforeend' });
 }
+// Driver picker on the post-a-car form: choosing "someone who hasn't signed up"
+// reveals a name field (and focuses it); any real person hides it again. The name
+// only matters when __new__ is selected — the server ignores it otherwise.
+function campDriverPick(sel) {
+  var form = sel.closest('form'); if (!form) return;
+  var row = form.querySelector('.new-driver-row'); if (!row) return;
+  var isNew = sel.value === '__new__';
+  row.hidden = !isNew;
+  var input = row.querySelector('input[name=new_driver_name]');
+  if (input) { input.required = isNew; if (isNew) input.focus(); }
+}
+
+// "idk yet" seat toggle (post + edit car forms): checking it greys out the number
+// field — a disabled input isn't submitted, so the server only sees seats_unknown=1
+// and leaves the placeholder count untouched.
+function campSeatsUnknown(cb) {
+  var wrap = cb.closest('.seats-input'); if (!wrap) return;
+  var num = wrap.querySelector('input[name=seats_total]');
+  if (num) num.disabled = cb.checked;
+}
+
 // Same delegated toggles the ppl list uses, for the car roster's own checkboxes.
 document.addEventListener('change', function (e) {
   if (!e.target.classList || !e.target.classList.contains('car-select-check')) return;

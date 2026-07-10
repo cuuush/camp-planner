@@ -45,7 +45,7 @@ async function renderPplBody(c, festival) {
     <p class="ppl-count">${members.length} ${members.length === 1 ? 'person' : 'people'} going</p>
     <div class="ppl-add-bar">
       <button class="btn" type="button"
-        hx-get="/f/${festival.id}/people/add-window" hx-target="#popup-layer" hx-swap="beforeend">＋ Add Person</button>
+        hx-get="/f/${festival.id}/people/add-window" hx-target="#popup-layer" hx-swap="beforeend">Add Person…</button>
       ${person
           ? html`<button class="btn" type="button" onclick="campEnterSelect(this,'merge')">Merge</button>
                  <button class="btn" type="button" onclick="campEnterSelect(this,'delete')">Delete</button>`

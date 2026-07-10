@@ -20,6 +20,21 @@ app.use('*', async (c, next) => {
     c.set('reqMeta', requestMeta(c));
     c.set('person', await retryOnD1Reset(() => loadPerson(c)));
     await next();
+
+    // Every response the worker emits is dynamic, per-user HTML (real static
+    // files are served by Cloudflare's asset layer and never reach here). If we
+    // send no Cache-Control, browsers fall back to *heuristic* caching and are
+    // free to invent a freshness lifetime — iOS Safari (betas especially) does
+    // this aggressively, stashing the HTML in disk/bfcache and later restoring
+    // the whole page, stale subresource state and all, without hitting the
+    // network. The visible result: pages that come back with no CSS/JS until
+    // the cache is cleared. Declaring the document uncacheable forces a real
+    // network fetch every navigation, which re-runs proper subresource
+    // revalidation. (The assets themselves are fine — they already revalidate
+    // correctly via ETag.)
+    if (c.res.headers.get('content-type')?.includes('text/html')) {
+        c.res.headers.set('Cache-Control', 'no-cache, no-store, must-revalidate');
+    }
 });
 
 app.route('/', auth);
