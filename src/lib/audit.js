@@ -11,8 +11,10 @@ export async function logAction(c, { festivalId = null, action, entityType, enti
     const meta = c.get('reqMeta') || { ip: '', city: '', country: '', userAgent: '' };
 
     // Doing anything on a fest counts you as going — except bailing, which is the
-    // one action that must NOT re-add you.
-    if (festivalId && person && action !== 'bail') {
+    // one action that must NOT re-add you. Removing yourself is the same case: the
+    // delete already bailed your membership, so don't resurrect it here.
+    const removingSelf = action === 'delete' && entityType === 'people' && person && entityId === person.id;
+    if (festivalId && person && action !== 'bail' && !removingSelf) {
         await ensureMembership(c, festivalId);
     }
 

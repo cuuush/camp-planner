@@ -194,14 +194,18 @@ people.get('/f/:id/people/delete-window', async (c) => {
     const rows = (await db.prepare(`SELECT display_name FROM people WHERE id IN (${ids.map(() => '?').join(',')})`)
         .bind(...ids).all()).results;
     if (!rows.length) return c.html('');
-    const who = rows.length === 1
-        ? html`<b>${rows[0].display_name}</b>`
-        : html`these <b>${rows.length}</b> people`;
+    const person = c.get('person');
+    const self = person && ids.includes(person.id);
+    const who = ids.length === 1 && self
+        ? html`<b>yourself</b>`
+        : rows.length === 1
+            ? html`<b>${rows[0].display_name}</b>`
+            : html`these <b>${rows.length}</b> people`;
     return c.html(xpDialogPopup({
         title: rows.length === 1 ? 'Remove Person' : 'Remove People',
         id: 'remove-people',
         icon: 'warning',
-        message: html`Are you sure you want to remove ${who} from <b>${festival.name}</b>? This can be undone from the <b>log</b> tab, which restores everything they did.`,
+        message: html`Are you sure you want to remove ${who} from <b>${festival.name}</b>? You can undo this from the <b>log</b> tab.`,
         buttons: html`
           <button class="btn btn-primary" type="button"
             hx-post="/f/${festival.id}/people/delete" hx-vals='${JSON.stringify({ person_ids: ids.join(',') })}'
@@ -249,6 +253,7 @@ people.post('/f/:id/people/delete', async (c) => {
     const actor = c.get('person');
     const body = await c.req.parseBody();
     const ids = (body.person_ids || '').toString().split(',').map((s) => Number(s.trim())).filter(Boolean);
+    const removingSelf = ids.includes(actor.id);
 
     for (const pid of ids) {
         const target = await db.prepare('SELECT display_name FROM people WHERE id = ?').bind(pid).first();
@@ -264,8 +269,19 @@ people.post('/f/:id/people/delete', async (c) => {
         await logAction(c, {
             festivalId: festival.id, action: 'delete', entityType: 'people', entityId: pid,
             before: manifest, after: manifest, effects, reversible: true,
-            summary: `${actor.display_name} removed ${target.display_name} from ${festival.name} — undo to restore everything`,
+            summary: pid === actor.id
+                ? `${target.display_name} removed themselves from ${festival.name}`
+                : `${actor.display_name} removed ${target.display_name} from ${festival.name}`,
         });
+    }
+
+    // Deleting yourself just ended your own session, so the signed-in chrome
+    // (taskbar, Rover, join banner) around #main is now stale — a partial swap
+    // can't fix it. Send a full-page redirect to the ppl tab, where you'll see the
+    // updated list as a guest. Removing other people re-renders the list in place.
+    if (removingSelf) {
+        c.header('HX-Redirect', `/f/${festival.id}/ppl`);
+        return c.body(null);
     }
     return c.html(await renderPplBody(c, festival));
 });
