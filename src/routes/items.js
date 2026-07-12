@@ -1,5 +1,5 @@
 import { Hono } from 'hono';
-import { html, raw } from 'hono/html';
+import { html } from 'hono/html';
 import { renderPage } from '../render/layout.js';
 import { loadFestival } from '../lib/festival.js';
 import { logAction } from '../lib/audit.js';
