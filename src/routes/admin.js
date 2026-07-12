@@ -2,10 +2,15 @@ import { Hono } from 'hono';
 import { html } from 'hono/html';
 import { renderPage } from '../render/layout.js';
 import { verifyUnsubscribeToken } from '../lib/unsubscribe.js';
+import { needsSignin } from '../lib/guard.js';
 
 export const admin = new Hono();
 
 admin.get('/admin', async (c) => {
+    // Signed-in campers only. The site is open by design, but this page shows
+    // last-seen locations and devices — for friends' eyes, not anonymous scrapers.
+    // (/unsubscribe below stays anonymous on purpose: its token IS the auth.)
+    if (needsSignin(c)) return c.redirect(`/signin?next=${encodeURIComponent(c.req.path)}`);
     const db = c.env.DB;
     // "Users on this computer" = anyone with an active membership somewhere or a
     // live session. Removing a person from a fest bails their membership AND ends

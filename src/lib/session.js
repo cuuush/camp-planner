@@ -2,8 +2,15 @@ import { getCookie, setCookie, deleteCookie } from 'hono/cookie';
 import { randomToken } from './tokens.js';
 
 const SESSION_COOKIE = 'camp_session';
-const FEST_COOKIE = 'camp_current_fest';
 const SESSION_DAYS = 90; // 3-month rolling expiry
+
+// Secure on prod (always HTTPS behind Cloudflare) so the session token is never
+// sent over plain HTTP. Derived from the request instead of hardcoded because
+// dev is tested over plain-HTTP Tailscale from the phone (AGENTS.md gotcha 4) —
+// a hardcoded Secure flag would silently break sign-in there.
+function isHttps(c) {
+    return c.req.url.startsWith('https:');
+}
 
 export async function loadPerson(c) {
     const token = getCookie(c, SESSION_COOKIE);
@@ -56,6 +63,7 @@ export function setSessionCookie(c, token) {
     setCookie(c, SESSION_COOKIE, token, {
         path: '/',
         httpOnly: true,
+        secure: isHttps(c),
         sameSite: 'Lax',
         maxAge: SESSION_DAYS * 24 * 60 * 60,
     });
@@ -77,18 +85,4 @@ export async function destroySession(c) {
         await c.env.DB.prepare('DELETE FROM sessions WHERE token = ?').bind(token).run();
     }
     deleteCookie(c, SESSION_COOKIE, { path: '/' });
-}
-
-export function getCurrentFestCookie(c) {
-    const v = getCookie(c, FEST_COOKIE);
-    return v ? Number(v) : null;
-}
-
-export function setCurrentFestCookie(c, festivalId) {
-    setCookie(c, FEST_COOKIE, String(festivalId), {
-        path: '/',
-        httpOnly: false,
-        sameSite: 'Lax',
-        maxAge: SESSION_DAYS * 24 * 60 * 60,
-    });
 }
