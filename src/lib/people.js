@@ -240,7 +240,7 @@ export async function absorbPlaceholders(c, personId, normalized) {
         merges.push({
             festivalId: liveFest.festival_id,
             effects,
-            summary: `${g.display_name} signed in — linked up their pre-added entry`,
+            summary: `${g.display_name} logged on — pre-added entry found and merged, ready to use`,
         });
     }
     return merges;
