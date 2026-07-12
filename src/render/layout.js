@@ -85,15 +85,17 @@ async function dogAssistant(c, festival, person) {
           </ul>`;
     } else if (festival) {
         const db = c.env.DB;
-        // Only drivers owe a car pass, so only nag drivers about it.
-        const driving = await db.prepare('SELECT 1 FROM cars WHERE festival_id = ? AND driver_person_id = ? AND deleted_at IS NULL')
-            .bind(festival.id, person.id).first();
-        // Which default passes has this person actually checked off?
-        const passRows = (await db.prepare(`
-            SELECT t.label FROM checklist_tasks t
-            JOIN checklist_checks cc ON cc.task_id = t.id AND cc.person_id = ? AND cc.unchecked_at IS NULL
-            WHERE t.festival_id = ? AND t.is_default = 1 AND t.deleted_at IS NULL
-        `).bind(person.id, festival.id).all()).results;
+        const [driving, passRows] = await Promise.all([
+            // Only drivers owe a car pass, so only nag drivers about it.
+            db.prepare('SELECT 1 FROM cars WHERE festival_id = ? AND driver_person_id = ? AND deleted_at IS NULL')
+                .bind(festival.id, person.id).first(),
+            // Which default passes has this person actually checked off?
+            db.prepare(`
+                SELECT t.label FROM checklist_tasks t
+                JOIN checklist_checks cc ON cc.task_id = t.id AND cc.person_id = ? AND cc.unchecked_at IS NULL
+                WHERE t.festival_id = ? AND t.is_default = 1 AND t.deleted_at IS NULL
+            `).bind(person.id, festival.id).all().then((r) => r.results),
+        ]);
         const got = new Set(passRows.map((r) => (r.label || '').toLowerCase()));
         const needFestPass = !got.has('festival pass');
         const needCarPass = !!driving && !got.has('car pass');
@@ -242,34 +244,31 @@ export async function renderPage(c, { title, activeTab = '', body, festival = nu
     const db = c.env.DB;
     const person = c.get('person');
 
-    let festivals = [];
-    try {
-        festivals = (await db.prepare('SELECT id, name FROM festivals WHERE deleted_at IS NULL ORDER BY name').all()).results;
-    } catch (e) { /* ok */ }
-
-    let ticker = [];
-    if (festival) {
-        try {
-            ticker = (await db.prepare(`
+    // The page chrome needs four independent lookups; fire them together so the
+    // wall time is the slowest one, not the sum. Failures degrade the same way
+    // the old sequential try/catches did.
+    const [festivals, ticker, membership, dogHtml] = await Promise.all([
+        db.prepare('SELECT id, name FROM festivals WHERE deleted_at IS NULL ORDER BY name').all()
+            .then((r) => r.results).catch(() => []),
+        festival
+            ? db.prepare(`
                 SELECT summary FROM audit_log
                 WHERE festival_id = ? AND action != 'undo'
                 ORDER BY created_at DESC LIMIT 15
-            `).bind(festival.id).all()).results;
-        } catch (e) { /* ok */ }
-    }
+              `).bind(festival.id).all().then((r) => r.results).catch(() => [])
+            : [],
+        // Signed-in-but-not-a-member of the fest you're looking at → offer to join.
+        // On lookup failure pretend they're a member so we don't flash the banner.
+        festival && person
+            ? db.prepare('SELECT 1 FROM memberships WHERE festival_id = ? AND person_id = ? AND bailed_at IS NULL')
+                .bind(festival.id, person.id).first().catch(() => 1)
+            : 1,
+        dogAssistant(c, festival, person),
+    ]);
+    const showJoin = !membership;
 
     const theme = (festival && TAB_THEMES[activeTab]) || null;
     const winTitle = theme ? theme.title(festival) : `${festival ? festival.name : 'camp planner'} — Camp Planner`;
-
-    // Signed-in-but-not-a-member of the fest you're looking at → offer to join.
-    let showJoin = false;
-    if (festival && person) {
-        try {
-            const m = await db.prepare('SELECT 1 FROM memberships WHERE festival_id = ? AND person_id = ? AND bailed_at IS NULL')
-                .bind(festival.id, person.id).first();
-            showJoin = !m;
-        } catch (e) { /* ok */ }
-    }
 
     return html`<!DOCTYPE html>
 <html lang="en">
@@ -280,7 +279,10 @@ export async function renderPage(c, { title, activeTab = '', body, festival = nu
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Comic+Neue:wght@400;700&display=swap" rel="stylesheet">
-  <script src="https://unpkg.com/htmx.org@1.9.12"></script>
+  <!-- Self-hosted (was unpkg): first paint shouldn't wait on a third-party CDN's
+       DNS + TLS + fetch. Version in the filename + immutable cache (public/_headers);
+       bump the name when upgrading htmx. -->
+  <script src="/htmx-1.9.12.min.js"></script>
   <script>window.PIXMOJI_RANGES=${raw(JSON.stringify(PIXMOJI_COVERED_RANGES))};</script>
   <!-- No defer: camp.js binds its listeners to document at top level and must
        run before the body parses, same as when it was an inline script.
@@ -292,7 +294,7 @@ export async function renderPage(c, { title, activeTab = '', body, festival = nu
 <body>
   ${taskbar(c, festival, festivals)}
   <div class="title-gap" aria-hidden="true"></div>
-  ${await dogAssistant(c, festival, person)}
+  ${dogHtml}
   <div id="signin-modal-overlay"></div>
   <div id="popup-layer"></div>
   <div id="toast"></div>

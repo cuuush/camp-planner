@@ -1,7 +1,7 @@
 // Every mutation goes through here. Soft deletes only; undo is itself audited —
 // and undo-ing an undo (redo) works too, indefinitely back and forth.
 
-import { ensureMembership } from './festival.js';
+import { membershipStatement } from './festival.js';
 import { purgeFootprint, restoreFootprint } from './people.js';
 import { planEffects, summarizeSkipped } from './effects.js';
 
@@ -10,13 +10,7 @@ export async function logAction(c, { festivalId = null, action, entityType, enti
     const person = c.get('person');
     const meta = c.get('reqMeta') || { ip: '', city: '', country: '', userAgent: '' };
 
-    // Doing anything on a fest counts you as going — except bailing, which is the
-    // one action that must NOT re-add you.
-    if (festivalId && person && action !== 'bail') {
-        await ensureMembership(c, festivalId);
-    }
-
-    const result = await db.prepare(`
+    const auditInsert = db.prepare(`
         INSERT INTO audit_log
             (festival_id, person_id, action, entity_type, entity_id, before_json, after_json, effects_json, summary, reversible, ip, geo_city, geo_country, user_agent)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -37,8 +31,17 @@ export async function logAction(c, { festivalId = null, action, entityType, enti
         meta.city || null,
         meta.country || null,
         meta.userAgent || null,
-    ).run();
+    );
 
+    // Doing anything on a fest counts you as going — except bailing, which is the
+    // one action that must NOT re-add you. Batched with the log insert so the
+    // pair costs one D1 round trip instead of two.
+    if (festivalId && person && action !== 'bail') {
+        const [, result] = await db.batch([membershipStatement(db, festivalId, person.id), auditInsert]);
+        return result.meta.last_row_id;
+    }
+
+    const result = await auditInsert.run();
     return result.meta.last_row_id;
 }
 

@@ -25,23 +25,73 @@ function parseQtyText(text) {
 }
 
 async function itemStats(db, item) {
-    const pledges = (await db.prepare(`
-        SELECT p.id, p.qty, p.person_id, pe.display_name FROM pledges p
-        JOIN people pe ON pe.id = p.person_id
-        WHERE p.item_id = ? AND p.deleted_at IS NULL ORDER BY p.created_at
-    `).bind(item.id).all()).results;
+    // Four independent lookups — fire them together, one round trip of wall time.
+    const [pledges, votes, comments, adder] = await Promise.all([
+        db.prepare(`
+            SELECT p.id, p.qty, p.person_id, pe.display_name FROM pledges p
+            JOIN people pe ON pe.id = p.person_id
+            WHERE p.item_id = ? AND p.deleted_at IS NULL ORDER BY p.created_at
+        `).bind(item.id).all().then((r) => r.results),
+        db.prepare('SELECT person_id FROM votes WHERE item_id = ? AND deleted_at IS NULL').bind(item.id).all().then((r) => r.results),
+        loadComments(db, 'item', item.id),
+        item.added_by
+            ? db.prepare('SELECT display_name FROM people WHERE id = ?').bind(item.added_by).first()
+            : null,
+    ]);
 
     const pledgedQty = pledges.reduce((sum, p) => sum + p.qty, 0);
 
-    const votes = (await db.prepare('SELECT person_id FROM votes WHERE item_id = ? AND deleted_at IS NULL').bind(item.id).all()).results;
-
-    const comments = await loadComments(db, 'item', item.id);
-
-    const adder = item.added_by
-        ? await db.prepare('SELECT display_name FROM people WHERE id = ?').bind(item.added_by).first()
-        : null;
-
     return { pledges, pledgedQty, voteCount: votes.length, voterIds: votes.map((v) => v.person_id), comments, adderName: adder ? adder.display_name : null };
+}
+
+// The whole list's stats in one parallel burst of four festival-wide queries,
+// instead of four queries PER item (the old N+1: a 20-item page spent ~80
+// sequential D1 round trips here alone). Returns a Map keyed by item id with
+// the same shape itemStats() produces.
+async function allItemStats(db, festivalId, items) {
+    const [pledges, votes, comments, adders] = await Promise.all([
+        db.prepare(`
+            SELECT p.id, p.qty, p.person_id, p.item_id, pe.display_name FROM pledges p
+            JOIN people pe ON pe.id = p.person_id
+            JOIN items i ON i.id = p.item_id
+            WHERE i.festival_id = ? AND p.deleted_at IS NULL ORDER BY p.created_at
+        `).bind(festivalId).all().then((r) => r.results),
+        db.prepare(`
+            SELECT v.item_id, v.person_id FROM votes v
+            JOIN items i ON i.id = v.item_id
+            WHERE i.festival_id = ? AND v.deleted_at IS NULL
+        `).bind(festivalId).all().then((r) => r.results),
+        // Mirrors loadComments() (columns + INNER JOIN people + created_at order),
+        // just fetched for every item of the fest at once.
+        db.prepare(`
+            SELECT cm.id, cm.body, cm.created_at, cm.target_id, pe.display_name FROM comments cm
+            JOIN people pe ON pe.id = cm.person_id
+            JOIN items i ON i.id = cm.target_id
+            WHERE cm.target_type = 'item' AND i.festival_id = ? AND cm.deleted_at IS NULL
+            ORDER BY cm.created_at
+        `).bind(festivalId).all().then((r) => r.results),
+        db.prepare(`
+            SELECT i.id AS item_id, pe.display_name FROM items i
+            JOIN people pe ON pe.id = i.added_by
+            WHERE i.festival_id = ?
+        `).bind(festivalId).all().then((r) => r.results),
+    ]);
+
+    const byItem = new Map(items.map((item) => [item.id,
+        { pledges: [], pledgedQty: 0, voteCount: 0, voterIds: [], comments: [], adderName: null }]));
+    // Rows for items not in the list (deleted ones) miss the Map and drop out.
+    for (const p of pledges) byItem.get(p.item_id)?.pledges.push(p);
+    for (const v of votes) {
+        const s = byItem.get(v.item_id);
+        if (s) { s.voteCount++; s.voterIds.push(v.person_id); }
+    }
+    for (const cm of comments) byItem.get(cm.target_id)?.comments.push(cm);
+    for (const a of adders) {
+        const s = byItem.get(a.item_id);
+        if (s) s.adderName = a.display_name;
+    }
+    for (const s of byItem.values()) s.pledgedQty = s.pledges.reduce((sum, p) => sum + p.qty, 0);
+    return byItem;
 }
 
 function itemRow(festival, item, stats, person, expanded = false, chatOpen = false) {
@@ -177,10 +227,8 @@ async function itemListFragment(c, festival) {
 
     const rows = (await db.prepare('SELECT * FROM items WHERE festival_id = ? AND deleted_at IS NULL').bind(festival.id).all()).results;
 
-    const withStats = [];
-    for (const item of rows) {
-        withStats.push({ item, stats: await itemStats(db, item) });
-    }
+    const statsById = await allItemStats(db, festival.id, rows);
+    const withStats = rows.map((item) => ({ item, stats: statsById.get(item.id) }));
 
     const bySort = (a, b) => (sort === 'name'
         ? a.item.name.localeCompare(b.item.name)
@@ -476,11 +524,12 @@ items.post('/items/:itemId/pledge', async (c) => {
         });
     }
 
-    await notify(c.env, {
+    // After the response — the click shouldn't wait on the email provider.
+    c.executionCtx.waitUntil(notify(c.env, {
         festivalId: festival.id, targetPersonId: item.added_by, actorPersonId: person.id,
         heading: `${person.display_name} pledged your item`,
         body: `${person.display_name} pledged ${qty} of ${item.name} on ${festival.name}.`,
-    });
+    }));
 
     return itemRowResponse(c, festival, item.id, true);
 });
