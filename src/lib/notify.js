@@ -10,11 +10,16 @@ export async function notify(env, { targetPersonId, actorPersonId, heading, body
         const person = await env.DB.prepare('SELECT * FROM people WHERE id = ?').bind(targetPersonId).first();
         if (!person || !person.email || person.email_unsubscribed) return;
 
+        // No UNSUB_SECRET → no unforgeable unsubscribe link → no e-mail at all.
+        // Every notification must carry a working opt-out.
+        const unsubscribeUrl = await unsubscribeUrlFor(env, person);
+        if (!unsubscribeUrl) return;
+
         await sendNotificationEmail(env, {
             to: person.email,
             heading,
             body,
-            unsubscribeUrl: await unsubscribeUrlFor(env, person),
+            unsubscribeUrl,
         });
     } catch (e) {
         console.error('notify failed', e);
