@@ -243,7 +243,7 @@ function desktopIcons(festival, activeTab) {
 // floating mini windows, so the main window is an empty shell). #main survives
 // as an invisible element because it's the hx-target of every mine-tab form.
 // A join banner still forces the window — it needs somewhere to live.
-export async function renderPage(c, { title, activeTab = '', body, festival = null, floating = '', pre = '', bare = false }) {
+export async function renderPage(c, { title, activeTab = '', body, festival = null, floating = '', pre = '', bare = false, windowTitle = null }) {
     const db = c.env.DB;
     const person = c.get('person');
 
@@ -271,7 +271,9 @@ export async function renderPage(c, { title, activeTab = '', body, festival = nu
     const showJoin = !membership;
 
     const theme = (festival && TAB_THEMES[activeTab]) || null;
-    const winTitle = theme ? theme.title(festival) : `${festival ? festival.name : 'camp planner'} — Camp Planner`;
+    // windowTitle lets themeless pages (admin, unsubscribe…) name their own
+    // window instead of getting the generic fallback.
+    const winTitle = windowTitle || (theme ? theme.title(festival) : `${festival ? festival.name : 'camp planner'} — Camp Planner`);
 
     return html`<!DOCTYPE html>
 <html lang="en">
