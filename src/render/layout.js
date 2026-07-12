@@ -190,7 +190,10 @@ function taskbar(c, festival, festivals) {
 const TAB_THEMES = {
     stuff: {
         label: 'Stuff', path: 'stuff', ico: '/xp/desk-stuff.png',
-        title: (f) => `What we are bringing to ${f.name}`,
+        // "Shared Documents", but for camping. Short on purpose: the old
+        // "What we are bringing to <fest>" wrapped the titlebar on phones —
+        // the fest name still shows in the address bar right below.
+        title: () => 'Shared Stuff',
         menus: ['File', 'Edit', 'View', 'Favorites', 'Tools', 'Help'],
         address: (f) => `C:\\Camp Planner\\${f.name}\\Stuff`,
     },
