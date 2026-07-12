@@ -155,7 +155,7 @@ signin adder "Adder" "/f/1/stuff"
 post adder "/f/1/people/add" --data "name=Casper"
 GID=$(sql "SELECT id FROM people WHERE display_name='Casper' AND is_placeholder=1")
 signin casper "Casper" "/f/1/stuff"    # real Casper signs in → should absorb the ghost
-ABSORB=$(sql "SELECT count(*) FROM audit_log WHERE action='merge' AND summary LIKE '%pre-added entry found and merged%'")
+ABSORB=$(sql "SELECT count(*) FROM audit_log WHERE action='merge' AND summary LIKE '%Replaced manually created user%'")
 GHOST_GONE=$(sql "SELECT deleted_at FROM people WHERE id=$GID")
 [ "$ABSORB" -ge "1" ] && ok "absorb was logged as a reversible merge" || bad "absorb not logged — G8"
 [ -n "$GHOST_GONE" ] && ok "ghost soft-merged into the real Casper" || bad "ghost not merged"

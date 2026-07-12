@@ -219,7 +219,7 @@ Nothing special-cased.
   ghost that was deliberately removed from its fest should not silently glue itself
   to whoever signs in with that name later (G8's sharp edge). Log each absorb it
   DOES perform: `action: 'merge'`, `reversible: true`, with the merge's effects and
-  summary `"<name> logged on. Pre-added entry found and merged, ready to use"`. (Decision made
+  summary `"<name> logged on. Replaced manually created user"`. (Decision made
   here: name-matching stays global across fests — it's the documented product
   behavior for pre-added people — only *dead* ghosts stop absorbing.)
 - People-list queries: `renderPplBody` filters through active memberships, which
