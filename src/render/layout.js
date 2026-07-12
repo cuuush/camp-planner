@@ -276,9 +276,6 @@ export async function renderPage(c, { title, activeTab = '', body, festival = nu
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>${title} :: camp planner</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Comic+Neue:wght@400;700&display=swap" rel="stylesheet">
   <!-- Self-hosted (was unpkg): first paint shouldn't wait on a third-party CDN's
        DNS + TLS + fetch. Version in the filename + immutable cache (public/_headers);
        bump the name when upgrading htmx. -->
