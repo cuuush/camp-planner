@@ -40,6 +40,11 @@ CREATE TABLE IF NOT EXISTS festivals (
     location TEXT,
     ticket_url TEXT,
     parking_url TEXT,
+    -- Meeting spot (migration 007) — the Streets & Trips banner on the cars tab.
+    meet_name TEXT,
+    meet_address TEXT,
+    meet_maps_url TEXT,
+    meet_time TEXT,
     cloned_from_festival_id INTEGER REFERENCES festivals(id),
     created_by INTEGER REFERENCES people(id),
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
@@ -171,6 +176,14 @@ CREATE TABLE IF NOT EXISTS feedback (
     page TEXT, -- path they were on when they filed it (like a crash report's context)
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     deleted_at TEXT
+);
+
+-- Monthly third-party API budget (migration 008) — see src/lib/budget.js.
+CREATE TABLE IF NOT EXISTS api_usage (
+    period TEXT NOT NULL, -- 'YYYY-MM'
+    api TEXT NOT NULL,
+    count INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (period, api)
 );
 
 CREATE TABLE IF NOT EXISTS audit_log (

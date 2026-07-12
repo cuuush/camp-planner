@@ -80,7 +80,7 @@ people.get('/f/:id/ppl', async (c) => {
     const festival = await loadFestival(c);
     if (!festival) return c.notFound();
     const body = await renderPplBody(c, festival);
-    return c.html(await renderPage(c, { title: `${festival.name} — ppl`, festival, activeTab: 'ppl', body }));
+    return c.html(await renderPage(c, { title: `${festival.name} — People`, festival, activeTab: 'ppl', body }));
 });
 
 // Explicit "I'm going" — the join button shown when you're viewing a fest you

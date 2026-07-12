@@ -43,5 +43,21 @@ resize "Appearance"         "cp-appearance"  44
 echo "Tray (32px):"
 resize "Volume"             "tray-volume"    32
 
+echo "Meeting-spot banner (the fake Streets & Trips window on the cars tab):"
+resize "My Network Places"  "globe"          44
+resize "Favorites"          "fav-star"       32
+resize "Internet Explorer 6" "ie"            32
+resize "Search"             "search"         32
+resize "Back"               "back"           32
+resize "Forward"            "forward"        32
+resize "Printer"            "printer"        32
+
+echo "Desktop icons for the tab row (80px — rendered ~40px, crisp on retina):"
+resize "Briefcase"          "desk-stuff"     80
+resize "User Accounts"      "desk-people"    80
+resize "My Network Places"  "desk-cars"      80
+resize "My Documents"       "desk-me"        80
+resize "Event Viewer"       "desk-log"       80
+
 echo "Done -> $OUT"
 du -sh "$OUT"

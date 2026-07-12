@@ -5,6 +5,7 @@ import { loadFestival } from '../lib/festival.js';
 import { logAction } from '../lib/audit.js';
 import { needsSignin, signinModalResponse } from '../lib/guard.js';
 import { isCarPassTask } from './people.js';
+import { xpCaptionBtns } from '../render/popup.js';
 
 export const mine = new Hono();
 
@@ -19,11 +20,7 @@ function miniWindow(title, slug, offset, inner) {
     <div class="xp-mini xp-mini-${slug}" style="--mini-offset:${offset}px">
       <div class="xp-mini-titlebar">
         <span class="xp-mini-title">${title}</span>
-        <span class="xp-mini-btns">
-          <span class="xp-tb-btn min" aria-hidden="true">_</span>
-          <span class="xp-tb-btn max" aria-hidden="true">❐</span>
-          <span class="xp-tb-btn close" aria-hidden="true">✕</span>
-        </span>
+        ${xpCaptionBtns()}
       </div>
       <div class="xp-mini-body">${inner}</div>
     </div>`;
@@ -75,13 +72,14 @@ async function renderMineBody(c, festival) {
           AND c.deleted_at IS NULL AND c.driver_person_id != ?
     `).bind(person.id, festival.id, person.id).first();
 
-    const main = html`
-    ${near ? html`<p class="rainbow">it's almost time — here's your 7am packing checklist!</p>` : ''}
-    `;
+    // Signed in, everything lives in the mini windows — the main window renders
+    // bare (see renderPage), so there's no main content at all.
+    const main = html``;
 
     const floating = html`
     <div class="mine-col mine-col-left">
-    ${miniWindow('festival checklist', 'checklist', -12, html`
+    ${miniWindow('Festival Checklist', 'checklist', -12, html`
+      ${near ? html`<p class="rainbow" style="margin-top:0;">it's almost time — here's your 7am packing checklist!</p>` : ''}
       <div class="checklist-rows">
         ${tasks.map((t) => {
             // A car pass only matters if you're driving — if not, just don't show it.
@@ -107,17 +105,17 @@ async function renderMineBody(c, festival) {
       </form>
     `)}
 
-    ${miniWindow('my ride', 'ride', -6, html`
-      ${drivingCar ? html`<a class="ride-panel" href="/f/${festival.id}/rides"><span class="ride-icon">🚗</span><div class="ride-info"><b>you're driving!</b><br>${drivingCar.seats_total} seats · leaving from ${drivingCar.leaving_from || '?'}</div><span class="ride-go">cars ›</span></a>` : ''}
-      ${ridingSeat ? html`<a class="ride-panel" href="/f/${festival.id}/rides"><span class="ride-icon">🚗</span><div class="ride-info"><b>riding with ${ridingSeat.driver_name}</b></div><span class="ride-go">cars ›</span></a>` : ''}
-      ${!drivingCar && !ridingSeat ? html`<a class="ride-panel ride-empty" href="/f/${festival.id}/rides"><span class="ride-icon">🚗</span><div class="ride-info">no ride yet — head to the cars tab!</div><span class="ride-go">cars ›</span></a>` : ''}
+    ${miniWindow('My Ride', 'ride', -6, html`
+      ${drivingCar ? html`<a class="ride-panel" href="/f/${festival.id}/rides"><span class="ride-icon">🚗</span><div class="ride-info"><b>you're driving!</b><br>${drivingCar.seats_total} seats · leaving from ${drivingCar.leaving_from || '?'}</div><span class="ride-go">Cars ›</span></a>` : ''}
+      ${ridingSeat ? html`<a class="ride-panel" href="/f/${festival.id}/rides"><span class="ride-icon">🚗</span><div class="ride-info"><b>riding with ${ridingSeat.driver_name}</b></div><span class="ride-go">Cars ›</span></a>` : ''}
+      ${!drivingCar && !ridingSeat ? html`<a class="ride-panel ride-empty" href="/f/${festival.id}/rides"><span class="ride-icon">🚗</span><div class="ride-info">no ride yet — open Cars!</div><span class="ride-go">Cars ›</span></a>` : ''}
     `)}
     </div>
 
     <div class="mine-col mine-col-right">
-    ${miniWindow('what im bringing', 'bringing', 14, html`
+    ${miniWindow("What I'm Bringing", 'bringing', 14, html`
       ${pledges.length === 0
-            ? html`<p class="mine-empty">nothing pledged yet — go grab something on the stuff tab!</p>`
+            ? html`<p class="mine-empty">nothing pledged yet — go grab something in Stuff!</p>`
             : html`<div class="bringing-list">
           ${pledges.map((p) => html`
             <div class="bringing-row ${p.packed_at ? 'packed' : ''}">
@@ -142,7 +140,10 @@ mine.get('/f/:id/mine', async (c) => {
     const festival = await loadFestival(c);
     if (!festival) return c.notFound();
     const { main, floating } = await renderMineBody(c, festival);
-    return c.html(await renderPage(c, { title: `${festival.name} — my list`, festival, activeTab: 'mine', body: main, floating }));
+    // Signed in → no main window (bare): the mini windows ARE the page, and the
+    // main window would just be an empty shell. Signed out it stays, holding the
+    // sign-in card (and a guest's join banner always brings it back).
+    return c.html(await renderPage(c, { title: `${festival.name} — About Me`, festival, activeTab: 'mine', body: main, floating, bare: !!c.get('person') }));
 });
 
 // Toggle your own checklist item from the "my list" tab. Same effect as the ppl

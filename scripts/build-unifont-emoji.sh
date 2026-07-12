@@ -8,7 +8,9 @@ set -euo pipefail
 VER="16.0.04"
 OTF_URL="https://unifoundry.com/pub/unifont/unifont-${VER}/font-builds/unifont_upper-${VER}.otf"
 DEST="/Users/chris/code/camp-planner/public/fonts"
-OUT="$DEST/unifont-emoji16.woff2"
+# "a" suffix = cache-bust: /fonts/* ships with week-long immutable caching, so a
+# changed font MUST get a new filename (and a matching @font-face URL in retro.css).
+OUT="$DEST/unifont-emoji16a.woff2"
 TMP="$(mktemp -d)"
 
 echo "ensuring fonttools + brotli (in an isolated venv)…"
@@ -23,11 +25,16 @@ echo "  otf size: $(du -h "$TMP/upper.otf" | cut -f1)"
 
 mkdir -p "$DEST"
 echo "subsetting emoji blocks -> woff2…"
+# NOTE: keep the name table (no --name-IDs='')! Stripping it saves ~1KB but iOS
+# Safari REJECTS fonts with an empty name table — the font silently fails to load
+# and every 2019+ emoji falls back to Apple Color Emoji on phones, while desktop
+# Chrome (which tolerates it) looks fine. Cost us a "why is the mirror not
+# pixelated on my phone" hunt.
 "$VENV/bin/python" -m fontTools.subset "$TMP/upper.otf" \
   --unicodes="U+1F000-1FAFF" \
   --flavor=woff2 \
   --output-file="$OUT" \
-  --no-hinting --desubroutinize --name-IDs='' --notdef-outline
+  --no-hinting --desubroutinize --notdef-outline
 
 echo "done: $OUT ($(du -h "$OUT" | cut -f1))"
 rm -rf "$TMP"

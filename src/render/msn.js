@@ -1,4 +1,5 @@
 import { html, raw } from 'hono/html';
+import { xpCaptionBtns } from './popup.js';
 
 // MSN Messenger name colors — hash a name to a stable hue so "chris says:" is
 // always the same color for chris.
@@ -93,11 +94,7 @@ export function msnChat({ title, dpEmoji, toLabel, comments, postUrl, target, ch
     <details class="msn-chat" ${id ? html`id="${id}"` : ''} ${chatOpen ? 'open' : ''}>
       <summary class="msn-titlebar">
         <span class="msn-title-text">${title}</span>
-        <span class="msn-winbtns">
-          <span class="msn-winbtn min" aria-hidden="true">_</span>
-          <span class="msn-winbtn max" aria-hidden="true">▢</span>
-          <span class="msn-winbtn close" aria-hidden="true">✕</span>
-        </span>
+        ${xpCaptionBtns()}
       </summary>
       <div class="msn-window-body">
         <div class="msn-menubar">

@@ -18,7 +18,10 @@
      chair, coin, … Same pixel style, so the whole set stays consistent. */
   @font-face {
     font-family: 'UnifontEmoji16';
-    src: url('/fonts/unifont-emoji16.woff2') format('woff2');
+    /* "a" build: keeps the OpenType name table — iOS Safari rejects fonts
+       without one (silent load failure → color emoji on phones only). New
+       filename because /fonts/* is cached immutable for a week. */
+    src: url('/fonts/unifont-emoji16a.woff2') format('woff2');
     font-display: swap;
   }
   .pixmoji {
@@ -250,19 +253,45 @@
   @media (max-width: 600px) { .xp-bsod { font-size: 10px; padding: 18px 12px; } }
   .xp-bsod-cursor { animation: bsod-blink 1s steps(1) infinite; }
   @keyframes bsod-blink { 50% { opacity: 0; } }
-  /* XP tab control: inactive tabs sit slightly lower and behind the active one,
-     which lifts up and merges with the page below it. */
-  nav.tabs { display: flex; padding: 6px 0 0; gap: 2px; border-bottom: 1px solid #919b9c; margin: 0 0 12px; align-items: flex-end; }
-  nav.tabs a {
-    flex: 1; text-align: center; padding: 6px 4px; text-decoration: none; color: #202020; font-weight: normal;
-    background: linear-gradient(180deg,#fbfbf8 0%,#eceadd 55%,#e2dfce 100%);
-    border: 1px solid #919b9c; border-bottom: none; border-radius: 4px 4px 0 0;
-    position: relative; top: 1px; font-size: 0.85em;
+  /* ——— The section switcher: a centered row of real XP desktop icons sitting
+     directly on the Bliss wallpaper above the windows (it replaced the old tab
+     control). Authentic desktop-icon anatomy: 40px icon art with a soft drop
+     shadow, an 11px Tahoma label in white with the desktop's dark text shadow,
+     hover underlines like XP's single-click web view. ——— */
+  .desktop-icons {
+    display: flex; justify-content: center; align-items: flex-start; gap: 10px;
+    max-width: 900px; width: calc(100% - 44px); margin: 18px auto 0;
   }
-  nav.tabs a:hover { background: linear-gradient(180deg,#ffffff 0%,#f4f2e6 100%); }
-  nav.tabs a.active {
-    background: #fffdf5; color: #000; font-weight: bold;
-    border-color: #919b9c; top: 0; padding-top: 9px; margin-bottom: -1px; z-index: 2;
+  .desk-icon {
+    display: flex; flex-direction: column; align-items: center; gap: 5px;
+    width: 84px; padding: 3px 2px 4px; text-decoration: none;
+  }
+  .desk-icon-img { position: relative; width: 46px; height: 46px; }
+  .desk-icon-img img { width: 100%; height: 100%; object-fit: contain; display: block;
+    filter: drop-shadow(1px 2px 2px rgba(0,0,30,0.45)); }
+  .desk-icon-label {
+    font-family: Tahoma, Verdana, sans-serif; font-size: 11px; line-height: 1.25; text-align: center;
+    color: #fff; text-shadow: 1px 1px 2px rgba(0,0,0,0.9), 0 0 3px rgba(0,0,0,0.55);
+    padding: 1px 4px; border: 1px dotted transparent;
+  }
+  .desk-icon, .desk-icon:visited { color: #fff; }
+  .desk-icon:hover .desk-icon-label { text-decoration: underline; }
+  /* The current section = a SELECTED desktop icon: the label sits on the Luna
+     selection blue with a dotted focus rect, and the icon art itself is washed
+     with translucent selection blue — masked to the icon's own pixels (--ico is
+     set inline per icon), exactly how the real desktop tints a selected icon. */
+  .desk-icon.active .desk-icon-img::after {
+    content: ''; position: absolute; inset: 0; background: #316ac5; opacity: 0.45;
+    -webkit-mask: var(--ico) center/contain no-repeat; mask: var(--ico) center/contain no-repeat;
+  }
+  .desk-icon.active .desk-icon-label {
+    background: #316ac5; text-shadow: none; border-color: #9ec1f0;
+  }
+  @media (max-width: 600px) {
+    .desktop-icons { gap: 2px; }
+    .desk-icon { width: 62px; }
+    .desk-icon-img { width: 34px; height: 34px; }
+    .desk-icon-label { font-size: 10px; }
   }
   /* "you're not on the list yet" prompt — an XP info bar above the tab body. */
   .join-banner {
@@ -379,7 +408,6 @@
   .ppl-task { font-size: 0.8em; color: #8a8a7a; white-space: nowrap; width: 116px; overflow: hidden; text-overflow: ellipsis; }
   .ppl-task.blank { visibility: hidden; }
   .ppl-task.done { color: #1a7a1a; }
-  @media (max-width: 600px) { nav.tabs a { font-size: 0.8em; padding: 8px 2px; } }
 
   #signin-modal-overlay:empty { display: none; }
   #signin-modal-overlay:not(:empty) {
@@ -409,15 +437,6 @@
     background: linear-gradient(180deg,#0997ff 0%,#0053ee 8%,#0050ee 40%,#0165ff 88%,#0165ff 93%,#0997ff 95%,#0165ff 100%);
   }
   .xp-dialog-title-text { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .xp-dialog-close {
-    width: 21px; height: 21px; flex-shrink: 0; padding: 0;
-    display: flex; align-items: center; justify-content: center;
-    border: 1px solid rgba(255,255,255,0.9); border-radius: 3px;
-    color: #fff; font-size: 11px; font-weight: bold; cursor: pointer;
-    text-shadow: 0 1px 1px rgba(0,0,0,0.4);
-    background: linear-gradient(180deg,#f9b38c 0%,#e0632f 8%,#e14f28 45%,#d0330f 100%);
-    box-shadow: inset 0 1px 2px rgba(255,255,255,0.55), inset 0 -3px 4px rgba(0,0,60,0.35);
-  }
   .xp-dialog-body { background: #ece9d8; padding: 18px; border-radius: 0 0 4px 4px; }
   .xp-dialog-body > h2:first-child, .xp-dialog-body > p:first-child { margin-top: 0; }
   .xp-dialog-body h2 { color: #0a246a; font-family: var(--fun-font); }
@@ -597,6 +616,138 @@
      font, no emoji; XP wouldn't put either on a system button. */
   .post-car-bar { margin: 0 0 12px; }
 
+  /* ── Meeting spot = a fake Microsoft Streets & Trips window docked ABOVE the
+     Car Pool window as its own sibling window on the desktop (no more window-in-
+     window): title bar, menu bar, toolbar, a directions pane + REAL map (OSM
+     embed) side by side, and a status bar. Not draggable, not a popup. Live
+     controls: the "Edit" menu, "Find a Place", and the map itself. */
+  .st-window {
+    max-width: 900px; width: calc(100% - 44px); margin: 22px auto 0;
+    background: #0831d9; padding: 0 3px 3px; border-radius: 8px 8px 0 0;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.55);
+  }
+  .st-titlebar {
+    height: 26px; display: flex; align-items: center; gap: 6px;
+    margin: 0 -3px; padding: 0 4px 0 7px; border-radius: 8px 8px 0 0;
+    color: #fff; font-weight: bold; font-family: Tahoma, sans-serif; font-size: 0.85em;
+    text-shadow: 1px 1px 2px rgba(0,0,20,0.55);
+    background: linear-gradient(180deg,#0997ff 0%,#0053ee 8%,#0050ee 40%,#0165ff 88%,#0165ff 93%,#0997ff 95%,#0165ff 100%);
+    user-select: none;
+  }
+  .st-title-ico { width: 16px; height: 16px; flex: 0 0 auto; }
+  .st-title { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  /* Menu bar: File Edit View… — flat text that highlights menu-blue on hover. All
+     decorative except Edit, which is a real <button> reset back to menu text.
+     .xp-menubar/.xp-menu are the same strip on the main themed windows (each
+     section's window carries its own pretend app menus). */
+  .st-menubar, .xp-menubar {
+    display: flex; align-items: center; background: #ece9d8; padding: 1px 2px;
+    border-bottom: 1px solid #cbc8b8; font-family: Tahoma, sans-serif; font-size: 0.78em;
+  }
+  .st-menu, .xp-menu { padding: 2px 7px; color: #222; user-select: none; }
+  /* Explorer-style address bar (the Stuff window): flat label + sunken white
+     field with a little folder icon and the pretend path. Decorative. */
+  .xp-addressbar {
+    display: flex; align-items: center; gap: 6px; background: #ece9d8;
+    border-bottom: 1px solid #cbc8b8; padding: 2px 6px 3px;
+    font-family: Tahoma, sans-serif; font-size: 0.75em;
+  }
+  .xp-address-label { color: #6a6a5c; flex: 0 0 auto; }
+  .xp-address-field {
+    flex: 1; min-width: 0; display: flex; align-items: center; gap: 5px;
+    background: #fff; border: 1px solid #7f9db9; padding: 2px 6px; color: #000;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    box-shadow: inset 1px 1px 1px rgba(0,0,0,0.12);
+  }
+  .xp-address-field img { width: 14px; height: 14px; flex: 0 0 auto; }
+  button.st-menu-live, button.st-menu-live:hover, button.st-menu-live:active {
+    background: none; border: none; border-radius: 0; box-shadow: none; margin: 0;
+    font: inherit; font-weight: normal; text-shadow: none; cursor: pointer; color: #222;
+  }
+  button.st-menu-live:hover { background: #316ac5; color: #fff; }
+  button.st-menu-live:focus { outline: none; }
+  button.st-menu-live:focus-visible { outline: 1px dotted #4a4a3c; }
+  /* Toolbar: the classic XP icon strip. Only "Find a Place" is live (it opens the
+     meeting-spot editor); Back/Forward/Print are inert scenery like the menus. */
+  .st-toolbar {
+    display: flex; align-items: center; gap: 1px; background: #ece9d8;
+    border-bottom: 1px solid #cbc8b8; padding: 2px 4px; font-family: Tahoma, sans-serif;
+  }
+  .st-tbtn {
+    display: inline-flex; align-items: center; gap: 5px; padding: 2px 6px;
+    font-size: 0.75em; color: #222; border: 1px solid transparent; border-radius: 3px;
+    user-select: none;
+  }
+  span.st-tbtn { pointer-events: none; }
+  button.st-tbtn-live {
+    background: none; box-shadow: none; margin: 0;
+    font: inherit; font-size: 0.75em; font-weight: normal; text-shadow: none; cursor: pointer;
+  }
+  button.st-tbtn-live:hover { border-color: #7ba7dd; background: linear-gradient(180deg,#fdfdfb,#dbe9fb); box-shadow: none; }
+  button.st-tbtn-live:active { background: #c8ddf5; box-shadow: none; }
+  button.st-tbtn-live:focus { outline: none; }
+  .st-ticon { width: 18px; height: 18px; }
+  .st-tsep { width: 1px; height: 20px; background: #cbc8b8; margin: 0 4px; flex: 0 0 auto; }
+  .st-body { background: #ece9d8; padding: 8px 8px 6px; }
+  /* The workspace: directions pane on the left (numbered legs, Streets & Trips
+     style), a REAL map on the right (OpenStreetMap embed, marker on the spot),
+     both inside one sunken Explorer field. */
+  .st-panes {
+    display: flex; align-items: stretch; background: #fff;
+    border: 1px solid #7f9db9; box-shadow: inset 1px 1px 2px rgba(0,0,0,0.18);
+  }
+  .st-dir { flex: 0 0 44%; max-width: 320px; min-width: 0; border-right: 1px solid #cbc8b8; display: flex; flex-direction: column; }
+  .st-dir-head {
+    background: linear-gradient(180deg,#ffffff 0%,#f3f1e6 48%,#e8e5d3 52%,#ded9c4 100%);
+    color: #37352c; font-weight: bold; font-size: 0.8em; letter-spacing: 0.2px;
+    padding: 3px 9px; border-bottom: 1px solid #aca591;
+    box-shadow: inset 0 1px 0 #fff; text-shadow: 0 1px 0 rgba(255,255,255,0.7);
+  }
+  .st-leg {
+    display: flex; align-items: center; gap: 8px; padding: 6px 9px;
+    border-bottom: 1px solid #eef1f5; font-size: 0.88em;
+  }
+  .st-leg:last-child { border-bottom: none; }
+  /* Numbered green leg squares — Streets & Trips route green. */
+  .st-leg-num {
+    flex: 0 0 auto; width: 16px; height: 16px;
+    display: inline-flex; align-items: center; justify-content: center;
+    background: #1f9e3d; color: #fff; font-size: 0.72em; font-weight: bold;
+    border-radius: 2px; box-shadow: inset 0 1px 0 rgba(255,255,255,0.4);
+  }
+  .st-leg-main { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+  .st-leg-empty { color: #555; font-style: italic; }
+  .st-ico { width: 16px; height: 16px; flex: 0 0 auto; }
+  .st-addr { display: block; color: #5a5a4c; font-size: 0.9em; }
+  .st-link { color: #1c5fb4; }
+  .st-link:hover { color: #d5620a; }
+  .st-map { flex: 1; position: relative; min-height: 210px; background: #dfe9d8; }
+  .st-map-frame { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; display: block; }
+  /* Empty map pane = an XP help prompt ("To do X, click Y"), not a shrug — plain
+     roman text (the old italic fought the bold lead line), navy bolds like Rover's
+     tips, and room for the Set Meeting Spot… task link underneath. */
+  .st-map-empty {
+    position: absolute; inset: 0; display: flex; flex-direction: column;
+    align-items: center; justify-content: center; gap: 8px; padding: 12px;
+    color: #555; font-size: 0.85em; text-align: center; line-height: 1.45;
+  }
+  .st-map-empty b { color: #0a246a; }
+  @media (max-width: 600px) {
+    .st-panes { flex-direction: column; }
+    .st-dir { flex: none; max-width: none; border-right: none; border-bottom: 1px solid #cbc8b8; }
+    .st-map { min-height: 180px; }
+    /* Status bar on a phone: just "Route calculated" — the stop count and the
+       coordinate readout are the cells that made it wrap. */
+    .st-status-stops, .st-status-coords { display: none; }
+  }
+  /* Status bar: the classic sunken segments along the bottom of every XP program. */
+  .st-statusbar { display: flex; gap: 2px; margin-top: 6px; font-size: 0.72em; color: #4a4a3c; }
+  .st-status-cell {
+    padding: 1px 8px; background: #ece9d8;
+    border: 1px solid; border-color: #9e9a87 #fff #fff #9e9a87;
+  }
+  .st-status-main { flex: 1; }
+
   /* The post-a-car form inside its XP window: the same stacked labelled fields as
      the edit dialog, just without the group-box face (the window IS the frame). */
   .popup-form-car { display: flex; flex-direction: column; gap: 8px; min-width: 260px; }
@@ -727,7 +878,7 @@
     box-shadow: inset 0 1px 0 rgba(255,255,255,0.55), inset 0 -2px 3px rgba(0,0,60,0.35), 0 1px 2px rgba(0,0,0,0.3);
   }
   .msn-chat:not([open]) > summary.msn-titlebar { height: auto; padding: 6px 14px; }
-  .msn-chat:not([open]) .msn-winbtns { display: none; }
+  .msn-chat:not([open]) .xp-caption-btns { display: none; }
   .msn-chat:not([open]):hover {
     border-color: #e08a1e;
     box-shadow: inset 0 1px 0 rgba(255,255,255,0.6), 0 0 5px 1px rgba(255,177,40,0.8);
@@ -751,17 +902,6 @@
   .msn-chat > summary.msn-titlebar::-webkit-details-marker { display: none; }
   .msn-chat > summary.msn-titlebar::marker { content: ''; }
   .msn-title-text { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  /* Caption buttons hug the right edge and look like real XP window controls. */
-  .msn-winbtns { display: flex; gap: 2px; margin-left: auto; flex-shrink: 0; }
-  .msn-winbtn {
-    width: 20px; height: 18px; display: flex; align-items: center; justify-content: center;
-    font-size: 9px; line-height: 1; color: #fff; font-weight: bold;
-    border: 1px solid rgba(255,255,255,0.85); border-radius: 3px;
-    text-shadow: 0 1px 1px rgba(0,0,0,0.4);
-    box-shadow: inset 0 1px 2px rgba(255,255,255,0.5), inset 0 -2px 3px rgba(0,0,60,0.3);
-  }
-  .msn-winbtn.min, .msn-winbtn.max { background: linear-gradient(180deg,#4aa3ff 0%,#1c6fe0 45%,#0d59d6 100%); }
-  .msn-winbtn.close { background: linear-gradient(180deg,#f9b38c 0%,#e0632f 8%,#e14f28 45%,#d0330f 100%); }
   /* Menu bar — the row of pretend menus that every MSN window had. */
   .msn-menubar {
     display: flex; gap: 12px; padding: 2px 9px;
@@ -909,17 +1049,59 @@
       #0165ff 93%, #0997ff 95%, #0165ff 100%);
   }
   .xp-titlebar-icon { font-size: 1.05em; filter: drop-shadow(0 1px 1px rgba(0,0,0,0.4)); }
+  /* Titlebar program icon (img flavour): the same art as the desktop icon at 16px. */
+  .xp-titlebar-ico { width: 16px; height: 16px; object-fit: contain; flex: 0 0 auto;
+    filter: drop-shadow(0 1px 1px rgba(0,0,0,0.4)); }
   .xp-titlebar-text { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; letter-spacing: 0.2px; }
-  .xp-titlebar-buttons { display: flex; gap: 2px; margin-left: 8px; }
-  .xp-tb-btn {
-    width: 21px; height: 21px; display: flex; align-items: center; justify-content: center;
-    border: 1px solid rgba(255,255,255,0.9); border-radius: 3px;
-    color: #fff; font-size: 11px; font-weight: bold; line-height: 1;
-    text-shadow: 0 1px 1px rgba(0,0,0,0.4);
-    box-shadow: inset 0 1px 2px rgba(255,255,255,0.55), inset 0 -3px 4px rgba(0,0,60,0.35);
+  /* ===== Luna caption buttons — ONE recipe for every title bar =====
+     Rendered by xpCaptionBtns() (src/render/popup.js) on the main window, mini
+     windows, MSN chat, popups, dialogs, and Streets & Trips. There used to be five
+     hand-rolled copies with five gradients and three glyph FONTS' worth of _/❐/✕
+     characters; that's why no two bars matched. Authentic Luna anatomy: a 21px
+     rounded square, 1px white rim, a glassy highlight across the top, the signature
+     cool glow rising from the bottom edge, and CSS-DRAWN Marlett-style glyphs so
+     every bar is pixel-identical regardless of font. */
+  .xp-caption-btns { display: flex; gap: 2px; margin-left: auto; flex-shrink: 0; }
+  .xp-caption-btn {
+    position: relative; width: 21px; height: 21px; padding: 0; margin: 0; flex: 0 0 auto;
+    border: 1px solid #fff; border-radius: 3px;
+    background:
+      radial-gradient(ellipse 120% 90% at 50% 115%, rgba(160,222,255,0.95) 0%, rgba(120,190,255,0.4) 40%, rgba(120,190,255,0) 65%),
+      radial-gradient(ellipse 90% 55% at 30% 0%, rgba(255,255,255,0.55) 0%, rgba(255,255,255,0) 60%),
+      linear-gradient(180deg,#5a91e8 0%,#3b6ed6 30%,#2054c4 70%,#1a47ad 100%);
+    box-shadow: inset 0 1px 1px rgba(255,255,255,0.5), inset -1px -1px 1px rgba(10,20,80,0.35), inset 1px 0 1px rgba(255,255,255,0.2);
   }
-  .xp-tb-btn.min, .xp-tb-btn.max { background: linear-gradient(180deg,#4aa3ff 0%,#1c6fe0 45%,#0d59d6 100%); }
-  .xp-tb-btn.close { background: linear-gradient(180deg,#f9b38c 0%,#e0632f 8%,#e14f28 45%,#d0330f 100%); }
+  .xp-caption-btn.close {
+    background:
+      radial-gradient(ellipse 120% 90% at 50% 115%, rgba(255,195,150,0.95) 0%, rgba(255,165,115,0.4) 40%, rgba(255,165,115,0) 65%),
+      radial-gradient(ellipse 90% 55% at 30% 0%, rgba(255,255,255,0.5) 0%, rgba(255,255,255,0) 60%),
+      linear-gradient(180deg,#e88b6c 0%,#dd6547 30%,#cc4224 70%,#b03007 100%);
+    box-shadow: inset 0 1px 1px rgba(255,255,255,0.5), inset -1px -1px 1px rgba(90,20,0,0.4), inset 1px 0 1px rgba(255,255,255,0.2);
+  }
+  /* The glyphs — drawn, not typed. White with the soft dark drop Marlett had. */
+  .xp-caption-btn::before, .xp-caption-btn::after { content: ''; position: absolute; }
+  .xp-caption-btn.min::before {
+    left: 4px; bottom: 4px; width: 8px; height: 3px; background: #fff;
+    box-shadow: 0 1px 1px rgba(0,10,60,0.45);
+  }
+  .xp-caption-btn.max::before {
+    left: 5px; top: 5px; width: 10px; height: 9px;
+    border: 1px solid #fff; border-top-width: 3px;
+    box-shadow: 0 1px 1px rgba(0,10,60,0.45);
+  }
+  .xp-caption-btn.close::before, .xp-caption-btn.close::after {
+    left: 4.5px; top: 8.5px; width: 10px; height: 2px; background: #fff; border-radius: 1px;
+    box-shadow: 0 1px 1px rgba(80,10,0,0.4);
+  }
+  .xp-caption-btn.close::before { transform: rotate(45deg); }
+  .xp-caption-btn.close::after { transform: rotate(-45deg); }
+  /* Decorative spans are inert (clicks fall through to the title bar, so the MSN
+     chat's fake buttons still toggle it); real ✕ <button>s glow and press. */
+  span.xp-caption-btn { pointer-events: none; }
+  button.xp-caption-btn { cursor: pointer; }
+  button.xp-caption-btn:hover { filter: brightness(1.12); }
+  button.xp-caption-btn:active { filter: brightness(0.85); }
+  button.xp-caption-btn:focus { outline: none; }
   .xp-window-body { background: #ece9d8; padding: 4px 6px 8px; }
   .xp-window-body main { max-width: none; margin: 0; padding: 6px 4px; min-height: 0; }
   @media (max-width: 600px) { .xp-titlebar-text { font-size: 0.95em; } }
@@ -934,7 +1116,9 @@
      bringing alone on the right — so the left column's spacing is never coupled
      to (stretched by) the right column's height the way a spanning grid item
      would do. */
-  .mine-floating { max-width: 900px; width: calc(100% - 44px); margin: 0 auto 30px; display: flex; flex-direction: column; align-items: center; }
+  /* Top margin matters when the main window is gone (bare About Me): it's the
+     gap below the desktop icons. With a window above it collapses away. */
+  .mine-floating { max-width: 900px; width: calc(100% - 44px); margin: 26px auto 30px; display: flex; flex-direction: column; align-items: center; }
   .mine-floating:empty { margin: 0; }
   .mine-col { display: contents; }
   @media (min-width: 601px) {
@@ -962,7 +1146,6 @@
     cursor: move; user-select: none; touch-action: none;
   }
   .xp-mini-title { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .xp-mini-btns { display: flex; gap: 2px; margin-left: 8px; }
   .xp-mini-body { background: #ece9d8; padding: 12px 14px; }
   .xp-mini-body > h3:first-child { margin-top: 0; }
   .xp-mini.dragging { opacity: 0.94; box-shadow: 0 16px 38px rgba(0,0,0,0.55); z-index: 60; }
@@ -981,6 +1164,20 @@
   .xp-popup.wide { width: 360px; }
   /* Message dialogs (xpDialogPopup): reasonable on desktop, ~95vw on mobile. */
   .xp-popup.dialog { width: min(420px, 95vw); }
+  /* Phones: the JS centering/cascade (camp.js placement on insert) measures and
+     offsets in ways that drift on small screens — override its inline position
+     entirely. Horizontal: edge-to-edge with a symmetric gutter. Vertical: pinned
+     below the taskbar with the body capped to the DYNAMIC viewport (dvh) — iOS's
+     vh includes the collapsed toolbar area, which is exactly how tall dialogs
+     ended up with their OK/Cancel pushed off the visible screen. */
+  @media (max-width: 600px) {
+    .xp-popup { left: 12px !important; right: 12px; width: auto !important; max-width: none; top: 48px !important; }
+    .xp-popup .xp-popup-body { max-height: calc(100dvh - 150px); }
+    /* 21px is well under Apple's 44pt touch-target guideline — grow the caption
+       buttons and the bar they live in to a real touch size. */
+    .xp-popup .xp-popup-titlebar { height: 34px; }
+    .xp-popup .xp-caption-btn { width: 30px; height: 27px; }
+  }
   /* Icon sits left of the message, vertically centered with it (not bottom-aligned
      like the pledge dialog). The big modifier doubles the icon. */
   .xp-dialog-prompt { display: flex; align-items: center; gap: 14px; }
@@ -1002,13 +1199,6 @@
     cursor: move; user-select: none; touch-action: none;
   }
   .xp-popup-title { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .xp-popup-close {
-    width: 21px; height: 20px; padding: 0; line-height: 18px; font-size: 0.8em; color: #fff;
-    border: 1px solid #fff; border-radius: 3px; cursor: pointer;
-    background: linear-gradient(180deg,#f9b38c 0%,#e0632f 8%,#e14f28 45%,#d0330f 100%);
-    box-shadow: inset 0 1px 2px rgba(255,255,255,0.5);
-  }
-  .xp-popup-close:hover { filter: brightness(1.08); }
   .xp-popup-body { background: #ece9d8; padding: 12px 14px; max-height: 70vh; overflow-y: auto; }
   .xp-popup.dragging { opacity: 0.96; }
 
@@ -1022,6 +1212,53 @@
   .pick-row:hover { background: #eaf2ff; border-color: #7ba7dd; box-shadow: none; }
   .pick-row .pick-emoji { font-size: 1.1em; }
   .pick-row .pick-name { flex: 1; }
+  /* Place-search results (Set Meeting Spot): icon rows with a grey address line. */
+  .pick-row .pick-ico { width: 16px; height: 16px; flex: 0 0 auto; }
+  .pick-row .pick-sub { display: block; color: #5a5a4c; font-size: 0.85em; }
+  #meet-search-results { margin: 4px 0; }
+  #meet-search-results:empty { display: none; }
+
+  /* Set Meeting Spot = a proper XP dialog: a white wizard-style task header (icon,
+     bold question, explanation — Search Companion voice), then two Luna group boxes
+     ("Find the place" / "Meeting spot details"), then OK/Cancel bottom-right like a
+     property sheet. The group boxes reuse the global Control Panel fieldset face. */
+  .meet-task-head {
+    display: flex; align-items: center; gap: 11px;
+    background: #fff; border-bottom: 1px solid #d8d8c8;
+    margin: -12px -14px 8px; padding: 10px 14px;
+  }
+  .meet-task-head img { flex: 0 0 auto; }
+  .meet-task-text b { display: block; color: #0a246a; margin-bottom: 2px; }
+  .meet-task-text span { font-size: 0.78em; color: #4a4a3c; line-height: 1.35; }
+  .meet-form fieldset { margin: 8px 0; }
+  /* "Search for:" / "Maps link:" need a wider label column than the 64px default. */
+  .meet-form .edit-field { grid-template-columns: 76px 1fr; }
+  .meet-form .edit-field + .edit-field,
+  .meet-form .edit-field + #meet-search-results + .edit-field { margin-top: 8px; }
+  .meet-form .popup-hint { margin: 6px 0 0; }
+  .meet-form .meet-wait { font-style: italic; }
+  /* OK/Cancel = a property-sheet button row: right-aligned, an etched rule above,
+     and STICKY to the bottom of the scrolling popup body so it never scrolls out
+     of reach on a phone. The negative bottom/margin swallow the body's padding. */
+  .meet-form .dialog-buttons {
+    justify-content: flex-end; margin: 12px 0 -12px;
+    position: sticky; bottom: -12px;
+    background: #ece9d8; border-top: 1px solid #d6d3c3;
+    padding: 8px 0 12px;
+  }
+  /* Phone: the dialog was oversized — pull the interior in ~20% (fonts, icon,
+     paddings) so the whole thing fits without feeling like a billboard. */
+  @media (max-width: 600px) {
+    .meet-form { font-size: 0.85em; }
+    .meet-form input[type=text] { font-size: inherit; padding: 3px 6px; }
+    .meet-task-head { margin: -12px -14px 6px; padding: 7px 11px; gap: 8px; }
+    .meet-task-head img { width: 24px; height: 24px; }
+    .meet-form fieldset { margin: 6px 0; padding: 6px 9px; }
+    .meet-form .edit-field { grid-template-columns: 64px 1fr; gap: 7px; }
+    .meet-form .edit-field + .edit-field,
+    .meet-form .edit-field + #meet-search-results + .edit-field { margin-top: 5px; }
+    .meet-form .dialog-buttons { margin-top: 8px; padding-top: 6px; }
+  }
   .pick-empty { color: #555; font-style: italic; margin: 2px 0 8px; font-size: 0.9em; }
   .popup-hint { font-size: 0.8em; color: #4a4a3c; margin: 0 0 8px; }
   .popup-form { display: flex; flex-direction: column; gap: 8px; }

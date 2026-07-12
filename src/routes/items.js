@@ -9,6 +9,7 @@ import { notify } from '../lib/notify.js';
 import { needsSignin, signinModalResponse } from '../lib/guard.js';
 import { loadComments, handleCommentPost } from '../lib/comments.js';
 import { msnChat, escapeHtml } from '../render/msn.js';
+import { xpCaptionBtns } from '../render/popup.js';
 
 export const items = new Hono();
 
@@ -141,7 +142,7 @@ function itemRow(festival, item, stats, person, expanded = false, chatOpen = fal
         <div class="modal-box xp-dialog">
           <div class="xp-dialog-title">
             <span class="xp-dialog-title-text">${item.emoji} ${item.name}</span>
-            <button type="button" class="xp-dialog-close" onclick="document.getElementById('pledge-modal-${item.id}').style.display='none'">✕</button>
+            ${xpCaptionBtns({ min: false, max: false, onClose: `document.getElementById('pledge-modal-${item.id}').style.display='none'` })}
           </div>
           <div class="xp-dialog-body">
             <form hx-post="/items/${item.id}/pledge" hx-target="#item-${item.id}" hx-swap="outerHTML">
@@ -235,7 +236,7 @@ async function renderStuffBody(c, festival) {
       <div class="modal-box xp-dialog">
         <div class="xp-dialog-title">
           <span class="xp-dialog-title-text">Add Item</span>
-          <button type="button" class="xp-dialog-close" onclick="document.getElementById('add-stuff-modal').style.display='none'">✕</button>
+          ${xpCaptionBtns({ min: false, max: false, onClose: "document.getElementById('add-stuff-modal').style.display='none'" })}
         </div>
         <div class="xp-dialog-body">
           <form hx-post="/f/${festival.id}/items" hx-target="#stuff-list" hx-swap="innerHTML"
@@ -274,7 +275,7 @@ items.get('/f/:id/stuff', async (c) => {
     const festival = await loadFestival(c);
     if (!festival) return c.notFound();
     const body = await renderStuffBody(c, festival);
-    return c.html(await renderPage(c, { title: `${festival.name} — stuff`, festival, activeTab: 'stuff', body }));
+    return c.html(await renderPage(c, { title: `${festival.name} — Stuff`, festival, activeTab: 'stuff', body }));
 });
 
 items.post('/f/:id/items', async (c) => {

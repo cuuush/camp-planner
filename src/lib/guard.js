@@ -1,6 +1,6 @@
 import { html } from 'hono/html';
 import { festNameFromPath } from './festival.js';
-import { xpDialogPopup } from '../render/popup.js';
+import { xpDialogPopup, xpCaptionBtns } from '../render/popup.js';
 
 export function needsSignin(c) {
     return !c.get('person');
@@ -23,7 +23,7 @@ export function modalFormMarkup(ctx) {
       <div class="modal-box xp-dialog">
         <div class="xp-dialog-title">
           <span class="xp-dialog-title-text">Sign In</span>
-          <button type="button" class="xp-dialog-close" onclick="document.getElementById('signin-modal-overlay').innerHTML=''">✕</button>
+          ${xpCaptionBtns({ min: false, max: false, onClose: "document.getElementById('signin-modal-overlay').innerHTML=''" })}
         </div>
         <div class="xp-dialog-body">
           ${ctx.festName ? html`<p class="signin-fest-note">✔ Signing in will also add you to <b>${ctx.festName}</b>.</p>` : ''}

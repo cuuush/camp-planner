@@ -1,0 +1,28 @@
+# Workers static assets send NO Cache-Control by default, so the browser
+# revalidates every icon/emoticon/font on every page load — a flood of 304s.
+# The art below basically never changes; let browsers keep it for a week.
+# camp.js / retro.css: no-cache = ALWAYS revalidate. With the ETag Workers
+# assets already send, that's a 304 (no body) unless the file actually changed —
+# the standard, boring answer for mutable assets without a build step. Without
+# an explicit header these fell back to heuristic caching, which lets a browser
+# quietly serve stale JS against new markup.
+/camp.js
+  Cache-Control: no-cache
+/retro.css
+  Cache-Control: no-cache
+/xp/*
+  Cache-Control: public, max-age=604800
+/msn/*
+  Cache-Control: public, max-age=604800
+/fonts/*
+  Cache-Control: public, max-age=31536000, immutable
+/xp-bliss.jpg
+  Cache-Control: public, max-age=604800
+/dog.webp
+  Cache-Control: public, max-age=604800
+/start.png
+  Cache-Control: public, max-age=604800
+/spaceman.png
+  Cache-Control: public, max-age=604800
+/arrow.png
+  Cache-Control: public, max-age=604800

@@ -1,5 +1,25 @@
 import { html } from 'hono/html';
 
+// The Luna caption buttons (minimize / maximize / close) — ONE implementation for
+// every title bar in the app. There used to be five hand-rolled copies (.xp-tb-btn,
+// .msn-winbtn, .xp-popup-close, .xp-dialog-close, .st-winbtn), each with its own
+// size, gradient, and glyph CHARACTER (_ vs –, ❐ vs ▢ vs □) — which is exactly why
+// no two title bars matched. The glyphs are now drawn in CSS (see .xp-caption-btn
+// in retro.css), so they're pixel-identical everywhere regardless of font.
+//
+// Decorative by default (inert spans, aria-hidden — the app window can't really
+// minimize). Pass `onClose` (a JS snippet) to make ✕ a real working button; pass
+// min/max: false for dialog-style bars that only get a ✕, like real XP dialogs.
+export function xpCaptionBtns({ min = true, max = true, onClose = '' } = {}) {
+    return html`<span class="xp-caption-btns">
+      ${min ? html`<span class="xp-caption-btn min" aria-hidden="true"></span>` : ''}
+      ${max ? html`<span class="xp-caption-btn max" aria-hidden="true"></span>` : ''}
+      ${onClose
+          ? html`<button type="button" class="xp-caption-btn close" aria-label="Close" onclick="${onClose}"></button>`
+          : html`<span class="xp-caption-btn close" aria-hidden="true"></span>`}
+    </span>`;
+}
+
 // A floating, draggable Windows-XP popup window — dropped into #popup-layer via
 // htmx (hx-swap="beforeend"), so multiple can stack and cascade on top of each
 // other. Dragging (by the title bar) and the cascade offset are wired globally in
@@ -10,7 +30,7 @@ export function xpPopup({ title, body, id = '', wide = false, cls = '', onClose 
     <div class="xp-popup ${wide ? 'wide' : ''} ${cls}"${id ? html` data-popup-id="${id}"` : ''}>
       <div class="xp-popup-titlebar">
         <span class="xp-popup-title">${title}</span>
-        <button type="button" class="xp-popup-close" aria-label="close" onclick="closePopup(this)${onClose ? ';' + onClose : ''}">✕</button>
+        ${xpCaptionBtns({ min: false, max: false, onClose: `closePopup(this)${onClose ? ';' + onClose : ''}` })}
       </div>
       <div class="xp-popup-body">${body}</div>
     </div>`;

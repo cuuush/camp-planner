@@ -72,7 +72,7 @@ log.get('/f/:id/log', async (c) => {
     const festival = await loadFestival(c);
     if (!festival) return c.notFound();
     const body = await renderLogBody(c, festival);
-    return c.html(await renderPage(c, { title: `${festival.name} — log`, festival, activeTab: 'log', body }));
+    return c.html(await renderPage(c, { title: `${festival.name} — Log`, festival, activeTab: 'log', body }));
 });
 
 log.post('/f/:id/log/:auditId/undo', async (c) => {

@@ -1,5 +1,6 @@
 import { html, raw } from 'hono/html';
 import { PIXMOJI_COVERED_RANGES } from './pixmoji-coverage.js';
+import { xpCaptionBtns } from './popup.js';
 
 export function tickerHtml(entries) {
     if (!entries || !entries.length) {
@@ -41,18 +42,18 @@ function dogTip(festival) {
     if (festival) {
         tips.push({
             title: 'Bringing a friend?',
-            body: html`You can add people who haven't signed up yet. On the <b>ppl</b> tab, click <b>Add Person</b> and type their name. When they sign in with that name later, everything they were given links up automatically.`,
-            links: html`<li><a href="/f/${festival.id}/ppl">Go to the ppl tab</a></li>`,
+            body: html`You can add people who haven't signed up yet. Open <b>People</b>, click <b>Add Person</b>, and type their name. When they sign in with that name later, everything they were given links up automatically.`,
+            links: html`<li><a href="/f/${festival.id}/ppl">Open People</a></li>`,
         });
         tips.push({
             title: 'Seeing double?',
-            body: html`If a camper accidentally signs in under two different names, click <b>Merge</b> on the <b>ppl</b> tab and select both entries. They will be combined into one camper, and nothing they did is lost.`,
-            links: html`<li><a href="/f/${festival.id}/ppl">Go to the ppl tab</a></li>`,
+            body: html`If a camper accidentally signs in under two different names, open <b>People</b>, click <b>Merge</b>, and select both entries. They will be combined into one camper, and nothing they did is lost.`,
+            links: html`<li><a href="/f/${festival.id}/ppl">Open People</a></li>`,
         });
         tips.push({
             title: 'Made a mistake? You can undo it!',
-            body: html`Almost everything that happens here is recorded and reversible. To take something back, click the <b>log</b> tab and then click <b>undo</b> next to the entry. Changed your mind again? You can even undo an undo — click <b>redo</b> and it comes right back. Nothing is ever really lost.`,
-            links: html`<li><a href="/f/${festival.id}/log">Go to the log tab</a></li>`,
+            body: html`Almost everything that happens here is recorded and reversible. To take something back, open the <b>Log</b> and then click <b>undo</b> next to the entry. Changed your mind again? You can even undo an undo — click <b>redo</b> and it comes right back. Nothing is ever really lost.`,
+            links: html`<li><a href="/f/${festival.id}/log">Open the Log</a></li>`,
         });
     }
     const t = tips[Math.floor(Math.random() * tips.length)];
@@ -179,7 +180,65 @@ function taskbar(c, festival, festivals) {
     </div>`;
 }
 
-export async function renderPage(c, { title, activeTab = '', body, festival = null, floating = '' }) {
+// Each section is a pretend XP program: a desktop icon on the wallpaper (the old
+// text tabs), and its own themed window chrome — titlebar icon, window title, and
+// a decorative menu bar — in the spirit of the Streets & Trips meeting-spot
+// window. `address` adds an Explorer-style address bar (Stuff only). The key is
+// the activeTab name the routes already pass; `path` is the URL segment.
+const TAB_THEMES = {
+    stuff: {
+        label: 'Stuff', path: 'stuff', ico: '/xp/desk-stuff.png',
+        title: (f) => `What we are bringing to ${f.name}`,
+        menus: ['File', 'Edit', 'View', 'Favorites', 'Tools', 'Help'],
+        address: (f) => `C:\\Camp Planner\\${f.name}\\Stuff`,
+    },
+    ppl: {
+        label: 'People', path: 'ppl', ico: '/xp/desk-people.png',
+        title: (f) => `Address Book - ${f.name}`,
+        menus: ['File', 'Edit', 'View', 'Tools', 'Help'],
+    },
+    rides: {
+        label: 'Cars', path: 'rides', ico: '/xp/desk-cars.png', titleEmoji: '🚗',
+        title: (f) => `Car Pool - ${f.name}`,
+        menus: ['File', 'Edit', 'View', 'Route', 'Tools', 'Help'],
+    },
+    mine: {
+        label: 'About Me', path: 'mine', ico: '/xp/desk-me.png',
+        title: (f) => `About Me - ${f.name}`,
+        menus: ['File', 'Edit', 'View', 'Help'],
+    },
+    log: {
+        label: 'Log', path: 'log', ico: '/xp/desk-log.png',
+        title: (f) => `Event Viewer - ${f.name}`,
+        menus: ['File', 'Action', 'View', 'Help'],
+    },
+};
+
+// The tab row, redrawn as a centered row of XP desktop icons sitting directly on
+// the wallpaper (labels in white Tahoma with the desktop's soft drop shadow). The
+// current section renders "selected": label highlighted in Luna blue and the icon
+// tinted, exactly like a clicked desktop icon. --ico feeds the CSS mask that
+// paints the selection tint over just the icon's own pixels.
+function desktopIcons(festival, activeTab) {
+    return html`
+    <nav class="desktop-icons" aria-label="sections">
+      ${Object.entries(TAB_THEMES).map(([key, t]) => html`
+        <a href="/f/${festival.id}/${t.path}" class="desk-icon ${key === activeTab ? 'active' : ''}"
+          style="--ico:url('${t.ico}')" ${key === activeTab ? html`aria-current="page"` : ''}>
+          <span class="desk-icon-img"><img src="${t.ico}" alt=""></span>
+          <span class="desk-icon-label">${t.label}</span>
+        </a>`)}
+    </nav>`;
+}
+
+// `pre` renders between the desktop icons and the main window — for pages that
+// bring their own sibling window (the cars tab docks Streets & Trips there), so
+// windows sit next to each other on the desktop instead of nesting.
+// `bare` drops the main window entirely (About Me: everything lives in the
+// floating mini windows, so the main window is an empty shell). #main survives
+// as an invisible element because it's the hx-target of every mine-tab form.
+// A join banner still forces the window — it needs somewhere to live.
+export async function renderPage(c, { title, activeTab = '', body, festival = null, floating = '', pre = '', bare = false }) {
     const db = c.env.DB;
     const person = c.get('person');
 
@@ -199,15 +258,8 @@ export async function renderPage(c, { title, activeTab = '', body, festival = nu
         } catch (e) { /* ok */ }
     }
 
-    const tabs = festival
-        ? [
-            ['stuff', `/f/${festival.id}/stuff`, 'stuff'],
-            ['ppl', `/f/${festival.id}/ppl`, 'ppl'],
-            ['cars', `/f/${festival.id}/rides`, 'rides'],
-            ['me', `/f/${festival.id}/mine`, 'mine'],
-            ['log', `/f/${festival.id}/log`, 'log'],
-        ]
-        : [];
+    const theme = (festival && TAB_THEMES[activeTab]) || null;
+    const winTitle = theme ? theme.title(festival) : `${festival ? festival.name : 'camp planner'} — Camp Planner`;
 
     // Signed-in-but-not-a-member of the fest you're looking at → offer to join.
     let showJoin = false;
@@ -231,7 +283,9 @@ export async function renderPage(c, { title, activeTab = '', body, festival = nu
   <script src="https://unpkg.com/htmx.org@1.9.12"></script>
   <script>window.PIXMOJI_RANGES=${raw(JSON.stringify(PIXMOJI_COVERED_RANGES))};</script>
   <!-- No defer: camp.js binds its listeners to document at top level and must
-       run before the body parses, same as when it was an inline script. -->
+       run before the body parses, same as when it was an inline script.
+       Freshness comes from Cache-Control: no-cache + ETag (public/_headers):
+       the browser revalidates each load and gets a 304 unless the file changed. -->
   <script src="/camp.js"></script>
   <link rel="stylesheet" href="/retro.css">
 </head>
@@ -242,18 +296,27 @@ export async function renderPage(c, { title, activeTab = '', body, festival = nu
   <div id="signin-modal-overlay"></div>
   <div id="popup-layer"></div>
   <div id="toast"></div>
+  ${festival ? desktopIcons(festival, activeTab) : ''}
+  ${pre}
+  ${bare && !showJoin ? html`<main id="main" hidden>${body}</main>` : html`
   <div class="xp-window">
     <div class="xp-titlebar">
-      <span class="xp-titlebar-text">${festival ? festival.name : 'camp planner'} — Camp Planner</span>
-      <span class="xp-titlebar-buttons">
-        <span class="xp-tb-btn min" aria-hidden="true">_</span>
-        <span class="xp-tb-btn max" aria-hidden="true">❐</span>
-        <span class="xp-tb-btn close" aria-hidden="true">✕</span>
-      </span>
+      ${theme
+        ? (theme.titleEmoji
+            ? html`<span class="xp-titlebar-icon">${theme.titleEmoji}</span>`
+            : html`<img class="xp-titlebar-ico" src="${theme.ico}" alt="">`)
+        : ''}
+      <span class="xp-titlebar-text">${winTitle}</span>
+      ${xpCaptionBtns()}
     </div>
+    ${theme ? html`<div class="xp-menubar" aria-hidden="true">${theme.menus.map((m) => html`<span class="xp-menu">${m}</span>`)}</div>` : ''}
+    ${theme && theme.address ? html`
+    <div class="xp-addressbar" aria-hidden="true">
+      <span class="xp-address-label">Address</span>
+      <span class="xp-address-field"><img src="/xp/folder.png" alt="">${theme.address(festival)}</span>
+    </div>` : ''}
     <div class="xp-window-body">
       ${tickerHtml(ticker)}
-      ${festival ? html`<nav class="tabs">${tabs.map(([label, href, key]) => html`<a href="${href}" class="${key === activeTab ? 'active' : ''}">${label}</a>`)}</nav>` : ''}
       ${showJoin ? html`
         <div class="join-banner">
           <span class="join-banner-text">You are browsing <b>${festival.name}</b> as a guest — you are not on the list yet.</span>
@@ -265,7 +328,7 @@ export async function renderPage(c, { title, activeTab = '', body, festival = nu
         ${body}
       </main>
     </div>
-  </div>
+  </div>`}
   <div id="mine-floating" class="mine-floating">${floating}</div>
   <div class="site-foot-space" aria-hidden="true"></div>
 </body>

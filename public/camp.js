@@ -228,6 +228,10 @@ function campReflowItems() {
 
 document.addEventListener('DOMContentLoaded', function () { pixmojify(document.body); suppressPwManagers(document.body); campAutoOpenPledge(); campLocalizeTimes(document.body); campInitSettings(document.body); });
 document.addEventListener('htmx:afterSwap', function (e) { pixmojify(e.target); suppressPwManagers(e.target); campLocalizeTimes(e.target); campInitSettings(e.target); campReflowItems(); });
+// Out-of-band swaps (hx-swap-oob — the mine tab's #mine-floating, oob toasts,
+// dialogs riding along into #popup-layer) fire oobAfterSwap, NOT afterSwap; without
+// this hook their emoji silently lose the pixel font on every oob update.
+document.addEventListener('htmx:oobAfterSwap', function (e) { pixmojify(e.target); suppressPwManagers(e.target); campLocalizeTimes(e.target); });
 
 // Make the little "me"-tab XP windows draggable by their title bar. Position is
 // tracked as an accumulated translate on each window (dataset.dx/dy) so repeated
@@ -238,7 +242,10 @@ document.addEventListener('htmx:afterSwap', function (e) { pixmojify(e.target); 
   document.addEventListener('pointerdown', function (e) {
     if (!e.target.closest) return;
     var handle = e.target.closest('.xp-mini-titlebar, .xp-popup-titlebar');
-    if (!handle || e.target.closest('.xp-tb-btn, .xp-popup-close')) return;
+    // Never start a drag (or pointer-capture!) from an interactive element — a
+    // captured pointer retargets the follow-up click to the title bar, silently
+    // eating ✕ taps. Match by tag, not class, so it survives markup renames.
+    if (!handle || e.target.closest('button, a, input, select, label')) return;
     var win = handle.closest('.xp-mini, .xp-popup');
     if (!win) return;
     // Bring a clicked popup to the front of the stack.
@@ -451,6 +458,22 @@ function campDriverPick(sel) {
   row.hidden = !isNew;
   var input = row.querySelector('input[name=new_driver_name]');
   if (input) { input.required = isNew; if (isNew) input.focus(); }
+}
+
+// Set Meeting Spot popup: clicking a place-search result copies its exact
+// name/address/maps-link (carried in data- attributes by the server) into the
+// form fields and dismisses the result list.
+function campMeetPick(btn) {
+  var form = btn.closest('form'); if (!form) return;
+  var set = function (name, val) {
+    var input = form.querySelector('[name=' + name + ']');
+    if (input) input.value = val || '';
+  };
+  set('meet_name', btn.dataset.name);
+  set('meet_address', btn.dataset.address);
+  set('meet_maps_url', btn.dataset.url);
+  var results = form.querySelector('#meet-search-results');
+  if (results) results.innerHTML = '';
 }
 
 // "idk yet" seat toggle (post + edit car forms): checking it greys out the number
