@@ -1759,6 +1759,14 @@
   .sched-tile.expanded .sched-tile-body { display: flex; }
   .sched-tile-actions { display: flex; flex-direction: column; gap: 6px; }
   .sched-act-btn { width: 100%; font-size: 0.78em; padding: 6px 8px; text-align: center; box-sizing: border-box; }
+  /* While the interest POST is in flight the button is disabled (hx-disabled-elt)
+     and its form carries .htmx-request: hold it pressed-in and dimmed so the tap
+     visibly landed. Without this the button sits inert for the whole round trip,
+     which on festival Wi-Fi reads as "didn't take" and invites a second tap. */
+  form.htmx-request .sched-act-btn {
+    opacity: 0.65; cursor: wait;
+    box-shadow: inset 1px 1px 2px rgba(0,50,100,0.28);
+  }
   /* You're going: a LATCHED toolbar button, pressed in and holding a ticked box.
      Deliberately NOT btn-primary — primary means "the thing to do next", and once
      you're going the thing to do next is nothing. It keeps the hover glow, though:

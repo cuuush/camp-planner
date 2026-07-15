@@ -81,9 +81,13 @@ export async function loadDaySets(db, festivalId, day, person) {
         WHERE festival_id = ? AND COALESCE(day, '') = ? AND deleted_at IS NULL
         ORDER BY stage_order, stage, start_min
     `).bind(festivalId, day || '').all()).results;
-    await decorateWithInterest(db, sets, person);
-    await attachCommentCounts(db, sets);
-    await attachSpotifyLinks(db, sets);
+    // The three decorations are independent of each other (each fills its own
+    // fields), so their round trips overlap instead of queueing.
+    await Promise.all([
+        decorateWithInterest(db, sets, person),
+        attachCommentCounts(db, sets),
+        attachSpotifyLinks(db, sets),
+    ]);
     return sets;
 }
 
@@ -117,30 +121,38 @@ async function decorateWithInterest(db, sets, person) {
         if (!bySet.has(r.set_id)) bySet.set(r.set_id, []);
         bySet.get(r.set_id).push(r);
     }
-    for (const s of sets) {
-        const list = bySet.get(s.id) || [];
-        s.interested = list.map((r) => r.display_name);
-        s.interest_count = list.length;
-        s.i_interested = !!(person && list.some((r) => r.person_id === person.id));
-    }
+    for (const s of sets) applyInterestRows(s, bySet.get(s.id) || [], person);
     return sets;
 }
 
 // Load one set with its full interested-people list and whether `person` is in it.
+// The set row, interests and comment count are keyed on setId alone, so they ride
+// one db.batch (one round trip); only the Spotify attach needs the artist off the
+// row, so it's the one thing that has to wait.
 export async function loadSet(db, setId, person) {
-    const set = await db.prepare('SELECT * FROM schedule_sets WHERE id = ? AND deleted_at IS NULL').bind(setId).first();
+    const [setRes, interestRes, ccRes] = await db.batch([
+        db.prepare('SELECT * FROM schedule_sets WHERE id = ? AND deleted_at IS NULL').bind(setId),
+        db.prepare(`
+            SELECT si.person_id, pe.display_name FROM set_interests si
+            JOIN people pe ON pe.id = si.person_id
+            WHERE si.set_id = ? AND si.deleted_at IS NULL ORDER BY si.created_at
+        `).bind(setId),
+        db.prepare("SELECT COUNT(*) AS n FROM comments WHERE target_type = 'set' AND target_id = ? AND deleted_at IS NULL").bind(setId),
+    ]);
+    const set = setRes.results[0];
     if (!set) return null;
-    const list = (await db.prepare(`
-        SELECT si.person_id, pe.display_name FROM set_interests si
-        JOIN people pe ON pe.id = si.person_id
-        WHERE si.set_id = ? AND si.deleted_at IS NULL ORDER BY si.created_at
-    `).bind(setId).all()).results;
-    set.interested = list.map((r) => r.display_name);
-    set.interest_count = list.length;
-    set.i_interested = !!(person && list.some((r) => r.person_id === person.id));
-    const cc = await db.prepare("SELECT COUNT(*) AS n FROM comments WHERE target_type = 'set' AND target_id = ? AND deleted_at IS NULL").bind(setId).first();
-    set.comment_count = cc ? cc.n : 0;
+    applyInterestRows(set, interestRes.results, person);
+    set.comment_count = ccRes.results[0] ? ccRes.results[0].n : 0;
     await attachSpotifyLinks(db, [set]);
+    return set;
+}
+
+// Fold a set's live interest rows ({ person_id, display_name }, in starred order)
+// into the fields the tiles render from. Shared by every path that (re)loads them.
+export function applyInterestRows(set, rows, person) {
+    set.interested = rows.map((r) => r.display_name);
+    set.interest_count = rows.length;
+    set.i_interested = !!(person && rows.some((r) => r.person_id === person.id));
     return set;
 }
 

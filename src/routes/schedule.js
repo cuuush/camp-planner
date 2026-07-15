@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import { html } from 'hono/html';
 import { renderPage } from '../render/layout.js';
-import { loadFestival } from '../lib/festival.js';
+import { loadFestival, membershipStatement } from '../lib/festival.js';
 import { logAction } from '../lib/audit.js';
 import { sqlNow, createEffect, deleteEffect, fieldEffects } from '../lib/effects.js';
 import { notify } from '../lib/notify.js';
@@ -12,10 +12,10 @@ import { xpPopup, xpDialogPopup } from '../render/popup.js';
 import { takeApiBudget, SCHEDULE_VISION_MONTHLY_LIMIT } from '../lib/budget.js';
 import {
     fmtSetRange, fmtHourLabel, clockToMin, minToClockFields,
-    loadDays, loadDaySets, loadSet, buildGrid, stageColor,
+    loadDays, loadDaySets, loadSet, applyInterestRows, buildGrid, stageColor,
 } from '../lib/schedule.js';
 import { parseScheduleImage, normalizeParsedSets } from '../lib/scheduleParse.js';
-import { resolveSpotifyLink, parseSpotifyUrl, setSpotifyLink, splitArtists } from '../lib/spotify.js';
+import { resolveSpotifyLink, parseSpotifyUrl, setSpotifyLink, splitArtists, attachSpotifyLinks } from '../lib/spotify.js';
 import { replaceDaySets, publishSchedule, adoptPublication, listPublications } from '../lib/scheduleShare.js';
 
 export const schedule = new Hono();
@@ -102,6 +102,7 @@ function whoInline(set) {
 function setActions(festival, set) {
     return html`
       <form hx-post="/f/${festival.id}/schedule/set/${set.id}/interest" hx-target="#set-actions-${set.id}" hx-swap="outerHTML"
+        hx-disabled-elt="find button"
         hx-on::after-request="if(event.detail.successful) campCollapseSetTiles(null)">
         <button class="btn sched-act-btn ${set.i_interested ? 'sched-going' : 'btn-primary'}" type="submit"
           aria-pressed="${set.i_interested ? 'true' : 'false'}"
@@ -285,9 +286,18 @@ function dayButtons(festival, days, active, edit) {
 async function scheduleBody(c, festival, dayParam, { edit = false } = {}) {
     const db = c.env.DB;
     const person = c.get('person');
-    const days = await loadDays(db, festival.id);
-    const day = (dayParam != null && dayParam !== '') ? dayParam : (days[0] ?? '');
-    const sets = await loadDaySets(db, festival.id, day, person);
+    // With an explicit day (every day-tab click) the two loads don't depend on
+    // each other, so they overlap. Only a bare visit needs days first, to know
+    // which day is "first".
+    let days, day, sets;
+    if (dayParam != null && dayParam !== '') {
+        day = dayParam;
+        [days, sets] = await Promise.all([loadDays(db, festival.id), loadDaySets(db, festival.id, day, person)]);
+    } else {
+        days = await loadDays(db, festival.id);
+        day = days[0] ?? '';
+        sets = await loadDaySets(db, festival.id, day, person);
+    }
     const hasSets = sets.length > 0;
     return html`
     <div id="sched-body" class="sched-body ${edit ? 'is-editing' : ''}">
@@ -405,28 +415,53 @@ schedule.get('/f/:id/schedule/set/:setId/spotify', async (c) => {
 // Toggle interest — mirrors the vote toggle (UNIQUE row, soft-delete reused). Swaps
 // only the card's actions block (so an open chat below survives) and OOB-updates the
 // collapsed head badge.
+//
+// This is the schedule's hottest tap, so it's built lean: not audited (the Log is
+// for destructive actions — edits, deletes — not "I'm going"), and the whole thing
+// is three overlapped round trips instead of a dozen queued ones. The single-upsert
+// toggle also makes a double-tap race harmless: the old SELECT-then-INSERT could
+// have two in-flight taps both INSERT and the loser die on the UNIQUE constraint.
 schedule.post('/f/:id/schedule/set/:setId/interest', async (c) => {
-    const loaded = await loadSetForFest(c);
-    if (!loaded) return c.notFound();
     if (needsSignin(c)) return signinModalResponse(c);
-    const { festival, set } = loaded;
     const db = c.env.DB;
     const person = c.get('person');
+    const festivalId = Number(c.req.param('id'));
 
-    const existing = await db.prepare('SELECT * FROM set_interests WHERE set_id = ? AND person_id = ?').bind(set.id, person.id).first();
-    if (existing && !existing.deleted_at) {
-        await db.prepare("UPDATE set_interests SET deleted_at = datetime('now') WHERE id = ?").bind(existing.id).run();
-        await logAction(c, { festivalId: festival.id, action: 'update', entityType: 'set_interests', entityId: existing.id, summary: `${person.display_name} is no longer interested in ${set.artist}` });
-    } else if (existing) {
-        await db.prepare('UPDATE set_interests SET deleted_at = NULL WHERE id = ?').bind(existing.id).run();
-        await logAction(c, { festivalId: festival.id, action: 'update', entityType: 'set_interests', entityId: existing.id, summary: `${person.display_name} is interested in ${set.artist}` });
-    } else {
-        const res = await db.prepare('INSERT INTO set_interests (set_id, person_id) VALUES (?, ?)').bind(set.id, person.id).run();
-        await logAction(c, { festivalId: festival.id, action: 'create', entityType: 'set_interests', entityId: res.meta.last_row_id, summary: `${person.display_name} is interested in ${set.artist}` });
-    }
+    // The fest check and the set row don't depend on each other. The set query is
+    // scoped to the URL's fest (a set id from another fest 404s) and carries its
+    // comment count along, so the re-render below doesn't have to fetch it again.
+    const [festival, set] = await Promise.all([
+        loadFestival(c),
+        db.prepare(`
+            SELECT s.*, (SELECT COUNT(*) FROM comments
+                         WHERE target_type = 'set' AND target_id = s.id AND deleted_at IS NULL) AS comment_count
+            FROM schedule_sets s
+            WHERE s.id = ? AND s.festival_id = ? AND s.deleted_at IS NULL
+        `).bind(Number(c.req.param('setId')), festivalId).first(),
+    ]);
+    if (!festival || !set) return c.notFound();
 
-    const fresh = await loadSet(db, set.id, person);
-    return c.html(html`<div class="sched-tile-actions" id="set-actions-${set.id}">${setActions(festival, fresh)}</div>${setWhoOob(fresh)}`);
+    // One batch (one round trip, statements run in order): flip the row, then read
+    // back the live list the card face renders from. Marking interest counts you as
+    // going to the fest, so the membership upsert rides along too. The Spotify
+    // attach only needs the artist name, so it overlaps the batch.
+    const toggle = db.prepare(`
+        INSERT INTO set_interests (set_id, person_id) VALUES (?, ?)
+        ON CONFLICT(set_id, person_id) DO UPDATE SET
+            deleted_at = CASE WHEN deleted_at IS NULL THEN datetime('now') ELSE NULL END
+    `).bind(set.id, person.id);
+    const freshInterests = db.prepare(`
+        SELECT si.person_id, pe.display_name FROM set_interests si
+        JOIN people pe ON pe.id = si.person_id
+        WHERE si.set_id = ? AND si.deleted_at IS NULL ORDER BY si.created_at
+    `).bind(set.id);
+    const [[, interestRes]] = await Promise.all([
+        db.batch([toggle, freshInterests, membershipStatement(db, festivalId, person.id)]),
+        attachSpotifyLinks(db, [set]),
+    ]);
+
+    applyInterestRows(set, interestRes.results, person);
+    return c.html(html`<div class="sched-tile-actions" id="set-actions-${set.id}">${setActions(festival, set)}</div>${setWhoOob(set)}`);
 });
 
 schedule.post('/f/:id/schedule/set/:setId/comments', async (c) => {
