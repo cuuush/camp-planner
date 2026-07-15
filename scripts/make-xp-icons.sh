@@ -3,18 +3,39 @@
 # pack into public/xp/, resized to sane sizes (the source PNGs are 1024²/256K+).
 # Start-menu icons render ~22px, so 44px stays crisp on retina; message-box icons
 # render ~48px, so 96px is plenty. Keeps the repo small while looking authentic.
+#
+# THIS SCRIPT ONLY BUILDS WHAT IS MISSING. sips re-encodes on every run and its
+# output isn't byte-stable, so re-making an icon that hasn't changed still rewrites
+# the file — running this to swap ONE icon used to leave a dozen unrelated PNGs
+# showing as modified in git. It also means you can run it without the source pack
+# on disk: everything already built is simply skipped.
+#
+#   ./scripts/make-xp-icons.sh                 # build only what's absent
+#   ./scripts/make-xp-icons.sh desk-cars       # force-rebuild just these
+#   FORCE=1 ./scripts/make-xp-icons.sh         # rebuild everything (expect churn)
 set -euo pipefail
 
 SRC="/Users/chris/Downloads/Windows XP High Resolution Icon Pack/Windows XP Icons"
 OUT="/Users/chris/code/camp-planner/public/xp"
 mkdir -p "$OUT"
 
+# Icons named on the command line get rebuilt even if they already exist. Kept as a
+# padded string rather than an array: macOS still ships bash 3.2, where expanding an
+# EMPTY array under `set -u` is itself an "unbound variable" error.
+ARGS=" $* "
+wanted() { [[ "$ARGS" == *" $1 "* ]]; }
+
 # resize <source-name-without-ext> <out-name-without-ext> <size>
 resize() {
   local src="$SRC/$1.png" dst="$OUT/$2.png" size="$3"
+  if [[ -f "$dst" && -z "${FORCE:-}" ]] && ! wanted "$2"; then
+    echo "  $2.png  (have it — skipped)"
+    return
+  fi
+  # Only demand the source pack for something we're actually building.
   if [[ ! -f "$src" ]]; then echo "MISSING: $src" >&2; exit 1; fi
   sips -s format png -Z "$size" "$src" --out "$dst" >/dev/null
-  echo "  $2.png  (${size}px)"
+  echo "  $2.png  (${size}px)  <- built"
 }
 
 echo "Start-menu icons (44px):"
@@ -55,9 +76,12 @@ resize "Printer"            "printer"        32
 echo "Desktop icons for the tab row (80px — rendered ~40px, crisp on retina):"
 resize "Briefcase"          "desk-stuff"     80
 resize "User Accounts"      "desk-people"    80
-resize "My Network Places"  "desk-cars"      80
+# Activation is XP's product-key icon — a car key by any other name. Beats the
+# globe that was here (My Network Places), which said "network", not "ride".
+resize "Activation"         "desk-cars"      80
 resize "My Documents"       "desk-me"        80
 resize "Event Viewer"       "desk-log"       80
+resize "Windows Media Player 10" "desk-schedule" 80
 
 echo "Done -> $OUT"
 du -sh "$OUT"

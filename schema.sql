@@ -46,6 +46,9 @@ CREATE TABLE IF NOT EXISTS festivals (
     meet_maps_url TEXT,
     meet_time TEXT,
     cloned_from_festival_id INTEGER REFERENCES festivals(id),
+    -- Which shared schedule publication this fest's schedule was adopted from
+    -- (migration 010) — for a "based on …" note and a future "check for updates".
+    schedule_adopted_from INTEGER,
     created_by INTEGER REFERENCES people(id),
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     hit_count INTEGER NOT NULL DEFAULT 0,
@@ -105,7 +108,7 @@ CREATE INDEX IF NOT EXISTS idx_votes_item ON votes(item_id);
 
 CREATE TABLE IF NOT EXISTS comments (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    target_type TEXT NOT NULL, -- 'item' | 'car'
+    target_type TEXT NOT NULL, -- 'item' | 'car' | 'set'
     target_id INTEGER NOT NULL,
     person_id INTEGER NOT NULL REFERENCES people(id),
     body TEXT NOT NULL,
@@ -211,9 +214,76 @@ CREATE TABLE IF NOT EXISTS audit_log (
 );
 CREATE INDEX IF NOT EXISTS idx_audit_festival ON audit_log(festival_id, created_at);
 
+-- Schedule tab (migration 009) — a fake Windows Media Player "media guide". Times
+-- are minutes from midnight of the festival day; after-midnight sets are 1440+ so
+-- the whole night sorts on one number line for the poster-style ruler.
+CREATE TABLE IF NOT EXISTS schedule_sets (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    festival_id INTEGER NOT NULL REFERENCES festivals(id),
+    day TEXT,                                 -- 'Friday' | 'Saturday' | 'Sunday' (free text)
+    stage TEXT,                               -- 'Earth' | 'Fire' | ... (free text)
+    stage_order INTEGER NOT NULL DEFAULT 0,   -- column order, left → right
+    artist TEXT NOT NULL,
+    start_min INTEGER,                        -- minutes from midnight; after-midnight = 1440+
+    end_min INTEGER,
+    added_by INTEGER REFERENCES people(id),
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    deleted_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_schedule_sets_festival ON schedule_sets(festival_id, day);
+
+-- Who tapped "I'm Interested" on a set — toggled/soft-deleted like votes.
+CREATE TABLE IF NOT EXISTS set_interests (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    set_id INTEGER NOT NULL REFERENCES schedule_sets(id),
+    person_id INTEGER NOT NULL REFERENCES people(id),
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    deleted_at TEXT,
+    UNIQUE(set_id, person_id)
+);
+CREATE INDEX IF NOT EXISTS idx_set_interests_set ON set_interests(set_id);
+CREATE INDEX IF NOT EXISTS idx_set_interests_person ON set_interests(person_id);
+
+-- Decentralized schedule sharing (migration 010) — publish a corrected schedule as
+-- a snapshot other fests can adopt (fork). No central master; the library is just
+-- everyone's published snapshots.
+CREATE TABLE IF NOT EXISTS schedule_publications (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    title TEXT NOT NULL,
+    source_festival_id INTEGER REFERENCES festivals(id),
+    published_by INTEGER REFERENCES people(id),
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+    deleted_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_schedule_pub_updated ON schedule_publications(updated_at);
+
+CREATE TABLE IF NOT EXISTS schedule_publication_sets (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    publication_id INTEGER NOT NULL REFERENCES schedule_publications(id),
+    day TEXT,
+    stage TEXT,
+    stage_order INTEGER NOT NULL DEFAULT 0,
+    artist TEXT NOT NULL,
+    start_min INTEGER,
+    end_min INTEGER
+);
+CREATE INDEX IF NOT EXISTS idx_schedule_pub_sets ON schedule_publication_sets(publication_id);
+
 CREATE TABLE IF NOT EXISTS name_reclaim_log (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     person_id INTEGER NOT NULL REFERENCES people(id),
     reclaimed_ip TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+-- Cached Spotify artist links for the Schedule tab's "Play on Spotify" button
+-- (migration 011). Keyed by normalized artist name and shared across every fest —
+-- the link belongs to the artist, not the camp. url IS NULL = a cached "not on
+-- Spotify", so a fruitless search is only ever paid for once.
+CREATE TABLE IF NOT EXISTS spotify_links (
+    normalized_artist TEXT PRIMARY KEY,
+    url TEXT,
+    label TEXT,
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );

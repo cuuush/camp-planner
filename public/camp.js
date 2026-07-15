@@ -174,6 +174,12 @@ function campSyncSection(sec) {
   if (badge) badge.textContent = n;
   sec.classList.toggle('is-empty', n === 0);
 }
+function campReducedMotion() {
+  return !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+}
+function campEaseInOutQuad(p) {
+  return p < 0.5 ? 2 * p * p : 1 - Math.pow(-2 * p + 2, 2) / 2;
+}
 // A hand-rolled smooth scroll to an absolute Y. We don't use scrollIntoView
 // ({behavior:'smooth'}) because it's a silent no-op inside htmx's afterSwap (and
 // in some automation contexts) — this rAF tween runs the same everywhere. Honors
@@ -181,14 +187,33 @@ function campSyncSection(sec) {
 function campSmoothScrollTo(targetY) {
   var max = Math.max(0, document.documentElement.scrollHeight - window.innerHeight);
   var to = Math.max(0, Math.min(targetY, max));
-  var reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-  if (reduce) { window.scrollTo(0, to); return; }
+  if (campReducedMotion()) { window.scrollTo(0, to); return; }
   var from = window.scrollY, dist = to - from, start = null, dur = 500;
   function step(ts) {
     if (start === null) start = ts;
     var p = Math.min(1, (ts - start) / dur);
-    var e = p < 0.5 ? 2 * p * p : 1 - Math.pow(-2 * p + 2, 2) / 2; // easeInOutQuad
-    window.scrollTo(0, from + dist * e);
+    window.scrollTo(0, from + dist * campEaseInOutQuad(p));
+    if (p < 1) requestAnimationFrame(step);
+  }
+  requestAnimationFrame(step);
+}
+// The same tween, but for a scroll CONTAINER (both axes at once) rather than the
+// page — the schedule grid scrolls sideways inside .sched-scroll. Same reason for
+// hand-rolling it as campSmoothScrollTo.
+function campSmoothScrollEl(el, targetLeft, targetTop) {
+  var toL = Math.max(0, Math.min(targetLeft, Math.max(0, el.scrollWidth - el.clientWidth)));
+  var toT = Math.max(0, Math.min(targetTop, Math.max(0, el.scrollHeight - el.clientHeight)));
+  var fromL = el.scrollLeft, fromT = el.scrollTop;
+  var dL = toL - fromL, dT = toT - fromT;
+  if (!dL && !dT) return;
+  if (campReducedMotion()) { el.scrollLeft = toL; el.scrollTop = toT; return; }
+  var start = null, dur = 420;
+  function step(ts) {
+    if (start === null) start = ts;
+    var p = Math.min(1, (ts - start) / dur);
+    var e = campEaseInOutQuad(p);
+    el.scrollLeft = fromL + dL * e;
+    el.scrollTop = fromT + dT * e;
     if (p < 1) requestAnimationFrame(step);
   }
   requestAnimationFrame(step);
@@ -295,6 +320,240 @@ function campSigninBackdrop(e, backdrop) {
   if (overlay) overlay.innerHTML = '';
 }
 
+// Schedule tab: tapping a set card's head expands it IN PLACE to reveal its
+// buttons (no pop-out window). Only one card is open at a time; tapping the head
+// again, tapping another card, tapping empty space, or pressing Escape collapses it.
+//
+// Must track the .sched-tile.expanded breakpoint in retro.css: below it the cards
+// are thumb-sized and overlap each other, which is what the two rules below are for.
+function campIsNarrow() {
+  return !!(window.matchMedia && window.matchMedia('(max-width: 600px)').matches);
+}
+function campToggleSetTile(head) {
+  var tile = head.closest('.sched-tile');
+  if (!tile) return;
+  var open = tile.classList.contains('expanded');
+  var other = document.querySelector('.sched-tile.expanded');
+
+  // Phone rule: an open card floats over its neighbours, so a tap on a DIFFERENT
+  // card is usually just "get this out of my way" — dismiss the open one and stop,
+  // leaving the second tap to open what you actually want. But once you've dragged
+  // the grid, you've gone looking for that other card on purpose, so open it right
+  // away instead of making you tap twice.
+  if (campIsNarrow() && other && other !== tile && !campTileDragged) {
+    campCollapseSetTiles(null);
+    return;
+  }
+
+  campCollapseSetTiles(tile);
+  tile.classList.toggle('expanded', !open);
+  campTileDragged = false;
+  if (!open) campCenterSetTile(tile);
+}
+// Gently bring a just-opened card to the middle of the grid — it grows sideways
+// and downwards as it expands, so near an edge it would otherwise open half
+// off-screen. Phone only: on a wide screen the grid is roomy and yanking it around
+// under the user would be worse than leaving it alone.
+function campCenterSetTile(tile) {
+  if (!campIsNarrow()) return;
+  var scroller = tile.closest('.sched-scroll');
+  if (!scroller) return;
+  var t = tile.getBoundingClientRect();
+  var s = scroller.getBoundingClientRect();
+  campSmoothScrollEl(
+    scroller,
+    scroller.scrollLeft + (t.left - s.left) - (s.width - t.width) / 2,
+    scroller.scrollTop + (t.top - s.top) - (s.height - t.height) / 2
+  );
+}
+// Schedule import. The picture is turned into a data URL HERE, in the browser,
+// and the Worker forwards that string to the vision model without ever touching the
+// bytes.
+//
+// Why: a Worker on the free plan gets 10ms of CPU per request, and base64-encoding
+// one 3MB photo measures ~9ms of it on its own — the whole budget, before the
+// schedule has even been read. The browser has no such limit and does it instantly.
+// FileReader also encodes natively, rather than the chunked fromCharCode + btoa
+// dance a Worker has to do by hand.
+function campFileToDataUrl(file) {
+  return new Promise(function (resolve, reject) {
+    var r = new FileReader();
+    r.onload = function () { resolve(r.result); };
+    r.onerror = function () { reject(new Error('could not read ' + file.name)); };
+    r.readAsDataURL(file);
+  });
+}
+function campImportSchedule(e, form, url) {
+  e.preventDefault();
+  var input = form.querySelector('input[type=file]');
+  var files = Array.prototype.slice.call((input && input.files) || []);
+  if (!files.length) return false;
+
+  var inner = document.getElementById('import-inner');
+  var submit = form.querySelector('button[type=submit]');
+  form.classList.add('is-reading');            // shows the "please wait" hint
+  if (submit) submit.disabled = true;
+
+  Promise.all(files.map(campFileToDataUrl))
+    .then(function (images) {
+      return fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'same-origin',
+        body: JSON.stringify({ images: images }),
+      });
+    })
+    .then(function (r) { return r.text(); })
+    .then(function (markup) {
+      inner.innerHTML = markup;
+      // The swapped-in preview has its own hx-post on it; htmx only wires up
+      // markup it has seen, so hand it the new nodes.
+      if (window.htmx) window.htmx.process(inner);
+    })
+    .catch(function () {
+      form.classList.remove('is-reading');
+      if (submit) submit.disabled = false;
+      alert('Could not read that picture. Please try another one.');
+    });
+  return false;
+}
+
+// A touch device — where a link resolved mid-tap can't also be opened by that same
+// tap, hence the "Click me!" handoff below. Not a width check: this is about how
+// the browser treats window.open and app links, not how big the screen is.
+function campIsTouch() {
+  return !!(window.matchMedia && window.matchMedia('(hover: none) and (pointer: coarse)').matches);
+}
+
+// "Play on Spotify" for an artist nobody has looked up yet: search, save the URL so
+// every camp gets it for free from here on, and open it. Costs one search, once,
+// for the first person to ever tap that artist.
+//
+// The awkward part: the URL doesn't exist until a request comes back, and by then
+// the browser may have stopped trusting us to open anything. So we only ever open
+// the REAL link — never a blank tab we redirect later, which showed the user an
+// about:blank while they waited. Instead:
+//
+//  • Desktop — try window.open once the URL lands. Chrome/Firefox still count the
+//    click as user activation for a few seconds, so a fast search sails through.
+//  • Touch / a refused popup — a scripted open is both unreliable and won't hand
+//    off to the Spotify app the way a real tap does. So don't fake it: ask for one
+//    more tap on a genuine <a>, which opens the app properly.
+//
+// window.open returns null when the popup was refused, which is exactly the signal
+// we need — but ONLY without 'noopener' (that makes it return null on success too),
+// hence severing .opener by hand instead.
+//
+// The markup below mirrors spotifyAction() in src/routes/schedule.js, which renders
+// these same end states server-side for everyone who arrives after caching.
+function campSpotifyPlay(btn) {
+  btn.disabled = true;
+  btn.classList.add('is-finding');
+  btn.textContent = 'Finding on Spotify';
+  fetch(btn.getAttribute('data-resolve'), { credentials: 'same-origin' })
+    .then(function (r) { return r.json(); })
+    .then(function (d) {
+      btn.classList.remove('is-finding');
+      // Carry the button's own classes over to whatever replaces it: the same
+      // function drives the full-width button on a card AND the choice buttons in
+      // the b2b picker dialog, which must NOT inherit the card's width:100%.
+      var wide = btn.classList.contains('sched-act-btn') ? 'sched-act-btn ' : '';
+      if (!d || d.status !== 'ok' || !d.url) {
+        var s = document.createElement('span');
+        s.className = wide + 'sched-spotify-none';
+        s.textContent = (d && d.status === 'none') ? 'Not on Spotify' : "Spotify didn't answer";
+        btn.replaceWith(s);
+        return;
+      }
+      var opened = null;
+      if (!campIsTouch()) {
+        try {
+          opened = window.open(d.url, '_blank');
+          if (opened) { try { opened.opener = null; } catch (e) {} }
+        } catch (e) { opened = null; }
+      }
+      var a = document.createElement('a');
+      a.className = 'btn ' + wide + 'sched-spotify';
+      a.href = d.url;
+      a.target = '_blank';
+      a.rel = 'noopener noreferrer';
+      // Opened it for them: leave a plain link behind so a second click still works.
+      // Didn't (touch, or the popup was refused): ask for the tap that will.
+      if (opened) {
+        a.textContent = 'Play on Spotify';
+      } else {
+        a.className += ' sched-spotify-ready';
+        a.textContent = 'Click me!';
+      }
+      btn.replaceWith(a);
+    })
+    .catch(function () {
+      btn.classList.remove('is-finding');
+      btn.disabled = false;
+      btn.textContent = 'Play on Spotify';
+    });
+}
+
+// Did the user drag the grid since the open card was opened? Tracked from raw
+// touch movement rather than scroll events on purpose: campCenterSetTile scrolls
+// the container itself, and a programmatic scroll must not read as "the user
+// scrolled away". The threshold keeps a wobbly tap from counting as a drag.
+var campTileDragged = false;
+var campTouchX = 0, campTouchY = 0;
+document.addEventListener('touchstart', function (e) {
+  var t = e.touches[0];
+  if (t) { campTouchX = t.clientX; campTouchY = t.clientY; }
+}, { passive: true });
+document.addEventListener('touchmove', function (e) {
+  var t = e.touches[0];
+  if (!t) return;
+  if (Math.abs(t.clientX - campTouchX) > 12 || Math.abs(t.clientY - campTouchY) > 12) campTileDragged = true;
+}, { passive: true });
+function campCollapseSetTiles(except) {
+  var tiles = document.querySelectorAll('.sched-tile.expanded');
+  for (var i = 0; i < tiles.length; i++) {
+    if (tiles[i] === except) continue;
+    tiles[i].classList.remove('expanded');
+    campResetSpotifyPrompt(tiles[i]);
+  }
+}
+// "Click me!" is asking for a tap RIGHT NOW — the link has just landed and only a
+// real tap can hand off to the Spotify app. Dismiss the card and that moment is
+// over, so reopening it should show the ordinary resolved button (which the link
+// now is, for everyone) instead of still nagging.
+function campResetSpotifyPrompt(tile) {
+  var a = tile.querySelector('.sched-spotify-ready');
+  if (!a) return;
+  a.classList.remove('sched-spotify-ready');
+  a.textContent = 'Play on Spotify';
+}
+// Tap/click anywhere that isn't inside a set card collapses the open one. A click
+// inside any floating window isn't "away" — the card's own chat is one of those, and
+// closing the card out from under it would be daft.
+document.addEventListener('click', function (e) {
+  if (!e.target.closest) return;
+  if (e.target.closest('.sched-tile')) return; // clicks inside a card are handled by it
+  if (e.target.closest('.xp-popup')) return;
+  if (!document.querySelector('.sched-tile.expanded')) return;
+  campCollapseSetTiles(null);
+});
+
+// Same rule for the pop-out chat window: click away and it goes. The guard is the
+// one thing a click-away must never do — throw away something you typed — so a chat
+// with an unsent message in its box stays until you send it or close it yourself.
+// Clicking the button that OPENS a chat is safe: htmx hasn't inserted the window
+// yet when this fires, so there's nothing here to close.
+document.addEventListener('click', function (e) {
+  if (!e.target.closest) return;
+  if (e.target.closest('.xp-popup')) return; // inside a window, including this one
+  var chats = document.querySelectorAll('#popup-layer .xp-popup.chat-popup');
+  for (var i = 0; i < chats.length; i++) {
+    var typed = chats[i].querySelector('.msn-compose input[name=body]');
+    if (typed && (typed.value || '').trim()) continue;
+    chats[i].remove();
+  }
+});
+
 // When a popup is inserted (via htmx beforeend), give it a cascading position so
 // stacked windows step down-and-right like real overlapping windows. If one with
 // the same data-popup-id already exists, drop the old one first (re-open = move).
@@ -359,15 +618,24 @@ function campUpdateSelect() {
   if (mode === 'merge') {
     go.textContent = 'Merge Selected'; go.disabled = n !== 2;
     hint.textContent = 'Select the 2 entries that belong to the same camper — ' + n + ' of 2 selected.';
+  } else if (mode === 'rename') {
+    go.textContent = 'Rename Selected'; go.disabled = n !== 1;
+    hint.textContent = 'Select the camper whose name you want to fix — ' + n + ' of 1 selected.';
   } else {
     go.textContent = 'Delete Selected'; go.disabled = n < 1;
     hint.textContent = 'Select the campers you want to remove ' + n + ' selected.';
   }
 }
+// How many rows a mode will let you tick. Delete takes any number, so it's absent.
+function campSelectCap(mode) {
+  if (mode === 'merge') return 2;
+  if (mode === 'rename') return 1;
+  return Infinity;
+}
 document.addEventListener('change', function (e) {
   if (!e.target.classList || !e.target.classList.contains('ppl-select-check')) return;
   var bar = campSelBar();
-  if (bar && bar.getAttribute('data-mode') === 'merge' && campSelChecked().length > 2) { e.target.checked = false; return; }
+  if (bar && campSelChecked().length > campSelectCap(bar.getAttribute('data-mode'))) { e.target.checked = false; return; }
   campUpdateSelect();
 });
 // In select mode, clicking anywhere on a row toggles its checkbox (not just the box).
@@ -380,7 +648,7 @@ document.addEventListener('click', function (e) {
   var cb = row.querySelector('.ppl-select-check');
   if (!cb) return;
   var bar = campSelBar();
-  if (!cb.checked && bar && bar.getAttribute('data-mode') === 'merge' && campSelChecked().length >= 2) return;
+  if (!cb.checked && bar && campSelChecked().length >= campSelectCap(bar.getAttribute('data-mode'))) return;
   cb.checked = !cb.checked;
   campUpdateSelect();
 });
@@ -395,6 +663,10 @@ function campRunSelect(go) {
   if (mode === 'merge') {
     if (ids.length !== 2) return;
     htmx.ajax('GET', '/f/' + fest + '/people/merge-window?ids=' + encodeURIComponent(ids.join(',')), { target: '#popup-layer', swap: 'beforeend' });
+  } else if (mode === 'rename') {
+    // Rename isn't a confirm — it's a form. Same popup plumbing, one id not a list.
+    if (ids.length !== 1) return;
+    htmx.ajax('GET', '/f/' + fest + '/people/rename-window?id=' + encodeURIComponent(ids[0]), { target: '#popup-layer', swap: 'beforeend' });
   } else {
     if (!ids.length) return;
     htmx.ajax('GET', '/f/' + fest + '/people/delete-window?ids=' + encodeURIComponent(ids.join(',')), { target: '#popup-layer', swap: 'beforeend' });
@@ -581,7 +853,7 @@ document.addEventListener('click', function (e) {
   if (e.target.closest('#xp-startmenu') || e.target.closest('.xp-start-btn')) return;
   m.hidden = true;
 });
-document.addEventListener('keydown', function (e) { if (e.key === 'Escape') campCloseStart(); });
+document.addEventListener('keydown', function (e) { if (e.key === 'Escape') { campCloseStart(); campCollapseSetTiles(null); } });
 
 // The little tray clock. No seconds, and it follows the 12h/24h preference
 // from the control panel (XP default: 12-hour).

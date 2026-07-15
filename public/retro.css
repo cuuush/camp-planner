@@ -41,11 +41,18 @@
   /* The "Bliss" XP wallpaper lives on a fixed full-viewport layer rather than
      background-attachment:fixed. iOS Safari sizes a fixed background to the
      whole document height (so it blows up huge on long pages like the stuff
-     tab); a position:fixed element is always viewport-sized and renders right. */
+     tab); a position:fixed element is always viewport-sized and renders right.
+
+     Bled past the top and bottom on purpose. "Viewport-sized" on iOS means the
+     LAYOUT viewport: behind the Dynamic Island, and in the strip Safari's toolbar
+     vacates as you scroll, this layer simply stops — and what shows through is the
+     bare #5b8f3a below, i.e. a green band. Overhanging 120px means the wallpaper
+     is still under those strips. It only costs a slight zoom (cover re-fits to the
+     taller box) on a photo with nothing important at its edges. */
   body::before {
     content: '';
     position: fixed;
-    inset: 0;
+    left: 0; right: 0; top: -120px; bottom: -120px;
     z-index: -1;
     background: #5b8f3a url('/xp-bliss.jpg') center center / cover no-repeat;
   }
@@ -1089,8 +1096,13 @@
     border: 1px solid #fff; border-top-width: 3px;
     box-shadow: 0 1px 1px rgba(0,10,60,0.45);
   }
+  /* Centred from the middle out rather than by offsets measured against a 21px
+     button — the mobile rule below grows the popup's button to a real tap target,
+     and hard-coded offsets left the ✕ stranded in the top-left corner of it.
+     Centring via margins (not translate) keeps the rotate() below free. */
   .xp-caption-btn.close::before, .xp-caption-btn.close::after {
-    left: 4.5px; top: 8.5px; width: 10px; height: 2px; background: #fff; border-radius: 1px;
+    left: 50%; top: 50%; width: 10px; height: 2px; margin: -1px 0 0 -5px;
+    background: #fff; border-radius: 1px;
     box-shadow: 0 1px 1px rgba(80,10,0,0.4);
   }
   .xp-caption-btn.close::before { transform: rotate(45deg); }
@@ -1102,6 +1114,15 @@
   button.xp-caption-btn:hover { filter: brightness(1.12); }
   button.xp-caption-btn:active { filter: brightness(0.85); }
   button.xp-caption-btn:focus { outline: none; }
+  /* A tab whose content is wider than it is tall (TAB_THEMES `full`, i.e. the
+     Schedule grid) runs the window edge to edge instead of inside the usual
+     centered 900px frame — the gutters are pure loss for a side-scrolling poster,
+     and on a phone they cost enough width to hide the time ruler. */
+  .xp-window-full { width: 100%; max-width: none; margin: 12px 0 24px; border-radius: 0; padding: 0 0 3px; }
+  .xp-window-full .xp-titlebar { margin: 0; border-radius: 0; }
+  .xp-window-full .xp-window-body { padding: 4px 3px 8px; }
+  .xp-window-full .xp-window-body main { padding: 6px 2px; }
+
   .xp-window-body { background: #ece9d8; padding: 4px 6px 8px; }
   .xp-window-body main { max-width: none; margin: 0; padding: 6px 4px; min-height: 0; }
   @media (max-width: 600px) { .xp-titlebar-text { font-size: 0.95em; } }
@@ -1166,17 +1187,27 @@
   .xp-popup.dialog { width: min(420px, 95vw); }
   /* Phones: the JS centering/cascade (camp.js placement on insert) measures and
      offsets in ways that drift on small screens — override its inline position
-     entirely. Horizontal: edge-to-edge with a symmetric gutter. Vertical: pinned
-     below the taskbar with the body capped to the DYNAMIC viewport (dvh) — iOS's
-     vh includes the collapsed toolbar area, which is exactly how tall dialogs
-     ended up with their OK/Cancel pushed off the visible screen. */
+     entirely (these !importants beat the JS's inline style, which is the point).
+     Horizontal: edge-to-edge with a symmetric gutter. Vertical: pinned near the top
+     with the body capped to the DYNAMIC viewport (dvh) — iOS's vh includes the
+     collapsed toolbar area, which is exactly how tall dialogs ended up with their
+     OK/Cancel pushed off the visible screen.
+
+     DO NOT "fix" this to vertically centre like desktop. It looks wrong for a short
+     dialog and it is tempting, but any popup with a text field (rename, add person,
+     chat, the Spotify link box) gets the keyboard thrown up under it — and a centred
+     window is then pushed straight off the top of the screen. Pinned near the top is
+     the only position that survives the keyboard. */
   @media (max-width: 600px) {
-    .xp-popup { left: 12px !important; right: 12px; width: auto !important; max-width: none; top: 48px !important; }
+    .xp-popup { left: 12px !important; right: 12px; width: auto !important; max-width: none; top: 63px !important; }
     .xp-popup .xp-popup-body { max-height: calc(100dvh - 150px); }
     /* 21px is well under Apple's 44pt touch-target guideline — grow the caption
        buttons and the bar they live in to a real touch size. */
     .xp-popup .xp-popup-titlebar { height: 34px; }
     .xp-popup .xp-caption-btn { width: 30px; height: 27px; }
+  /* Scale the ✕ with the button, or a 10px glyph rattles around in a 30px box. */
+  .xp-popup .xp-caption-btn.close::before,
+  .xp-popup .xp-caption-btn.close::after { width: 14px; margin-left: -7px; }
   }
   /* Icon sits left of the message, vertically centered with it (not bottom-aligned
      like the pledge dialog). The big modifier doubles the icon. */
@@ -1273,6 +1304,12 @@
   }
   .ppl-task.na { color: #9a9a8c; font-style: italic; }
   .ppl-add-bar { display: flex; gap: 8px; flex-wrap: wrap; margin: 0 0 12px; }
+/* A refused rename (the name is taken) — XP's inline "that won't work" note, kept
+   next to the field rather than thrown into another dialog on top of the popup. */
+.ppl-rename-error {
+  font-size: 0.8em; color: #7a2020; margin: 0 0 8px; padding: 6px 8px;
+  background: #fff4f4; border: 1px solid #e0b4b4;
+}
   /* merge/delete selection bar + the per-row checkboxes it reveals. */
   .ppl-select-bar {
     display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: 0 0 12px; padding: 7px 10px;
@@ -1550,4 +1587,310 @@
     box-shadow: inset 1px 1px 0 rgba(255,255,255,0.8);
   }
   ::-webkit-scrollbar-thumb:hover { background: linear-gradient(90deg,#fbfcff,#d7e6fa 45%,#b0c9ea 55%,#d7e6fa); }
+
+  /* ————————————————————— Schedule tab (fake Windows Media Player) ——————————————————
+     A poster-style set-times grid: a sticky time ruler down the left, a horizontally
+     scrollable row of stage columns, and tiles positioned by their start/end times
+     against the shared ruler. Stage-color accents (--stage) over an XP-white grid. */
+  /* Top bar: the big day switcher on the left, the small "Edit Schedule…" button
+     pushed to the right — deliberately unalike, since one is the thing you use
+     every time and the other is the thing you use once. */
+  .sched-top { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; margin: 2px 0 8px; }
+  .sched-toolbar { display: flex; flex-wrap: wrap; gap: 6px; }
+  .sched-tbtn { display: inline-flex; align-items: center; gap: 5px; }
+  .sched-tbtn-ico { width: 16px; height: 16px; image-rendering: auto; }
+
+  /* Day switcher (Friday / Saturday / Sunday) — the tab's primary control, so:
+     big, tappable, and lit up in Luna orange when it's the day you're looking at. */
+  .sched-days { display: flex; flex-wrap: wrap; gap: 6px; }
+  .sched-day {
+    padding: 9px 22px; font-size: 0.95em; font-weight: bold; letter-spacing: 0.01em;
+    color: #12325e; text-decoration: none; cursor: pointer; border-radius: 4px;
+    border: 1px solid #7e9dc4;
+    background: linear-gradient(180deg,#fdfeff 0%,#eaf1fb 46%,#d8e5f6 54%,#eef4fd 100%);
+    box-shadow: inset 0 0 0 1px rgba(255,255,255,0.85), 0 1px 2px rgba(0,0,0,0.14);
+  }
+  .sched-day:hover {
+    border-color: #e08a1e;
+    box-shadow: inset 0 0 0 1px rgba(255,255,255,0.85), 0 0 4px 1px rgba(255,177,40,0.7);
+  }
+  .sched-day.active {
+    color: #5a3000; border-color: #d98f00;
+    background: linear-gradient(180deg,#ffe6a8 0%,#ffc44d 46%,#ff9f10 54%,#ffc65a 100%);
+    box-shadow: inset 0 0 0 1px rgba(255,255,255,0.6), 0 1px 2px rgba(0,0,0,0.2);
+  }
+
+  /* Edit mode: a highlighted banner holding the buried schedule-building actions. */
+  .sched-editbar {
+    display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px;
+    margin: 2px 0 8px; padding: 6px 10px; border-radius: 4px;
+    background: linear-gradient(180deg,#fff7d6,#ffedaa); border: 1px solid #e3c34d;
+  }
+  .sched-editbar-text { font-size: 0.82em; color: #6a5300; }
+  .sched-editbar-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+
+  .sched-scroll {
+    position: relative; overflow: auto; -webkit-overflow-scrolling: touch;
+    max-height: 74dvh; max-width: 100%;
+    border: 1px solid #7e9dc4; border-radius: 4px; background: #fbfcfe;
+    /* No scrollbar on this one container: the app's chunky fake-XP scrollbars are
+       painted over by the sticky time ruler and column heads, which sit above them
+       in the same corner. The grid is drag/swipe-scrolled anyway, and the ruler
+       itself shows where you are. */
+    scrollbar-width: none; -ms-overflow-style: none;
+  }
+  .sched-scroll::-webkit-scrollbar { width: 0; height: 0; display: none; }
+  .sched-grid { display: flex; align-items: flex-start; width: max-content; min-width: 100%; }
+
+  /* Left time ruler — sticks to the left edge while the stages scroll sideways. */
+  .sched-ruler {
+    position: sticky; left: 0; z-index: 3; flex: 0 0 auto; width: 56px;
+    background: #eef3fb; border-right: 1px solid #c3d3ea;
+  }
+  .sched-corner {
+    position: sticky; top: 0; z-index: 4; height: 30px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 0.68em; font-weight: bold; color: #0a246a;
+    background: linear-gradient(180deg,#eaf1fb,#d3e0f2); border-bottom: 1px solid #b7c8e0;
+  }
+  /* Both bodies carry the same top gap so the ruler and the columns stay aligned to
+     the pixel. It exists so the FIRST hour label — which hangs above its line — has
+     somewhere to go instead of disappearing under the sticky headers. */
+  .sched-ruler-body, .sched-col-body { margin-top: 14px; }
+  .sched-ruler-body {
+    position: relative;
+    background: repeating-linear-gradient(to bottom, rgba(20,60,110,0.10) 0, rgba(20,60,110,0.10) 1px, transparent 1px, transparent var(--hour-h));
+  }
+  /* Labels are whole hours ("11 PM"), right-aligned against the columns and sitting
+     just ABOVE their gridline rather than straddling it — so a line reads as "this
+     is where 11 PM starts" instead of being ambiguous about which side it means.
+     left as well as right keeps a label wider than the ruler from spilling out of
+     its left edge and being clipped by .sched-scroll — it shrinks the gap instead. */
+  .sched-hour {
+    position: absolute; left: 2px; right: 5px; transform: translateY(-100%);
+    padding-bottom: 3px;
+    font-size: 0.66em; color: #5a739a; white-space: nowrap; text-align: right;
+  }
+
+  /* Trailing room so a card expanded in the rightmost column has space to float
+     into instead of being clipped by the scroll container's edge. */
+  .sched-stages { display: flex; align-items: flex-start; padding-right: 150px; }
+  .sched-col { flex: 0 0 auto; width: 152px; border-right: 1px solid #e0e7f1; }
+  .sched-col-head {
+    position: sticky; top: 0; z-index: 2; height: 30px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 0.78em; font-weight: bold; color: #fff; letter-spacing: 0.02em;
+    text-shadow: 0 1px 1px rgba(0,0,20,0.4);
+    background: linear-gradient(180deg, color-mix(in srgb, var(--stage) 78%, #fff) 0%, var(--stage) 100%);
+    border-bottom: 1px solid rgba(0,0,0,0.25);
+  }
+  .sched-col-body {
+    position: relative;
+    background: repeating-linear-gradient(to bottom, rgba(20,60,110,0.08) 0, rgba(20,60,110,0.08) 1px, transparent 1px, transparent var(--hour-h));
+  }
+
+  /* A set card. Collapsed it's a dense box; the head button fills it. Tapping the
+     head adds .expanded, which floats the card over its neighbours and reveals the
+     body (two buttons + optional chat). Positioned by inline top/height from time. */
+  /* A plain 1px stage-coloured outline. The old 4px left bar was a Google-Calendar
+     accent, not an XP one — XP drew a thin, even border and let the fill do the
+     talking. Square-ish corners for the same reason. */
+  .sched-tile {
+    position: absolute; left: 4px; right: 4px; box-sizing: border-box;
+    display: flex; flex-direction: column; overflow: hidden;
+    border: 1px solid var(--stage); border-radius: 2px;
+    background: #fff; background: linear-gradient(180deg,#ffffff,#eef4fb);
+    box-shadow: 0 1px 2px rgba(0,0,0,0.16);
+  }
+  /* "You're going" tint, driven off the latched button rather than a class on the
+     tile. The button lives inside the block that the interest POST swaps, so this
+     repaints the instant you toggle — a class out on the tile only updated on
+     reload. :has() reads the DOM, not visibility, so it still matches while the
+     card is collapsed and the body is display:none. */
+  .sched-tile:has(.sched-going) { background: #eaf3ff; background: color-mix(in srgb, var(--stage) 20%, #fff); }
+  .sched-tile-head {
+    appearance: none; -webkit-appearance: none; background: none; border: none; box-shadow: none;
+    width: 100%; height: 100%; text-align: left; cursor: pointer; overflow: hidden;
+    padding: 3px 6px; display: flex; flex-direction: column; gap: 1px;
+    font-family: Tahoma, sans-serif; color: #12325e;
+  }
+  /* The head is a <button> only so it's tappable and keyboard-reachable — it must
+     not LOOK like one. The global Luna button rules (amber hover glow, pressed
+     grey gradient) are the right thing on real buttons like the Stuff tab's, so
+     they stay global and get switched back off here, on the one element that
+     borrows the tag without wanting the chrome. */
+  .sched-tile-head:hover { background: rgba(255,255,255,0.4); box-shadow: none; }
+  .sched-tile-head:active { background: rgba(255,255,255,0.55); box-shadow: none; }
+  /* Wrap rather than ellipsis. "TORREN FOOT b2b AIRWOLF PARADISE" truncated to
+     "TORREN FOOT b2b A…" tells you nothing, and the names that overflow are exactly
+     the ones worth reading. A very long name in a very short slot still gets clipped
+     by the tile — but tapping it expands the card to full height, so the whole name
+     is always one tap away. */
+  .sched-tile-artist { font-weight: bold; font-size: 0.8em; line-height: 1.08; overflow-wrap: break-word; }
+  .sched-tile-time { font-size: 0.68em; color: #4a6a92; white-space: nowrap; }
+  /* Interested names, right on the card face under the time. Wraps and is clipped
+     by the card's height, so a short set shows as many as fit. */
+  .sched-tile-who-inline { font-size: 0.64em; line-height: 1.2; color: #a06400; margin-top: 1px; overflow: hidden; word-break: break-word; }
+  .sched-tile-who-inline:empty { display: none; }
+  /* Edit-mode tile is a plain button (opens the buried editor). */
+  .sched-tile.editing {
+    appearance: none; -webkit-appearance: none; text-align: left; cursor: pointer;
+    padding: 3px 6px; border-style: dashed; color: #12325e; font-family: Tahoma, sans-serif; gap: 1px;
+  }
+  .sched-tile-editcue { position: absolute; top: 2px; right: 4px; font-size: 0.7em; color: var(--stage); }
+
+  /* Expanded: float over neighbours, grow to fit, show the body. */
+  .sched-tile.expanded {
+    height: auto !important; z-index: 30; overflow: visible;
+    width: min(232px, 80vw); right: auto;
+    box-shadow: 0 7px 20px rgba(0,0,0,0.34);
+  }
+  .sched-tile.expanded .sched-tile-head { height: auto; }
+  .sched-tile-body { display: none; padding: 0 6px 7px; flex-direction: column; gap: 6px; }
+  .sched-tile.expanded .sched-tile-body { display: flex; }
+  .sched-tile-actions { display: flex; flex-direction: column; gap: 6px; }
+  .sched-act-btn { width: 100%; font-size: 0.78em; padding: 6px 8px; text-align: center; box-sizing: border-box; }
+  /* You're going: a LATCHED toolbar button, pressed in and holding a ticked box.
+     Deliberately NOT btn-primary — primary means "the thing to do next", and once
+     you're going the thing to do next is nothing. It keeps the hover glow, though:
+     that's the bit promising the tick comes back off. */
+  .sched-going {
+    border-color: #7f9db9; color: #14304f;
+    background: linear-gradient(180deg,#dceaf7 0%,#c5dcf0 100%);
+    box-shadow: inset 1px 1px 2px rgba(0,50,100,0.28), inset -1px -1px 0 rgba(255,255,255,0.5);
+  }
+  .sched-going:hover {
+    border-color: #7f9db9;
+    background: linear-gradient(180deg,#e6f1fa 0%,#cfe4f5 100%);
+    box-shadow: inset 1px 1px 2px rgba(0,50,100,0.28), 0 0 4px 1px rgba(255,177,40,0.75);
+  }
+  .sched-going:active {
+    background: linear-gradient(180deg,#c5dcf0 0%,#dceaf7 100%);
+    box-shadow: inset 1px 1px 3px rgba(0,50,100,0.4);
+  }
+  /* Borrows .xp-checkbox from the About Me packing list — same control, same tick,
+     so a ticked box means the same thing everywhere in the app. Only the alignment
+     inside a centred button is local. */
+  .sched-going .xp-checkbox { margin-right: 6px; vertical-align: -3px; }
+  .sched-going:hover .xp-checkbox { border-color: #5a8fd6; }
+  /* "Play on Spotify" — Spotify green, so it reads as the one off-site action on
+     the card. Renders as a <button> until someone resolves the artist's link, then
+     as an <a> to Spotify: identical look, hence the shared class. */
+  /* :visited must be spelled out. Once this <a> has been opened, the global
+     `a:visited` (0,1,1) outranks a bare `.sched-spotify` (0,1,0) and repaints the
+     label #551a8b — near-black on the green, but only for artists YOU'd clicked,
+     which is why it looked random. Same fix as a.xp-startmenu-name above. */
+  .sched-spotify, .sched-spotify:visited {
+    display: block; color: #fff; font-weight: bold; text-decoration: none;
+    border: 1px solid #0f7a3a;
+    background: linear-gradient(180deg,#3ee27a 0%,#1db954 46%,#159a45 54%,#25cc61 100%);
+    box-shadow: inset 0 0 0 1px rgba(255,255,255,0.3);
+    text-shadow: 0 1px 1px rgba(0,40,15,0.35);
+  }
+  .sched-spotify:hover {
+    border-color: #0f7a3a;
+    background: linear-gradient(180deg,#5cf094 0%,#26cc60 46%,#18a94c 54%,#31dd6f 100%);
+    box-shadow: inset 0 0 0 1px rgba(255,255,255,0.45), 0 0 4px 1px rgba(29,185,84,0.6);
+  }
+  .sched-spotify:active { background: linear-gradient(180deg,#149a45,#1db954); box-shadow: inset 1px 1px 2px rgba(0,0,0,0.3); }
+  .sched-spotify[disabled] { opacity: 0.75; cursor: default; }
+  /* Looking the artist up: "Finding on Spotify..." with the dots ticking along, the
+     way every XP dialog told you it was busy. */
+  .sched-spotify.is-finding::after {
+    content: '';
+    animation: campDots 1.2s steps(1, end) infinite;
+  }
+  @keyframes campDots {
+    0%   { content: '.'; }
+    33%  { content: '..'; }
+    66%  { content: '...'; }
+  }
+  /* The link is ready, but the click that fetched it can't also open it (touch, or
+     a refused popup) — so ask for the one that will. This is Luna's default-button
+     "breathe": the glow sits at a FIXED radius and swells in intensity, which is
+     what XP did to say "this is the button to press". An expanding ring would be a
+     material ripple wearing an XP costume. The dotted rect is XP's focus rectangle,
+     the other half of the same idiom — and it's what still says "press me" once
+     prefers-reduced-motion stops the breathing. */
+  .sched-spotify-ready { position: relative; animation: campXpDefault 1.4s ease-in-out infinite; }
+  .sched-spotify-ready::before {
+    content: ''; position: absolute; inset: 2px; pointer-events: none;
+    border: 1px dotted rgba(255,255,255,0.9);
+  }
+  @keyframes campXpDefault {
+    0%, 100% { box-shadow: inset 0 0 0 1px rgba(255,255,255,0.35), 0 0 3px 1px rgba(29,185,84,0.45); }
+    50%      { box-shadow: inset 0 0 0 1px rgba(255,255,255,0.9),  0 0 7px 3px rgba(29,185,84,0.95); }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .sched-spotify.is-finding::after { animation: none; content: '...'; }
+    .sched-spotify-ready { animation: none; box-shadow: inset 0 0 0 1px rgba(255,255,255,0.9), 0 0 6px 2px rgba(29,185,84,0.8); }
+  }
+  /* Searched, and this artist simply isn't on Spotify — say so quietly instead of
+     leaving a button that can't go anywhere. */
+  .sched-spotify-none { font-size: 0.7em; color: #7a8a9b; font-style: italic; }
+  .sched-tile-who { display: flex; flex-wrap: wrap; gap: 4px; }
+  .set-who {
+    font-size: 0.72em; color: #12325e; padding: 1px 7px; border-radius: 10px;
+    background: linear-gradient(180deg,#f4f8ff,#dfe9f8); border: 1px solid #bcd0ec;
+  }
+
+  /* Empty state — WMP's "nothing to play" library. */
+  .sched-empty { text-align: center; padding: 30px 18px; color: #33475f; }
+  .sched-empty-ico { opacity: 0.9; }
+  .sched-empty-title { font-weight: bold; color: #0a246a; margin: 10px 0 4px; }
+  .sched-empty-sub { font-size: 0.85em; max-width: 380px; margin: 0 auto 14px; }
+  .sched-empty-actions { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; }
+  /* Current Spotify link + the button to fix it, inside the Edit Set popup. */
+  .set-spotify-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .set-spotify-cur { font-size: 0.76em; color: #1a6a38; word-break: break-all; }
+  .set-spotify-cur-none { color: #7a8a9b; font-style: italic; }
+
+  .set-time-input { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .set-nextday { display: inline-flex; align-items: center; gap: 4px; font-size: 0.75em; color: #555; white-space: nowrap; }
+  .set-nextday input { width: auto; }
+
+  /* Pop-out chat window (inside an xpPopup): the popup frame IS the window, so the
+     chat sits flush to the edges (no beige gutter) and the MSN chrome fills it. */
+  .xp-popup.chat-popup .xp-popup-body { padding: 0; overflow: hidden; border-radius: 0 0 5px 5px; }
+  .msn-chat.windowed { border: none; box-shadow: none; border-radius: 0; background: #ece9d8; min-width: 250px; }
+  .msn-chat.windowed .msn-window-body { border-radius: 0 0 5px 5px; }
+  .msn-chat.windowed .msn-log { max-height: 240px; }
+
+  /* ——————————————————————————— import preview / review ——————————————————————————— */
+  .import-preview-list { max-height: 46dvh; overflow-y: auto; border: 1px solid #b7c8e0; border-radius: 4px; background: #fff; margin: 10px 0; }
+  .import-stage-head {
+    font-size: 0.76em; font-weight: bold; color: #fff; padding: 3px 10px; position: sticky; top: 0;
+    background: linear-gradient(180deg, color-mix(in srgb, var(--stage) 80%, #fff), var(--stage));
+  }
+  .import-row { display: flex; gap: 10px; padding: 3px 10px; font-size: 0.82em; border-top: 1px solid #eef1f6; }
+  .import-time { flex: 0 0 128px; color: #4a6a92; white-space: nowrap; }
+  .import-artist { font-weight: bold; color: #12325e; }
+  .import-form input[type=file] { font-size: 0.85em; }
+  /* The import posts by hand rather than through htmx (the browser has to base64
+     the picture first — see campImportSchedule), so the wait hint is driven by
+     .is-reading on the form instead of htmx's own indicator class. */
+  .import-wait { display: none; color: #0a246a; font-weight: bold; }
+  .import-form.is-reading .import-wait { display: block; }
+  /* One block per day read, with its name editable — several pictures in, several
+     of these out. The day name is the one correction that belongs here rather than
+     on the grid, because it decides which day gets replaced. */
+  .import-day + .import-day { margin-top: 14px; border-top: 1px solid #cbd8ea; padding-top: 12px; }
+  .import-day-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .import-day-head label { font-weight: bold; color: #0a246a; font-size: 0.85em; }
+  .import-day-head input { width: 150px; }
+  .import-day-count { font-size: 0.78em; color: #5a739a; }
+  .import-replacing { color: #8a5a00; }
+
+  @media (max-width: 600px) {
+    .sched-scroll { max-height: 66dvh; }
+    .sched-ruler { width: 46px; }
+    .sched-col { width: 132px; }
+    .sched-tile-artist { font-size: 0.78em; }
+    .sched-tile.expanded { width: min(230px, 86vw); }
+    .import-time { flex-basis: 96px; }
+    /* Days stay big enough to thumb; they get the row, Edit tucks under them. */
+    .sched-top { gap: 6px; }
+    .sched-days { flex: 1 1 100%; }
+    .sched-day { flex: 1 1 0; padding: 10px 8px; text-align: center; font-size: 0.9em; }
+  }
   ::-webkit-scrollbar-corner { background: #eef3fb; }

@@ -3,9 +3,10 @@ import { html } from 'hono/html';
 import { renderPage } from '../render/layout.js';
 import { loadFestival, ensureMembership } from '../lib/festival.js';
 import { logAction } from '../lib/audit.js';
-import { sqlNow, createEffect, deleteEffect } from '../lib/effects.js';
+import { sqlNow, createEffect, deleteEffect, fieldEffects } from '../lib/effects.js';
 import { needsSignin, signinModalResponse, signinRedirect } from '../lib/guard.js';
 import { createPlaceholder, mergePeople, deletePersonFootprint } from '../lib/people.js';
+import { normalizeName } from '../lib/names.js';
 import { xpPopup, xpDialogPopup } from '../render/popup.js';
 
 export const people = new Hono();
@@ -47,9 +48,11 @@ async function renderPplBody(c, festival) {
       <button class="btn" type="button"
         hx-get="/f/${festival.id}/people/add-window" hx-target="#popup-layer" hx-swap="beforeend">Add Person…</button>
       ${person
-          ? html`<button class="btn" type="button" onclick="campEnterSelect(this,'merge')">Merge</button>
+          ? html`<button class="btn" type="button" onclick="campEnterSelect(this,'rename')">Rename</button>
+                 <button class="btn" type="button" onclick="campEnterSelect(this,'merge')">Merge</button>
                  <button class="btn" type="button" onclick="campEnterSelect(this,'delete')">Delete</button>`
-          : html`<button class="btn" type="button" hx-get="/signin/modal?next=/f/${festival.id}/ppl" hx-target="#signin-modal-overlay" hx-swap="innerHTML">Merge</button>
+          : html`<button class="btn" type="button" hx-get="/signin/modal?next=/f/${festival.id}/ppl" hx-target="#signin-modal-overlay" hx-swap="innerHTML">Rename</button>
+                 <button class="btn" type="button" hx-get="/signin/modal?next=/f/${festival.id}/ppl" hx-target="#signin-modal-overlay" hx-swap="innerHTML">Merge</button>
                  <button class="btn" type="button" hx-get="/signin/modal?next=/f/${festival.id}/ppl" hx-target="#signin-modal-overlay" hx-swap="innerHTML">Delete</button>`}
     </div>
     <div class="ppl-select-bar" data-fest="${festival.id}" hidden>
@@ -146,6 +149,99 @@ people.post('/f/:id/people/add', async (c) => {
             summary: `${person.display_name} added ${name} to the list`,
         });
     }
+    return c.html(await renderPplBody(c, festival));
+});
+
+// --- rename ----------------------------------------------------------------------
+
+// Popup: fix a name. Prefilled with the current one and pre-selected, because this
+// is nearly always a typo repair rather than a fresh thought.
+people.get('/f/:id/people/rename-window', async (c) => {
+    const festival = await loadFestival(c);
+    if (!festival) return c.notFound();
+    if (needsSignin(c)) return signinModalResponse(c);
+    const db = c.env.DB;
+    const id = Number(c.req.query('id'));
+    if (!id) return c.html('');
+    const target = await db.prepare('SELECT * FROM people WHERE id = ? AND deleted_at IS NULL').bind(id).first();
+    if (!target) return c.html('');
+    return c.html(renameWindow(festival, target));
+});
+
+// Re-rendered on a rejected name too, so the popup can explain itself without the
+// form losing what was typed. `error` is a ready-made message or ''.
+function renameWindow(festival, target, error = '') {
+    return xpPopup({
+        title: 'Rename Person',
+        id: `rename-person-${target.id}`,
+        body: html`
+          <p class="popup-hint">${target.is_placeholder
+              ? html`Fix how <b>${target.display_name}</b> is spelled. When they sign in with the new name, their seats and check-offs will link up to this entry.`
+              : html`Fix how <b>${target.display_name}</b> is spelled. This is a signed-in camper, so this is also the name they sign in with from now on.`}</p>
+          ${error ? html`<p class="ppl-rename-error">${error}</p>` : ''}
+          <form class="popup-form" hx-post="/f/${festival.id}/people/rename" hx-target="#main" hx-swap="innerHTML"
+            hx-on::after-request="if(event.detail.successful) closePopup(this)" autocomplete="off">
+            <input type="hidden" name="person_id" value="${target.id}">
+            <input type="text" name="name" value="${target.display_name}" placeholder="Their name" required
+              data-1p-ignore data-lpignore="true" onfocus="this.select()" autofocus>
+            <button class="btn btn-primary" type="submit">Rename</button>
+          </form>`,
+    });
+}
+
+// Rename a camper. Two shapes of person, two different identities to keep straight:
+//
+//  • a signed-in account — normalized_name IS how they sign in, and the app's
+//    invariant (set at signup) is normalized_name === normalizeName(display_name).
+//    Renaming display_name alone would break it: someone signing in under the new
+//    name would miss this row entirely and get a second account.
+//  • a placeholder — normalized_name is synthetic and unusable for sign-in; what
+//    matters is placeholder_key, which absorbPlaceholders() matches on at login.
+//
+// Either way the write is one UPDATE recorded as fieldEffects, so the log tab can
+// put the old name back.
+people.post('/f/:id/people/rename', async (c) => {
+    const festival = await loadFestival(c);
+    if (!festival) return c.notFound();
+    if (needsSignin(c)) return signinModalResponse(c);
+    const db = c.env.DB;
+    const actor = c.get('person');
+    const body = await c.req.parseBody();
+    const id = Number(body.person_id);
+    const name = (body.name || '').toString().trim();
+
+    const target = id ? await db.prepare('SELECT * FROM people WHERE id = ? AND deleted_at IS NULL').bind(id).first() : null;
+    if (!target) return c.html(await renderPplBody(c, festival));
+    if (!name || name === target.display_name) return c.html(await renderPplBody(c, festival));
+
+    const key = normalizeName(name);
+
+    // Someone else already answers to this name. normalized_name is UNIQUE, so a
+    // real-account collision would be a 500 — but a ghost collision is just as wrong
+    // (two entries for one camper), and merge is the tool that actually fixes both.
+    const clash = await db.prepare(`
+        SELECT display_name FROM people
+        WHERE id != ? AND deleted_at IS NULL AND merged_into IS NULL
+          AND (normalized_name = ? OR (is_placeholder = 1 AND placeholder_key = ?))
+        LIMIT 1
+    `).bind(target.id, key, key).first();
+    if (clash) {
+        return c.html(renameWindow(festival, target,
+            html`There's already someone called <b>${clash.display_name}</b> here. If they're the same camper, use <b>Merge</b> instead — that combines everything they both did.`));
+    }
+
+    const after = target.is_placeholder
+        ? { display_name: name, placeholder_key: key }
+        : { display_name: name, normalized_name: key };
+    const cols = Object.keys(after);
+    await db.prepare(`UPDATE people SET ${cols.map((k) => `${k} = ?`).join(', ')} WHERE id = ?`)
+        .bind(...cols.map((k) => after[k]), target.id).run();
+
+    await logAction(c, {
+        festivalId: festival.id, action: 'update', entityType: 'people', entityId: target.id,
+        reversible: true, effects: fieldEffects('people', target.id, target, after),
+        summary: `${actor.display_name} renamed ${target.display_name} to ${name}`,
+    });
     return c.html(await renderPplBody(c, festival));
 });
 

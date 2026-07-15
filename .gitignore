@@ -5,3 +5,6 @@ node_modules/
 *.log
 .claude/settings.local.json
 .claude/worktrees/
+
+# Local dev fixture for scripts/test-schedule-parse.mjs (3MB poster, not for git)
+scripts/elements-friday-sample.png

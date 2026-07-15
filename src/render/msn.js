@@ -86,28 +86,10 @@ export function msnify(text) {
     return out;
 }
 
-// The full MSN Messenger chat window (title bar, menu bar, contact bar, message
-// log, emoticon toolbar, compose box). Shared by item comments and car comments.
-// opts: { title, dpEmoji, toLabel, comments, postUrl, target, chatOpen, id }
-export function msnChat({ title, dpEmoji, toLabel, comments, postUrl, target, chatOpen = false, id }) {
+// The message log, emoticon toolbar, and compose box — the parts every MSN chat
+// shares regardless of chrome.
+function msnLogAndCompose({ comments, postUrl, target }) {
     return html`
-    <details class="msn-chat" ${id ? html`id="${id}"` : ''} ${chatOpen ? 'open' : ''}>
-      <summary class="msn-titlebar">
-        <span class="msn-title-text">${title}</span>
-        ${xpCaptionBtns()}
-      </summary>
-      <div class="msn-window-body">
-        <div class="msn-menubar">
-          <span class="msn-menu-item">File</span>
-          <span class="msn-menu-item">Edit</span>
-          <span class="msn-menu-item">Actions</span>
-          <span class="msn-menu-item">Tools</span>
-          <span class="msn-menu-item">Help</span>
-        </div>
-        <div class="msn-contactbar">
-          <div class="msn-to">${raw(toLabel)}</div>
-          <div class="msn-dp">${dpEmoji}</div>
-        </div>
         <div class="msn-log">
           ${comments.length
               ? comments.map((cm) => html`<div class="msn-msg"><span class="msn-name" style="color:${nameColor(cm.display_name)}">${cm.display_name} says:</span><span class="msn-time local-time" data-utc="${cm.created_at}">${fmtTime(cm.created_at)}</span><span class="msn-body">${raw(msnify(cm.body))}</span></div>`)
@@ -119,7 +101,51 @@ export function msnChat({ title, dpEmoji, toLabel, comments, postUrl, target, ch
         <form class="msn-compose" hx-post="${postUrl}" hx-target="${target}" hx-swap="outerHTML">
           <input type="text" name="body" placeholder="type a message..." autocomplete="off">
           <button class="btn btn-primary" type="submit">Send</button>
-        </form>
+        </form>`;
+}
+
+// The menu bar + "To:"/display-picture contact bar every full MSN window shows.
+function msnFullChrome(toLabel, dpEmoji) {
+    return html`
+        <div class="msn-menubar">
+          <span class="msn-menu-item">File</span>
+          <span class="msn-menu-item">Edit</span>
+          <span class="msn-menu-item">Actions</span>
+          <span class="msn-menu-item">Tools</span>
+          <span class="msn-menu-item">Help</span>
+        </div>
+        ${toLabel ? html`<div class="msn-contactbar">
+          <div class="msn-to">${raw(toLabel)}</div>
+          <div class="msn-dp">${dpEmoji}</div>
+        </div>` : ''}`;
+}
+
+// The MSN Messenger chat window. Two shapes:
+//  • default — a collapsible <details> that sits inline in a card (items, cars):
+//    summary title bar, full menu/contact chrome, log, emoticons, compose.
+//  • windowed — full chrome, always open, and NO title bar of its own, because the
+//    host (an xpPopup) supplies the draggable window frame + title. This is the
+//    "pop-out chat window" the Schedule tab opens for a set.
+// opts: { title, dpEmoji, toLabel, comments, postUrl, target, chatOpen, id, windowed }
+export function msnChat({ title, dpEmoji, toLabel, comments, postUrl, target, chatOpen = false, id, windowed = false }) {
+    if (windowed) {
+        return html`
+        <div class="msn-chat windowed" ${id ? html`id="${id}"` : ''}>
+          <div class="msn-window-body">
+            ${msnFullChrome(toLabel, dpEmoji)}
+            ${msnLogAndCompose({ comments, postUrl, target })}
+          </div>
+        </div>`;
+    }
+    return html`
+    <details class="msn-chat" ${id ? html`id="${id}"` : ''} ${chatOpen ? 'open' : ''}>
+      <summary class="msn-titlebar">
+        <span class="msn-title-text">${title}</span>
+        ${xpCaptionBtns()}
+      </summary>
+      <div class="msn-window-body">
+        ${msnFullChrome(toLabel, dpEmoji)}
+        ${msnLogAndCompose({ comments, postUrl, target })}
       </div>
     </details>`;
 }

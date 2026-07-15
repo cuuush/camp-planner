@@ -23,6 +23,8 @@ export const SOFT_DELETE_COL = {
     checklist_tasks: 'deleted_at',
     festivals: 'deleted_at',
     people: 'deleted_at',
+    schedule_sets: 'deleted_at',
+    set_interests: 'deleted_at',
     memberships: 'bailed_at',
     checklist_checks: 'unchecked_at',
 };
@@ -40,8 +42,13 @@ const WRITABLE = {
     checklist_checks: ['unchecked_at', 'checked_at', 'person_id'],
     festivals: ['deleted_at', 'name', 'blurb', 'start_date', 'end_date', 'location', 'ticket_url', 'parking_url', 'created_by'],
     items: ['deleted_at', 'name', 'emoji', 'needed_qty', 'unit', 'description', 'added_by'],
+    schedule_sets: ['deleted_at', 'day', 'stage', 'stage_order', 'artist', 'start_min', 'end_min', 'added_by'],
+    set_interests: ['deleted_at', 'person_id'],
     memberships: ['bailed_at', 'person_id'],
-    people: ['deleted_at', 'merged_into'],
+    // A rename writes all three together: display_name is what everyone sees,
+    // normalized_name is the sign-in identity (real accounts), placeholder_key is
+    // what a ghost is matched on when they finally log in. See people.js /rename.
+    people: ['deleted_at', 'merged_into', 'display_name', 'normalized_name', 'placeholder_key'],
     name_reclaim_log: ['person_id'],
 };
 

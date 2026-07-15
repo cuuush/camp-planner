@@ -168,6 +168,9 @@ function taskbar(c, festival, festivals) {
             <img class="xp-startmenu-ico" src="/xp/control-panel.png" alt=""> Control Panel</a>
           <a class="xp-startmenu-item" href="/admin" onclick="campCloseStart()">
             <img class="xp-startmenu-ico" src="/xp/admin.png" alt=""> Administrative Tools</a>
+          ${festival ? html`
+          <a class="xp-startmenu-item" href="/f/${festival.id}/log" onclick="campCloseStart()">
+            <img class="xp-startmenu-ico" src="/xp/desk-log.png" alt=""> Event Viewer (Log)</a>` : ''}
         </div>
         <div class="xp-startmenu-foot">
           ${person
@@ -202,13 +205,26 @@ const TAB_THEMES = {
         title: (f) => `Car Pool - ${f.name}`,
         menus: ['File', 'Edit', 'View', 'Route', 'Tools', 'Help'],
     },
+    schedule: {
+        label: 'Schedule', path: 'schedule', ico: '/xp/desk-schedule.png',
+        title: (f) => `Set Times - ${f.name}`,
+        menus: ['File', 'View', 'Play', 'Tools', 'Help'],
+        // The set-times grid is a wide, side-scrolling poster, so this window drops
+        // the usual gutters and runs the full width of the screen — on a phone those
+        // gutters cost enough room to push the time ruler out of view.
+        full: true,
+    },
     mine: {
         label: 'About Me', path: 'mine', ico: '/xp/desk-me.png',
         title: (f) => `About Me - ${f.name}`,
         menus: ['File', 'Edit', 'View', 'Help'],
     },
+    // The Log moved off the desktop tab row into the Start menu (it's a system
+    // utility now, like Event Viewer really is). `hidden` keeps its Event Viewer
+    // window chrome — titlebar icon, menu bar — for the /f/:id/log page while
+    // desktopIcons() skips it in the tab row.
     log: {
-        label: 'Log', path: 'log', ico: '/xp/desk-log.png',
+        label: 'Log', path: 'log', ico: '/xp/desk-log.png', hidden: true,
         title: (f) => `Event Viewer - ${f.name}`,
         menus: ['File', 'Action', 'View', 'Help'],
     },
@@ -222,7 +238,7 @@ const TAB_THEMES = {
 function desktopIcons(festival, activeTab) {
     return html`
     <nav class="desktop-icons" aria-label="sections">
-      ${Object.entries(TAB_THEMES).map(([key, t]) => html`
+      ${Object.entries(TAB_THEMES).filter(([, t]) => !t.hidden).map(([key, t]) => html`
         <a href="/f/${festival.id}/${t.path}" class="desk-icon ${key === activeTab ? 'active' : ''}"
           style="--ico:url('${t.ico}')" ${key === activeTab ? html`aria-current="page"` : ''}>
           <span class="desk-icon-img"><img src="${t.ico}" alt=""></span>
@@ -299,7 +315,7 @@ export async function renderPage(c, { title, activeTab = '', body, festival = nu
   ${festival ? desktopIcons(festival, activeTab) : ''}
   ${pre}
   ${bare && !showJoin ? html`<main id="main" hidden>${body}</main>` : html`
-  <div class="xp-window">
+  <div class="xp-window ${theme && theme.full ? 'xp-window-full' : ''}">
     <div class="xp-titlebar">
       ${theme
         ? (theme.titleEmoji
