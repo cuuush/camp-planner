@@ -13,6 +13,14 @@ routes = [
 [assets]
 directory = "./public"
 
+# Run the worker NEAR THE DATABASE instead of near the visitor. Every request
+# makes several D1 queries, and each one is a network round trip from wherever
+# the worker landed to wherever D1 lives — so "close to the user, far from the
+# data" multiplies that distance by the query count. One longer hop for the
+# request + many ~1ms queries beats one short hop + many ~100ms queries.
+[placement]
+mode = "smart"
+
 [[d1_databases]]
 binding = "DB"
 database_name = "camp-planner-db"

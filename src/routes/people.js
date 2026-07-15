@@ -128,6 +128,7 @@ people.post('/f/:id/people/add', async (c) => {
     const festival = await loadFestival(c);
     if (!festival) return c.notFound();
     if (needsSignin(c)) return signinModalResponse(c);
+    const db = c.env.DB;
     const person = c.get('person');
     const body = await c.req.parseBody();
     const name = (body.name || '').toString().trim();

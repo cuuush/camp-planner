@@ -8,6 +8,10 @@
 # quietly serve stale JS against new markup.
 /camp.js
   Cache-Control: no-cache
+# Version lives in the filename, so the content at this URL can never change —
+# safe to cache forever. Upgrading htmx = new file + new <script src> in layout.js.
+/htmx-1.9.12.min.js
+  Cache-Control: public, max-age=31536000, immutable
 /retro.css
   Cache-Control: no-cache
 /xp/*

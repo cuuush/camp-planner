@@ -1,9 +1,8 @@
   * { box-sizing: border-box; }
   /* The goofy display font. Real Comic Sans on Windows/macOS (both ship it),
-     Comic Neue web font on iOS/Android (they don't), then native fallbacks.
-     Without this, iOS falls through to 'cursive' = Snell Roundhand (a formal
-     script), which looks nothing like the intended vibe. */
-  :root { --fun-font: 'Comic Sans MS', 'Comic Neue', 'Chalkboard SE', cursive; }
+     Chalkboard SE on iOS, then the platform's cursive default. No web font —
+     not worth a render-blocking fetch for a fallback face. */
+  :root { --fun-font: 'Comic Sans MS', 'Chalkboard SE', cursive; }
   /* UnifontEX — a bitmap/pixel font with full emoji coverage. We render EVERY
      emoji through it (via .pixmoji spans the client wraps around emoji) so they
      look like chunky 8-bit pixel glyphs, matching the XP/MSN vibe. Only the

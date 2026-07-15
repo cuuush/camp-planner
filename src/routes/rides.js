@@ -821,11 +821,12 @@ rides.post('/cars/:carId/seats/claim', async (c) => {
         summary: `${person.display_name} claimed a seat in ${driver.display_name}'s car`,
     });
 
-    await notify(c.env, {
+    // After the response — the click shouldn't wait on the email provider.
+    c.executionCtx.waitUntil(notify(c.env, {
         festivalId: festival.id, targetPersonId: car.driver_person_id, actorPersonId: person.id,
         heading: `${person.display_name} grabbed a seat`,
         body: `${person.display_name} grabbed a seat in your car for ${festival.name}.`,
-    });
+    }));
 
     const body = await c.req.parseBody();
     return carResponse(c, festival, car.id, true, body.chat_open === '1');
@@ -1046,11 +1047,12 @@ rides.post('/seats/:seatId/leave', async (c) => {
         summary: `${person ? person.display_name : 'someone'} left ${driver.display_name}'s car`,
     });
 
-    await notify(c.env, {
+    // After the response — the click shouldn't wait on the email provider.
+    c.executionCtx.waitUntil(notify(c.env, {
         festivalId: festival.id, targetPersonId: car.driver_person_id, actorPersonId: person ? person.id : null,
         heading: `a seat opened up`,
         body: `${person ? person.display_name : 'someone'} left your car for ${festival.name} — seat's open again.`,
-    });
+    }));
 
     const body = await c.req.parseBody();
     return carResponse(c, festival, car.id, true, body.chat_open === '1');

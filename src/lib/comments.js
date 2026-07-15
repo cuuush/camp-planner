@@ -38,11 +38,12 @@ export async function handleCommentPost(c, {
         summary,
     });
 
-    await notify(c.env, {
+    // After the response — the click shouldn't wait on the email provider.
+    c.executionCtx.waitUntil(notify(c.env, {
         festivalId: festival.id, targetPersonId: ownerPersonId, actorPersonId: person.id,
         heading: notifyHeading,
         body: notifyBody(text),
-    });
+    }));
 
     return respond();
 }

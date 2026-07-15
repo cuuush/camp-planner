@@ -4,7 +4,6 @@ import { getCookie, setCookie } from 'hono/cookie';
 import { renderPage } from '../render/layout.js';
 import { logAction } from '../lib/audit.js';
 import { fieldEffects } from '../lib/effects.js';
-import { setCurrentFestCookie } from '../lib/session.js';
 import { needsSignin, signinRedirect } from '../lib/guard.js';
 
 export const festivals = new Hono();
@@ -164,8 +163,6 @@ festivals.get('/f/:id', async (c) => {
     const festival = await loadFestival(c);
     if (!festival) return c.notFound();
     const db = c.env.DB;
-
-    setCurrentFestCookie(c, festival.id);
 
     const seenCookieName = `seen_fest_${festival.id}`;
     if (!getCookie(c, seenCookieName)) {

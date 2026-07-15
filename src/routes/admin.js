@@ -2,23 +2,41 @@ import { Hono } from 'hono';
 import { html } from 'hono/html';
 import { renderPage } from '../render/layout.js';
 import { verifyUnsubscribeToken } from '../lib/unsubscribe.js';
+import { needsSignin } from '../lib/guard.js';
 
 export const admin = new Hono();
 
 admin.get('/admin', async (c) => {
+    // Signed-in campers only. The site is open by design, but this page shows
+    // last-seen locations and devices — for friends' eyes, not anonymous scrapers.
+    // (/unsubscribe below stays anonymous on purpose: its token IS the auth.)
+    if (needsSignin(c)) return c.redirect(`/signin?next=${encodeURIComponent(c.req.path)}`);
     const db = c.env.DB;
-    const people = (await db.prepare('SELECT * FROM people ORDER BY last_seen_at DESC').all()).results;
+    // "Users on this computer" = anyone with an active membership somewhere or a
+    // live session. Removing a person from a fest bails their membership AND ends
+    // their sessions, so someone deleted from their only fest drops off this list;
+    // undoing the delete restores the membership and brings them back, and a fresh
+    // sign-in (session, no fest yet) still shows. Merged-away identities stay,
+    // annotated with where they went.
+    const people = (await db.prepare(`
+        SELECT p.* FROM people p
+        WHERE p.merged_into IS NOT NULL
+           OR (p.deleted_at IS NULL AND (
+                EXISTS (SELECT 1 FROM memberships m WHERE m.person_id = p.id AND m.bailed_at IS NULL)
+                OR EXISTS (SELECT 1 FROM sessions s WHERE s.person_id = p.id)))
+        ORDER BY p.last_seen_at DESC
+    `).all()).results;
     // For annotating merged-away identities with where they went.
     const nameById = new Map(people.map((p) => [p.id, p.display_name]));
 
-    const rows = [];
-    for (const p of people) {
-        const lastEvent = await db.prepare(`
+    // One last-event lookup per person, fired together instead of sequentially.
+    const rows = await Promise.all(people.map(async (p) => ({
+        p,
+        lastEvent: await db.prepare(`
             SELECT geo_city, geo_country, user_agent, created_at FROM audit_log
             WHERE person_id = ? ORDER BY created_at DESC LIMIT 1
-        `).bind(p.id).first();
-        rows.push({ p, lastEvent });
-    }
+        `).bind(p.id).first(),
+    })));
 
     const body = html`
     <div class="admin-console">
@@ -59,7 +77,9 @@ admin.get('/admin', async (c) => {
     </div>
   `;
 
-    return c.html(await renderPage(c, { title: 'Administrative Tools', body }));
+    // Titled like an XP MMC console ("Computer Management"), matching the
+    // Camper Management header inside.
+    return c.html(await renderPage(c, { title: 'Administrative Tools', windowTitle: 'Camper Management', body }));
 });
 
 admin.get('/unsubscribe/:personId/:token', async (c) => {
