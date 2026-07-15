@@ -1727,6 +1727,16 @@
      is always one tap away. */
   .sched-tile-artist { font-weight: bold; font-size: 0.8em; line-height: 1.08; overflow-wrap: break-word; }
   .sched-tile-time { font-size: 0.68em; color: #4a6a92; white-space: nowrap; }
+  /* Tiles too short for two lines (15-20 min slots — see TIGHT_TILE_H in
+     schedule.js): name only, shrunk, and clipped to the one line that fits rather
+     than wrapping out of the box. Everything comes back the moment it's expanded,
+     because then the card sizes to its content instead of to its duration. */
+  .sched-tile.tight .sched-tile-head { padding: 1px 4px; justify-content: center; }
+  .sched-tile.tight .sched-tile-artist { font-size: 0.6em; line-height: 1.0; overflow: hidden; letter-spacing: -0.01em; }
+  .sched-tile.tight:not(.expanded) .sched-tile-time,
+  .sched-tile.tight:not(.expanded) .sched-tile-who-inline { display: none; }
+  .sched-tile.tight.expanded .sched-tile-head { padding: 3px 6px; justify-content: flex-start; }
+  .sched-tile.tight.expanded .sched-tile-artist { font-size: 0.8em; line-height: 1.08; overflow: visible; }
   /* Interested names, right on the card face under the time. Wraps and is clipped
      by the card's height, so a short set shows as many as fit. */
   .sched-tile-who-inline { font-size: 0.64em; line-height: 1.2; color: #a06400; margin-top: 1px; overflow: hidden; word-break: break-word; }
@@ -1885,6 +1895,11 @@
     .sched-ruler { width: 46px; }
     .sched-col { width: 132px; }
     .sched-tile-artist { font-size: 0.78em; }
+    /* A 15-minute tile is the same 30px on a phone but the column is narrower, so
+       the name wraps sooner and needs to be smaller still to survive. Tiny is fine
+       here — it's a legible glance, and tapping opens the card at full size. */
+    .sched-tile.tight .sched-tile-artist { font-size: 0.54em; }
+    .sched-tile.tight.expanded .sched-tile-artist { font-size: 0.78em; }
     .sched-tile.expanded { width: min(230px, 86vw); }
     .import-time { flex-basis: 96px; }
     /* Days stay big enough to thumb; they get the row, Edit tucks under them. */

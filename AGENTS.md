@@ -25,8 +25,14 @@ that matter live** — everything else is inert scenery (`aria-hidden`,
 `span { pointer-events: none }`, e.g. Back/Forward/Print in Streets & Trips; the
 one live menu item is Edit). Users love discovering which parts work. Icons come
 from the local XP icon pack via `scripts/make-xp-icons.sh` — add a `resize` line
-there (source of truth), never hand-copy PNGs. Plenty of good icons remain unused
-in `~/Downloads/Windows XP High Resolution Icon Pack/`.
+there (source of truth), never hand-copy PNGs. The script **only builds what's
+missing**: `sips` re-encodes on every run and its output isn't byte-stable, so a
+full rebuild rewrites every PNG and turns a one-icon swap into a dozen bogus
+"modified" files. Force one with `./scripts/make-xp-icons.sh <name>` (or `FORCE=1`
+for all). It also means the script runs fine without the source pack on disk.
+Plenty of good icons remain unused in `~/Downloads/Windows XP High Resolution Icon
+Pack/` — and the names are literal, so shop by concept: Cars uses `Activation`
+(XP's product-key icon = keys).
 
 Real data beats fake data *inside* the fake chrome: the Streets & Trips map pane is
 a live OpenStreetMap embed; the status bar shows the real lat/lon parsed from the
@@ -37,14 +43,22 @@ the joke — lean into it.
 
 - **`public/retro.css`** — ALL the CSS (Luna theme). **`public/camp.js`** — ALL the
   client JS. Both static, loaded in `<head>`; camp.js deliberately has **no `defer`**.
-  Their URLs carry `?v=<deploy version>` (see Caching below).
+  Freshness is `public/_headers` (`no-cache` + ETag), NOT a URL stamp — see Caching.
 - **`src/render/layout.js`** — page shell (`renderPage`), taskbar, Start menu, ticker,
-  Rover, asset versioning. `renderPage` takes `pre:` for windows that render OUTSIDE
+  Rover, tab themes. `renderPage` takes `pre:` for windows that render OUTSIDE
   the main app window (Streets & Trips sits above Car Pool — two programs on the desktop).
+  htmx is **vendored** (`/htmx-1.9.12.min.js`, cached immutable), not a CDN link:
+  version lives in the filename, so upgrading = new file + new `<script src>`.
 - **`src/render/popup.js`** — shared window components (below). **`src/render/msn.js`**
-  — the MSN chat window. **`src/routes/*.js`** — one file per tab/feature.
+  — the MSN chat window; two shapes, inline `<details>` (items/cars) and `windowed`
+  (the Schedule tab pops it out as a real `xpPopup`). **`src/routes/*.js`** — one
+  file per tab/feature.
 - **`src/lib/`** — audit/undo (`audit.js`, `effects.js`), people/ghosts (`people.js`),
   sign-in guard (`guard.js`), comments, notify, **API budgets (`budget.js`)**.
+- **Schedule tab** — `routes/schedule.js` (grid, day buttons, import, edit) +
+  `lib/schedule.js` (time math; minutes-from-midnight, after-midnight = 1440+),
+  `lib/scheduleParse.js` (vision-parse a poster via OpenRouter),
+  `lib/scheduleShare.js` (publish/adopt), `lib/spotify.js` (artist links).
 
 ## ☠️ Gotchas that WILL waste your time
 
@@ -99,8 +113,32 @@ the joke — lean into it.
    which looks like a network/Tailscale problem, not the real cause. Check
    `lsof -iTCP:8787 -sTCP:LISTEN` before starting one.
 
-9. **Web fonts: never strip the name table, and a changed font needs a new
-   filename.** `pyftsubset --name-IDs=''` saves ~1KB and produces a font iOS
+9. **An htmx form must target the id its own RESPONSE carries.** The set-chat
+   compose form aimed at `#set-chat-N` (a wrapper) while the handler answered with
+   the inner `#set-chat-inner-N`. So the FIRST send worked and replaced the wrapper
+   with a div of a different id — and every send after that resolved to no target
+   and did nothing, with no error anywhere. Symptom: "I can only send one message,
+   then I have to reload." Rule: for `hx-swap="outerHTML"`, target === the id the
+   response's root element has, so the swap is repeatable.
+
+10. **A partial swap leaves the state OUTSIDE it stale.** The "you're going" tint
+    was a `mine` class on `.sched-tile`, but marking interest only swaps the actions
+    block *inside* the tile — so the tint only appeared after a reload. Don't reach
+    out and fix the ancestor from JS after the swap (ordering vs `afterSwap`/settle
+    is a trap); let the ancestor read the swapped content:
+    `.sched-tile:has(.sched-going)`. `:has()` matches on the DOM, not visibility, so
+    it works while the card is collapsed (`display:none`). Same idea for counts —
+    the card's "Chat (N)" button is re-emitted `hx-swap-oob` by the comment POST.
+
+11. **`a:visited` (0,1,1) OUTRANKS a bare class (0,1,0).** Any `<a>` styled as a
+    button must spell out `:visited` — `.sched-spotify, .sched-spotify:visited { … }`
+    (and `a.xp-startmenu-name`). Otherwise the global `a:visited { color:#551a8b }`
+    repaints the label the moment that link is opened. It presents as a *random*
+    bug ("this one button has black text") because it only hits links **you** have
+    clicked, and it can't reproduce in a fresh profile or curl.
+
+12. **Web fonts: never strip the name table, and a changed font needs a new
+    filename.** `pyftsubset --name-IDs=''` saves ~1KB and produces a font iOS
    Safari **silently rejects** — desktop Chrome tolerates it, so everything looks
    fine in every check except on the actual phone (see gotcha 4), and the color-
    emoji fallback masks the failure instead of showing tofu. Graceful fallbacks
@@ -138,11 +176,18 @@ shows the pattern for "a second window that takes over": server sets
 (`campStashSignin`/`campRestoreSignin`) instead of stacking.
 
 **Mobile (≤600px) rules**: CSS overrides JS popup placement entirely (`left/right
-12px !important`, `top: 48px !important`, full-width). Body height caps use **`dvh`,
-never `vh`** — iOS `vh` includes the collapsed toolbar, which pushes bottom buttons
-off the visible screen. Caption buttons grow to 30×27 (21px is well under Apple's
-44pt touch-target guideline). The Streets & Trips status bar drops its stop-count
-and coordinate cells.
+12px !important`, `top: 63px !important`, full-width) — those `!important`s beat the
+JS's inline style, which is the point. **Do not "fix" mobile popups to centre
+vertically like desktop.** It looks wrong for a short dialog and it is genuinely
+tempting, but every popup with a text field (rename, add person, chat, Spotify link)
+gets the keyboard thrown up under it, and a centred window is then shoved off the top
+of the screen. Pinned near the top is the only position that survives the keyboard.
+Body height caps use **`dvh`, never `vh`** — iOS `vh` includes the collapsed toolbar,
+which pushes bottom buttons off the visible screen. Caption buttons grow to 30×27
+(21px is well under Apple's 44pt touch-target guideline) — and any glyph drawn inside
+one must be centred from the middle out (`left:50%` + negative margin), never by
+offsets measured against the 21px desktop button, or it strands in the corner at the
+bigger size. The Streets & Trips status bar drops its stop-count and coordinate cells.
 
 ## 🏗️ Server patterns
 
@@ -178,7 +223,37 @@ and coordinate cells.
   addresses only — never reverse-geocode approximations** (people drive to these).
 - **Multi-select remove mode** (`camp.js`): button reveals per-row checkboxes
   (`.selecting` class), delegated handlers keep a count, confirm via server-rendered
-  `xpDialogPopup`. Two instances (ppl tab, car roster) — copy, don't invent.
+  `xpDialogPopup`. Three modes on the ppl tab (rename=1, merge=2, delete=n — the cap
+  is `campSelectCap`) plus the car roster. Copy, don't invent.
+- **Renaming a person touches their IDENTITY, not just a label.** For a real account
+  `normalized_name` IS the sign-in credential and the invariant is
+  `normalized_name === normalizeName(display_name)` (set at signup) — rename both or
+  the next sign-in under the new name silently creates a SECOND account. For a ghost
+  the synthetic `normalized_name` is meaningless; update `placeholder_key` instead,
+  or they'll never get absorbed. `normalized_name` is UNIQUE, so check for a clash
+  first and offer **Merge** — an uncaught clash is a 500.
+- **A poster name is not an artist name** (`splitArtists` in `lib/spotify.js`).
+  Measured against the real API, not assumed: `DJ DIESEL AKA SHAQ` searches to
+  "DIESEL" (a different act) so the alias must be stripped; `SULLIVAN KING b2b KAYZO`
+  returns whichever member Spotify ranks first, so a b2b **asks** which one via an
+  `xpDialogPopup`; a trailing `(SUNSET SET)` is a slot note, not a name. But
+  `RIVA + BIANCA` is an EXACT match — a real duo with its own page — so **`+` is
+  deliberately not a separator**. Splitting it "for symmetry" would break a name that
+  already works. When in doubt, probe the API (`scripts/probe-artist-names.mjs`)
+  rather than reason from the shape of the string.
+- **Spotify Web API, apps created after Nov 2024**: editorial/algorithmic playlists
+  ("This Is X") come back as `null` in search, `popularity`/`followers` are stripped
+  from search results, and `GET /v1/artists` is a flat 403. Search ORDER is the only
+  popularity signal you get — so "most popular" means "ranked first", with an exact
+  normalized-name match preferred over it.
+- **Poster vision parse** (`lib/scheduleParse.js`): strict `json_schema` structured
+  output, with a freeform retry for providers that reject `response_format` — the
+  prompt therefore has to carry a literal JSON example for that fallback path.
+  Extended thinking is on (`reasoning: { effort: 'medium' }`), which means **no
+  `temperature`** (Anthropic only accepts 1 with thinking) and `max_tokens` must
+  cover reasoning + answer from one pot. Measured: thinking composes fine with the
+  schema but changed nothing on our sample (37 sets either way, ~80-150 reasoning
+  tokens) — it's insurance for a messier poster, not a fix for a known miss.
 - **Personalize where cheap**: the Streets & Trips "1: Depart from …" leg reads the
   viewer's own car's `leaving_from` (`viewerDepartFrom`), falling back to "home".
 
@@ -204,10 +279,25 @@ and coordinate cells.
   content-hashing; don't resurrect the deploy-id stamp.) The art gets week-long
   caching — icon changes can be a week stale for old visitors; rename the file if
   a change must land instantly.
-- **Secrets** are `*_API_KEY` names (`wrangler secret put`, local in `.dev.vars`,
-  gitignored). Google key: GCP project `southern-sol-496313-g7`, key
-  `camp-planner-places`, restricted to Places API (New).
+- **Secrets**: the prod name must be **byte-identical to what the code reads** —
+  that's the whole rule. (Most are `*_API_KEY`, but that's a naming habit, not the
+  rule: `SPOTIFY_CLIENT_ID` / `SPOTIFY_CLIENT_SECRET` aren't.) `wrangler secret put`,
+  local in `.dev.vars`, gitignored. A mismatch is **silent** — the code sees
+  `!env.FOO` and takes the graceful path forever (misnamed `OPENROUTER` → every item
+  got the 📦 fallback and OpenRouter logs showed nothing from prod). After adding
+  one, `wrangler secret list` and eyeball the spelling against the source.
+  Google key: GCP project `southern-sol-496313-g7`, key `camp-planner-places`,
+  restricted to Places API (New).
 - Prod route: **`camp.cuuush.com/*`** (zone `cuuush.com`).
+- **`git fetch` BEFORE any manual `wrangler deploy`.** Deploy ships your working
+  tree, not `origin/main` — so a manual deploy from a stale checkout silently rolls
+  production BACKWARDS to whatever you last pulled. This happened: a deploy from a
+  local branch missing 8 upstream commits un-shipped the e-mail HTML-injection
+  escaping, HMAC unsubscribe tokens, `Secure` session cookies and the `/admin`
+  sign-in gate — prod ran unprotected until the merge landed. The normal path is to
+  **push and let CI deploy** (`.github/workflows/deploy.yml`: baseline → migrate →
+  deploy). If you must deploy by hand, `git fetch && git status` first and confirm
+  you are not behind.
 
 ## 🗣️ Copy voice: authentic Windows XP — NO EXCEPTIONS
 

@@ -26,6 +26,10 @@ export const schedule = new Hono();
 const HOUR_H = 88;
 const PX_PER_MIN = HOUR_H / 60;
 const MIN_TILE_H = 30;
+// At or below this height a tile shows the artist ONLY (see scheduleTile). 36px is
+// just under a 25-minute slot, so it catches the 15/20-minute oddities — an opening
+// ceremony, a B2B changeover — without touching a normal half-hour set.
+const TIGHT_TILE_H = 36;
 
 // ——— classic-XP "operation complete" notice, ridden along OOB into #popup-layer ———
 function successDialog({ title = 'Windows Media Player', icon = 'success', message }) {
@@ -46,6 +50,13 @@ function scheduleTile(festival, set, minMin, { edit = false } = {}) {
     const height = Math.max(MIN_TILE_H, Math.round((set.end_min - set.start_min) * PX_PER_MIN));
     const color = stageColor(set.stage, set.stage_order || 0);
     const style = `top:${top}px; height:${height}px; --stage:${color}`;
+    // A 15-minute slot ("Opening Ceremony") is MIN_TILE_H tall — ~24px of content
+    // once the head's padding is off. The artist line alone is ~13px and the time
+    // another ~11px, so they don't both fit, and a name that wraps to two lines
+    // bursts the tile. Below the cutoff the CSS shows the name only, smaller: the
+    // name is what you scan for, and the time is still on the ruler right beside it
+    // (and in the card once you open it, which restores everything).
+    const tight = height <= TIGHT_TILE_H;
 
     if (edit) {
         return html`
@@ -60,7 +71,7 @@ function scheduleTile(festival, set, minMin, { edit = false } = {}) {
     // Marking interest only swaps the actions block INSIDE this tile, so a class out
     // here would go stale until a reload — which is exactly what it used to do.
     return html`
-    <div class="sched-tile" id="set-tile-${set.id}" style="${style}">
+    <div class="sched-tile ${tight ? 'tight' : ''}" id="set-tile-${set.id}" style="${style}">
       <button type="button" class="sched-tile-head" onclick="campToggleSetTile(this)">
         <span class="sched-tile-artist">${set.artist}</span>
         <span class="sched-tile-time">${fmtSetRange(set.start_min, set.end_min)}</span>
