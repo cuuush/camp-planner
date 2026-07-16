@@ -264,18 +264,22 @@ function editBanner(festival, day) {
 // The big day switcher across the top — the primary control on the tab, so it's
 // large and tap-sized, and styled nothing like the small grey "Edit Schedule…"
 // button it sits beside. Swaps just the grid via htmx but keeps a real href, so
-// a day is still linkable/shareable and works without JS. Hidden when the sets
-// carry no day label at all (nothing to switch between).
+// a day is still linkable/shareable and works without JS.
+//
+// A button per day GROUP, including one whose day couldn't be read (empty label) —
+// otherwise importing a second, labeled day ("Saturday") would leave the first,
+// unlabeled day (a Friday poster that never printed its day) with no tab at all,
+// stranding its sets out of view as if they'd been overwritten. Only hidden when
+// there's a single unlabeled day: one day, no label, nothing to switch between.
 function dayButtons(festival, days, active, edit) {
-    const labeled = days.filter((d) => d);
-    if (!labeled.length) return '';
+    if (days.length < 2 && !days.some((d) => d)) return '';
     return html`
     <div class="sched-days">
-      ${labeled.map((d) => {
+      ${days.map((d) => {
         const q = encodeURIComponent(d);
         return html`<a class="sched-day ${d === active ? 'active' : ''}" href="/f/${festival.id}/schedule?day=${q}"
           hx-get="/f/${festival.id}/schedule/body?day=${q}${edit ? '&edit=1' : ''}" hx-target="#sched-body" hx-swap="outerHTML"
-          hx-push-url="/f/${festival.id}/schedule?day=${q}">${d}</a>`;
+          hx-push-url="/f/${festival.id}/schedule?day=${q}">${d || 'Set Times'}</a>`;
     })}
     </div>`;
 }
