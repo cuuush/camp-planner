@@ -60,15 +60,26 @@ export function minToClockFields(min) {
     return { time: `${String(h).padStart(2, '0')}:${String(mm).padStart(2, '0')}`, afterMidnight };
 }
 
-// The distinct day labels a fest has sets for, in schedule order (earliest start
-// first) so day tabs read Friday → Saturday → Sunday. A null/blank day sorts in as
-// '' and is rendered as a single untitled column set by the caller.
+// Weekday order for the day tabs. Monday-first, which keeps the common Thu→Sun
+// festival run in the right sequence.
+const WEEKDAY_RANK = { monday: 0, tuesday: 1, wednesday: 2, thursday: 3, friday: 4, saturday: 5, sunday: 6 };
+
+// The distinct day labels a fest has sets for, ordered by the actual week so day
+// tabs read Friday → Saturday → Sunday. Ordering by earliest start time (as this
+// once did) is wrong: a Saturday whose first set is 11:00 sorts ahead of a Friday
+// that opens at 11:15. Unknown or blank labels fall to the end, ordered by first
+// start; a null/blank day sorts in as '' and is rendered as an untitled column set.
 export async function loadDays(db, festivalId) {
     const rows = (await db.prepare(`
         SELECT COALESCE(day, '') AS day, MIN(start_min) AS first_min
         FROM schedule_sets WHERE festival_id = ? AND deleted_at IS NULL
-        GROUP BY COALESCE(day, '') ORDER BY first_min IS NULL, first_min, day
+        GROUP BY COALESCE(day, '')
     `).bind(festivalId).all()).results;
+    const rank = (d) => WEEKDAY_RANK[(d || '').trim().toLowerCase()] ?? 99;
+    rows.sort((a, b) =>
+        rank(a.day) - rank(b.day)
+        || (a.first_min ?? Infinity) - (b.first_min ?? Infinity)
+        || a.day.localeCompare(b.day));
     return rows.map((r) => r.day);
 }
 
