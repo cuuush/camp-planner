@@ -63,7 +63,7 @@ function scheduleTile(festival, set, minMin, { edit = false } = {}) {
         <button type="button" class="sched-tile editing" id="set-tile-${set.id}" style="${style}"
           hx-get="/f/${festival.id}/schedule/set/${set.id}/edit-window" hx-target="#popup-layer" hx-swap="beforeend">
           <span class="sched-tile-artist">${set.artist}</span>
-          <span class="sched-tile-time">${fmtSetRange(set.start_min, set.end_min)}</span>
+          <span class="sched-tile-time" data-start-min="${set.start_min}" data-end-min="${set.end_min}">${fmtSetRange(set.start_min, set.end_min)}</span>
           <span class="sched-tile-editcue">✎</span>
         </button>`;
     }
@@ -74,7 +74,7 @@ function scheduleTile(festival, set, minMin, { edit = false } = {}) {
     <div class="sched-tile ${tight ? 'tight' : ''}" id="set-tile-${set.id}" style="${style}">
       <button type="button" class="sched-tile-head" onclick="campToggleSetTile(this)">
         <span class="sched-tile-artist">${set.artist}</span>
-        <span class="sched-tile-time">${fmtSetRange(set.start_min, set.end_min)}</span>
+        <span class="sched-tile-time" data-start-min="${set.start_min}" data-end-min="${set.end_min}">${fmtSetRange(set.start_min, set.end_min)}</span>
         <span class="sched-tile-who-inline" id="set-who-${set.id}">${whoInline(set)}</span>
       </button>
       <div class="sched-tile-body">
@@ -201,7 +201,7 @@ function scheduleGrid(festival, sets, edit = false) {
                the same height as the stage headings beside it. -->
           <div class="sched-corner"></div>
           <div class="sched-ruler-body" style="height:${totalH}px">
-            ${hours.map((h) => html`<div class="sched-hour" style="top:${Math.round((h - minMin) * PX_PER_MIN)}px">${fmtHourLabel(h)}</div>`)}
+            ${hours.map((h) => html`<div class="sched-hour" data-hour-min="${h}" style="top:${Math.round((h - minMin) * PX_PER_MIN)}px">${fmtHourLabel(h)}</div>`)}
           </div>
         </div>
         <div class="sched-stages">
@@ -895,7 +895,7 @@ function importPreview(festival, groups, unreadable = 0) {
                 ${[...groupByStage(g.sets).entries()].map(([stage, sets]) => html`
                   <div class="import-stage">
                     <div class="import-stage-head" style="--stage:${stageColor(stage, sets[0].stage_order || 0)}">${stage || 'Set Times'}</div>
-                    ${sets.map((s) => html`<div class="import-row"><span class="import-time">${fmtSetRange(s.start_min, s.end_min)}</span><span class="import-artist">${s.artist}</span></div>`)}
+                    ${sets.map((s) => html`<div class="import-row"><span class="import-time" data-start-min="${s.start_min}" data-end-min="${s.end_min}">${fmtSetRange(s.start_min, s.end_min)}</span><span class="import-artist">${s.artist}</span></div>`)}
                   </div>`)}
               </div>
             </div>`)}
