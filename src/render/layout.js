@@ -85,25 +85,40 @@ async function dogAssistant(c, festival, person) {
           </ul>`;
     } else if (festival) {
         const db = c.env.DB;
-        const [driving, passRows] = await Promise.all([
-            // Only drivers owe a car pass, so only nag drivers about it.
-            db.prepare('SELECT 1 FROM cars WHERE festival_id = ? AND driver_person_id = ? AND deleted_at IS NULL')
-                .bind(festival.id, person.id).first(),
+        // Rover's fest-page reminders cost exactly two round trips, fired together so
+        // wall time is the slower one. This runs on EVERY festival page for every
+        // signed-in member, so every extra query here is latency on every navigation —
+        // hence the driver check, the schedule check and the interest check are folded
+        // into one single-row query rather than three separate ones.
+        const [passRows, flags] = await Promise.all([
             // Which default passes has this person actually checked off?
             db.prepare(`
                 SELECT t.label FROM checklist_tasks t
                 JOIN checklist_checks cc ON cc.task_id = t.id AND cc.person_id = ? AND cc.unchecked_at IS NULL
                 WHERE t.festival_id = ? AND t.is_default = 1 AND t.deleted_at IS NULL
             `).bind(person.id, festival.id).all().then((r) => r.results),
+            // One row, three yes/no flags (?1 = fest, ?2 = person): are they a driver
+            // (only drivers owe a car pass), does the fest have a schedule at all, and
+            // have they starred any set on it? On failure fall back to an empty row, so
+            // every flag reads falsy and Rover simply says nothing.
+            db.prepare(`
+                SELECT
+                  EXISTS(SELECT 1 FROM cars
+                         WHERE festival_id = ?1 AND driver_person_id = ?2 AND deleted_at IS NULL) AS driving,
+                  EXISTS(SELECT 1 FROM schedule_sets
+                         WHERE festival_id = ?1 AND deleted_at IS NULL) AS has_schedule,
+                  EXISTS(SELECT 1 FROM set_interests si
+                         JOIN schedule_sets ss ON ss.id = si.set_id
+                         WHERE ss.festival_id = ?1 AND si.person_id = ?2 AND si.deleted_at IS NULL) AS mine
+            `).bind(festival.id, person.id).first().catch(() => ({})),
         ]);
         const got = new Set(passRows.map((r) => (r.label || '').toLowerCase()));
         const needFestPass = !got.has('festival pass');
-        const needCarPass = !!driving && !got.has('car pass');
+        const needCarPass = !!(flags && flags.driving) && !got.has('car pass');
+        // Fest has set times posted, but this person hasn't starred a single act.
+        const needSchedulePick = !!(flags && flags.has_schedule && !flags.mine);
 
-        // All set (festival pass done; car pass done or not needed) → idle tips.
-        if (!needFestPass && !needCarPass) {
-            bubble = dogTip(festival);
-        } else {
+        if (needFestPass || needCarPass) {
             const passes = needCarPass
                 ? html`your <b>festival pass</b> and <b>car pass</b>`
                 : html`your <b>festival pass</b>`;
@@ -113,6 +128,19 @@ async function dogAssistant(c, festival, person) {
               <ul class="dog-links">
                 <li><a href="/f/${festival.id}/mine">Go to my checklist</a></li>
               </ul>`;
+        } else if (needSchedulePick) {
+            // Set times are up but this person hasn't starred anyone. Warm, cheery
+            // Rover-the-Search-Companion voice — greets them by name like the pass
+            // reminder above, offers a hand, no guilt about the empty schedule.
+            bubble = html`
+              <span class="dog-title">Who do you want to see?</span>
+              Hi ${person.display_name}! You haven't picked any sets yet. Pop open the <b>Schedule</b> and click <b>I'm Interested</b> next to the artists you love — camp planner will remember them for you and show your friends where to find you.
+              <ul class="dog-links">
+                <li><a href="/f/${festival.id}/schedule">Open the Schedule</a></li>
+              </ul>`;
+        } else {
+            // Passes done and at least one act starred → idle tips.
+            bubble = dogTip(festival);
         }
     } else {
         // Signed in but not on a fest page (the festival list, settings, …) —
