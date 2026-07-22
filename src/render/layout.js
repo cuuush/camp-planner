@@ -134,7 +134,7 @@ async function dogAssistant(c, festival, person) {
             // reminder above, offers a hand, no guilt about the empty schedule.
             bubble = html`
               <span class="dog-title">Who do you want to see?</span>
-              Hi ${person.display_name}! You haven't picked any sets yet. Pop open the <b>Schedule</b> and click <b>I'm Interested</b> next to the artists you love — camp planner will remember them for you and show your friends where to find you.
+              Hi there, ${person.display_name}! Let's plan your weekend together. Open up the <b>Schedule</b> and click <b>I'm Interested</b> on all your favorite artists — I'll keep track of every set for you, and your friends will know just where to find you!
               <ul class="dog-links">
                 <li><a href="/f/${festival.id}/schedule">Open the Schedule</a></li>
               </ul>`;
