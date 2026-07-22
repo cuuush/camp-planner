@@ -14,25 +14,26 @@ export function tickerHtml(entries) {
 }
 
 // Rover's idle chatter: once there's nothing important to say, he rotates through
-// XP-help-style tips instead of going quiet — feedback, the control panel, ghost
-// people, merging duplicates, the MSN emoticons, and one tip that is definitely
-// not a hint about what happens if you pet him five times (see public/camp.js).
-// Voice: authentic "click Start, and then click…" Windows XP help text.
+// helpful tips instead of going quiet: feedback, the control panel, ghost people,
+// merging duplicates, the MSN emoticons, and one tip that is definitely not a hint
+// about what happens if you pet him five times (see public/camp.js). Voice: Rover
+// himself, first-person and cheery, the way the XP Search Companion always talked.
+// No em dashes anywhere in his copy.
 function dogTip(festival) {
     const tips = [
         {
             title: 'Your opinion counts!',
-            body: html`camp planner is always looking for ways to improve. To report a problem or share an idea, click <b>Start</b>, and then click <b>Send Feedback</b>. Your report helps make camping better for everyone.`,
+            body: html`I'm always trying to make camp planner better, and I would love to hear from you. To report a problem or share an idea, click <b>Start</b>, and then click <b>Send Feedback</b>. Every note you send me helps!`,
             links: html`<li><a href="/feedback" hx-get="/feedback/window" hx-target="#popup-layer" hx-swap="beforeend">Send feedback now</a></li>`,
         },
         {
-            title: 'Personalize camp planner',
-            body: html`Did you know you can switch between 12-hour and 24-hour time, manage e-mail notifications, and turn confetti on or off? Click <b>Start</b>, and then click <b>Control Panel</b> to make camp planner truly yours.`,
+            title: "Let's make it yours",
+            body: html`Did you know I can switch between 12-hour and 24-hour time, look after your e-mail notifications, and even turn the confetti on or off? Click <b>Start</b>, and then click <b>Control Panel</b>, and we'll set everything up just the way you like it.`,
             links: html`<li><a href="/settings" hx-get="/settings/window" hx-target="#popup-layer" hx-swap="beforeend">Open Control Panel</a></li>`,
         },
         {
-            title: 'A blast from 2003',
-            body: html`The emoticons in every chat window are the original MSN Messenger graphics. Try typing <b>:)</b> or <b>(Y)</b> or <b>(8)</b> in a message. Some things never go out of style.`,
+            title: 'A blast from the past',
+            body: html`Here is a fun one for you: every chat window uses the original MSN Messenger emoticons. Try typing <b>:)</b> or <b>(Y)</b> or <b>(8)</b> in a message and watch what I do. Some things never go out of style!`,
         },
         {
             title: 'A note from Rover',
@@ -42,17 +43,17 @@ function dogTip(festival) {
     if (festival) {
         tips.push({
             title: 'Bringing a friend?',
-            body: html`You can add people who haven't signed up yet. Open <b>People</b>, click <b>Add Person</b>, and type their name. When they sign in with that name later, everything they were given links up automatically.`,
+            body: html`Did you know you can add people who haven't signed up yet? Just open <b>People</b>, click <b>Add Person</b>, and type their name. When they sign in with that name later, I'll link up everything they were given, all by myself.`,
             links: html`<li><a href="/f/${festival.id}/ppl">Open People</a></li>`,
         });
         tips.push({
             title: 'Seeing double?',
-            body: html`If a camper accidentally signs in under two different names, open <b>People</b>, click <b>Merge</b>, and select both entries. They will be combined into one camper, and nothing they did is lost.`,
+            body: html`Uh oh, did someone sign in under two different names? Not to worry. Open <b>People</b>, click <b>Merge</b>, and pick both entries, and I'll roll them into one camper without losing a single thing.`,
             links: html`<li><a href="/f/${festival.id}/ppl">Open People</a></li>`,
         });
         tips.push({
             title: 'Made a mistake? You can undo it!',
-            body: html`Almost everything that happens here is recorded and reversible. To take something back, open the <b>Log</b> and then click <b>undo</b> next to the entry. Changed your mind again? You can even undo an undo — click <b>redo</b> and it comes right back. Nothing is ever really lost.`,
+            body: html`Not to worry, I keep track of almost everything, and I can take it right back for you. Open the <b>Log</b> and click <b>undo</b> next to the entry. Changed your mind again? You can even undo an undo. Just click <b>redo</b> and it pops right back. Nothing is ever really lost!`,
             links: html`<li><a href="/f/${festival.id}/log">Open the Log</a></li>`,
         });
     }
@@ -78,8 +79,8 @@ async function dogAssistant(c, festival, person) {
         // sign-in also joins them). Pop the modal in place rather than navigating.
         const next = encodeURIComponent(c.req.path);
         bubble = html`
-          <span class="dog-title">Hi there — I'm Rover!</span>
-          It looks like you're just visiting. Sign in and you can claim what you're bringing and save a seat in a carpool.
+          <span class="dog-title">Hi there, I'm Rover!</span>
+          It looks like you're just visiting. Sign in and I'll help you claim what you're bringing and save you a seat in a carpool.
           <ul class="dog-links">
             <li><a href="/signin?next=${next}" hx-get="/signin/modal?next=${next}" hx-target="#signin-modal-overlay" hx-swap="innerHTML">Sign in &amp; join this fest</a></li>
           </ul>`;
@@ -124,17 +125,18 @@ async function dogAssistant(c, festival, person) {
                 : html`your <b>festival pass</b>`;
             bubble = html`
               <span class="dog-title">Hey ${person.display_name}!</span>
-              Did you remember to buy ${passes}? Once you've got ${needCarPass ? 'them' : 'it'}, check ${needCarPass ? 'them' : 'it'} off your list.
+              Have you picked up ${passes} yet? Once you've got ${needCarPass ? 'them' : 'it'}, just check ${needCarPass ? 'them' : 'it'} off your list and I'll mark you as all set.
               <ul class="dog-links">
                 <li><a href="/f/${festival.id}/mine">Go to my checklist</a></li>
               </ul>`;
         } else if (needSchedulePick) {
-            // Set times are up but this person hasn't starred anyone. Warm, cheery
-            // Rover-the-Search-Companion voice — greets them by name like the pass
-            // reminder above, offers a hand, no guilt about the empty schedule.
+            // Set times are up but this person hasn't starred anyone. Full XP Search
+            // Companion routine: Rover greets them, notices the gap, and OFFERS to help
+            // ("Would you like me to help?"), the way the real Search Companion always
+            // framed a task. Cheery, first person, no em dashes, no guilt.
             bubble = html`
               <span class="dog-title">Who do you want to see?</span>
-              Hi there, ${person.display_name}! Let's plan your weekend together. Open up the <b>Schedule</b> and click <b>I'm Interested</b> on all your favorite artists — I'll keep track of every set for you, and your friends will know just where to find you!
+              Hi there, ${person.display_name}! I noticed you haven't picked any sets yet. Would you like me to help? Just open the <b>Schedule</b> and click <b>I'm Interested</b> next to each artist you'd like to catch. I'll keep your whole lineup safe, and your friends will know right where to find you!
               <ul class="dog-links">
                 <li><a href="/f/${festival.id}/schedule">Open the Schedule</a></li>
               </ul>`;
