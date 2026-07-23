@@ -23,12 +23,12 @@ function dogTip(festival) {
     const tips = [
         {
             title: 'Your opinion counts!',
-            body: html`I'm always trying to make camp planner better, and I would love to hear from you. To report a problem or share an idea, click <b>Start</b>, and then click <b>Send Feedback</b>. Every note you send me helps!`,
+            body: html`Found a problem, or have a bright idea? Tell me all about it! Click <b>Start</b>, and then click <b>Send Feedback</b>, and I'll go fetch it straight to the folks who look after camp planner.`,
             links: html`<li><a href="/feedback" hx-get="/feedback/window" hx-target="#popup-layer" hx-swap="beforeend">Send feedback now</a></li>`,
         },
         {
             title: "Let's make it yours",
-            body: html`Did you know you can switch between 12-hour and 24-hour time, manage your e-mail notifications, and even turn the confetti on or off? Click <b>Start</b>, and then click <b>Control Panel</b>, and you can set it all up just the way you like it.`,
+            body: html`Did you know you can switch between 12-hour and 24-hour time, manage your e-mail notifications, and even turn the confetti on or off? Click <b>Start</b>, and then click <b>Control Panel</b>.`,
             links: html`<li><a href="/settings" hx-get="/settings/window" hx-target="#popup-layer" hx-swap="beforeend">Open Control Panel</a></li>`,
         },
         {
@@ -43,7 +43,7 @@ function dogTip(festival) {
     if (festival) {
         tips.push({
             title: 'Bringing a friend?',
-            body: html`Did you know you can add people who haven't signed up yet? Just open <b>People</b>, click <b>Add Person</b>, and type their name. When they sign in with that name later, I'll link up everything they were given, all by myself.`,
+            body: html`Bringing a friend who hasn't signed up yet? Open <b>People</b>, click <b>Add Person</b>, and type their name. That's all there is to it!`,
             links: html`<li><a href="/f/${festival.id}/ppl">Open People</a></li>`,
         });
         tips.push({
