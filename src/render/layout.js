@@ -125,7 +125,7 @@ async function dogAssistant(c, festival, person) {
                 : html`your <b>festival pass</b>`;
             bubble = html`
               <span class="dog-title">Hey ${person.display_name}!</span>
-              Have you picked up ${passes} yet? Once you've got ${needCarPass ? 'them' : 'it'}, just check ${needCarPass ? 'them' : 'it'} off your list and I'll mark you as all set.
+              Have you picked up ${passes} yet? Once you've got ${needCarPass ? 'them' : 'it'}, just check ${needCarPass ? 'them' : 'it'} off your list.
               <ul class="dog-links">
                 <li><a href="/f/${festival.id}/mine">Go to my checklist</a></li>
               </ul>`;
