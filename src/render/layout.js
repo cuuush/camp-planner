@@ -28,7 +28,7 @@ function dogTip(festival) {
         },
         {
             title: "Let's make it yours",
-            body: html`Did you know I can switch between 12-hour and 24-hour time, look after your e-mail notifications, and even turn the confetti on or off? Click <b>Start</b>, and then click <b>Control Panel</b>, and we'll set everything up just the way you like it.`,
+            body: html`Did you know you can switch between 12-hour and 24-hour time, manage your e-mail notifications, and even turn the confetti on or off? Click <b>Start</b>, and then click <b>Control Panel</b>, and you can set it all up just the way you like it.`,
             links: html`<li><a href="/settings" hx-get="/settings/window" hx-target="#popup-layer" hx-swap="beforeend">Open Control Panel</a></li>`,
         },
         {
