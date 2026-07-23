@@ -23,7 +23,7 @@ function dogTip(festival) {
     const tips = [
         {
             title: 'Your opinion counts!',
-            body: html`Found a problem, or have a bright idea? Tell me all about it! Click <b>Start</b>, and then click <b>Send Feedback</b>, and I'll go fetch it straight to the folks who look after camp planner.`,
+            body: html`Found a problem, or have a bright idea? Tell me all about it! Click <b>Start</b>, and then click <b>Send Feedback</b>.`,
             links: html`<li><a href="/feedback" hx-get="/feedback/window" hx-target="#popup-layer" hx-swap="beforeend">Send feedback now</a></li>`,
         },
         {
