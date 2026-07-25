@@ -1,6 +1,6 @@
 import { Hono } from 'hono';
 import { html } from 'hono/html';
-import { renderPage } from '../render/layout.js';
+import { renderPage, dogSlotOob } from '../render/layout.js';
 import { loadFestival } from '../lib/festival.js';
 import { logAction } from '../lib/audit.js';
 import { needsSignin, signinModalResponse } from '../lib/guard.js';
@@ -139,11 +139,17 @@ async function renderMineBody(c, festival) {
 mine.get('/f/:id/mine', async (c) => {
     const festival = await loadFestival(c);
     if (!festival) return c.notFound();
-    const { main, floating } = await renderMineBody(c, festival);
+    // Unawaited (split into two promises off the one call) so renderPage's chrome
+    // batch runs alongside these queries rather than after them.
+    const parts = renderMineBody(c, festival);
     // Signed in → no main window (bare): the mini windows ARE the page, and the
     // main window would just be an empty shell. Signed out it stays, holding the
     // sign-in card (and a guest's join banner always brings it back).
-    return c.html(await renderPage(c, { title: `${festival.name} — About Me`, festival, activeTab: 'mine', body: main, floating, bare: !!c.get('person') }));
+    return c.html(await renderPage(c, {
+        title: `${festival.name} — About Me`, festival, activeTab: 'mine',
+        body: parts.then((p) => p.main), floating: parts.then((p) => p.floating),
+        bare: !!c.get('person'),
+    }));
 });
 
 // Toggle your own checklist item from the "my list" tab. Same effect as the ppl
@@ -183,7 +189,10 @@ mine.post('/f/:id/mine/check/:taskId', async (c) => {
         summary: `${person.display_name} ${nowChecked ? 'checked off' : 'unchecked'} "${task.label}"`,
     });
 
-    return c.html(mineFragment(await renderMineBody(c, festival)));
+    // Checking off a PASS is exactly what silences Rover, so he has to be re-sent
+    // with this swap or the nag hangs around until a reload.
+    const [fragment, dog] = await Promise.all([renderMineBody(c, festival), dogSlotOob(c, festival)]);
+    return c.html(html`${mineFragment(fragment)}${dog}`);
 });
 
 // Anyone signed in can add a shared checklist item (it applies to everyone's list).

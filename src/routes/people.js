@@ -82,7 +82,8 @@ async function renderPplBody(c, festival) {
 people.get('/f/:id/ppl', async (c) => {
     const festival = await loadFestival(c);
     if (!festival) return c.notFound();
-    const body = await renderPplBody(c, festival);
+    // Unawaited: renderPage runs its own batch alongside these queries.
+    const body = renderPplBody(c, festival);
     return c.html(await renderPage(c, { title: `${festival.name} — People`, festival, activeTab: 'ppl', body }));
 });
 

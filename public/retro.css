@@ -30,8 +30,17 @@
     /* No-character way to ask for the pixel glyph over the system color emoji. */
     font-variant-emoji: text;
   }
+  /* The canvas colour — with viewport-fit=cover (layout.js) the wallpaper layer
+     covers the screen edges itself, so this is now only what shows during a
+     rubber-band overscroll, past where the wallpaper layer reaches. Sampled from
+     the top band of xp-bliss.jpg so an overscroll reads as "more sky" rather than
+     as a band of something else. (It can only match one end: pull the page down
+     and this meets the sky, push it up and it meets the grass — the top edge is
+     the one that's visible more often.) A background on <html> stops body's from
+     propagating to the canvas, so body must not set one. */
+  html { background: #5e8bee; }
   body {
-    background: #5b8f3a;
+    background: transparent;
     color: #000;
     font-family: Tahoma, Verdana, Arial, sans-serif;
     margin: 0;
@@ -42,38 +51,31 @@
      whole document height (so it blows up huge on long pages like the stuff
      tab); a position:fixed element is always viewport-sized and renders right.
 
-     Bled past the top and bottom on purpose. "Viewport-sized" on iOS means the
-     LAYOUT viewport: behind the Dynamic Island, and in the strip Safari's toolbar
-     vacates as you scroll, this layer simply stops — and what shows through is the
-     bare #5b8f3a below, i.e. a green band. Overhanging 120px means the wallpaper
-     is still under those strips. It only costs a slight zoom (cover re-fits to the
-     taller box) on a photo with nothing important at its edges. */
+     Bled past the top and bottom on purpose, so the wallpaper is still under the
+     strip Safari's toolbar vacates as you scroll and under the safe-area insets
+     that viewport-fit=cover (layout.js) hands us. The overhang only works BECAUSE
+     of viewport-fit=cover: without it the layout viewport stops at the safe area
+     and this layer has nowhere to overhang into. It costs a slight zoom (cover
+     re-fits to the taller box) on a photo with nothing important at its edges. */
   body::before {
     content: '';
     position: fixed;
-    left: 0; right: 0; top: -120px; bottom: -120px;
     z-index: -1;
-    background: #5b8f3a url('/xp-bliss.jpg') center center / cover no-repeat;
+    /* The insets are added ON TOP of the 120px bleed rather than assumed to be
+       inside it. With viewport-fit=cover a fixed element's containing block is
+       already the full screen, which makes these a no-op — but if the layout
+       viewport is still inset for any reason, this is what actually reaches the
+       strip behind the status bar instead of stopping short of it. */
+    top: calc(-120px - env(safe-area-inset-top, 0px));
+    bottom: calc(-120px - env(safe-area-inset-bottom, 0px));
+    left: calc(-1 * env(safe-area-inset-left, 0px));
+    right: calc(-1 * env(safe-area-inset-right, 0px));
+    background: #5e8bee url('/xp-bliss.jpg') center center / cover no-repeat;
   }
   a { color: #0000ee; text-decoration: underline; }
   a:visited { color: #551a8b; }
-  /* News ticker styled like an XP window status bar: the same flat Luna beige as
-     the window body, a thin sunken groove, and the headlines scrolling past in
-     dark-navy Tahoma. Lives at the very top of the window body. */
-  .marquee-wrap {
-    position: relative; display: flex; align-items: stretch;
-    background: #ece9d8;
-    border-bottom: 1px solid #aca899;
-    box-shadow: inset 0 -1px 0 #fff;
-    overflow: hidden; white-space: nowrap;
-    /* Bleed to the window body's top/left/right edges (its padding is 4px 6px 8px);
-       only the bottom keeps a gap before the tabs. */
-    margin: -4px -6px 10px;
-  }
-  .marquee-track { flex: 1 1 auto; overflow: hidden; align-self: center; padding: 4px 0; }
-  .marquee { display: inline-block; padding-left: 100%; animation-name: marquee; animation-timing-function: linear; animation-iteration-count: infinite; color: #0a246a; font-weight: bold; font-family: Tahoma, Verdana, sans-serif; font-size: 0.76em; }
-  @media (max-width: 600px) { .marquee { font-size: 0.53em; } }
-  @keyframes marquee { from { transform: translateX(0); } to { transform: translateX(-100%); } }
+  /* (The scrolling news marquee that lived at the top of every window body is
+     gone — it animated forever for content the Log tab already shows.) */
   button, select, input[type=submit] { font-family: inherit; }
 
   /* ——— The XP taskbar: topmost thing on the page. Green Start button on the
@@ -85,7 +87,15 @@
        follow --taskbar-h. Tune this for desktop, and the mobile override just below. */
     --taskbar-h: 32px;
     position: relative; z-index: 500;
-    display: flex; align-items: center; gap: 8px; height: var(--taskbar-h);
+    display: flex; align-items: center; gap: 8px;
+    /* viewport-fit=cover puts the top of <body> at the true top of the screen, so
+       the bar would otherwise start UNDER the status bar / Dynamic Island. Pad it
+       down by the inset and grow by the same amount — box-sizing is border-box
+       globally, so padding alone would eat the bar's height instead of adding to
+       it. The Luna gradient paints through the padding, so the notch strip just
+       looks like more taskbar. Zero on every desktop browser. */
+    padding-top: env(safe-area-inset-top, 0px);
+    height: calc(var(--taskbar-h) + env(safe-area-inset-top, 0px));
     background: linear-gradient(180deg,#1f2f86 0%,#4993e6 3%,#2b71e0 6%,#2663da 10%,#2157d6 24%,#2157d6 68%,#245ddb 86%,#1f4dc0 95%,#1941a5 100%);
     border-bottom: 1px solid #0a246a;
     box-shadow: inset 0 1px 0 rgba(255,255,255,0.25), 0 2px 5px rgba(0,0,0,0.35);
@@ -95,7 +105,10 @@
      AND down (blur), so it reads as a horizontal light streak sitting just below
      the bar's crest, like the sheen on the real Luna taskbar. */
   .xp-taskbar::before {
-    content: ''; position: absolute; left: 0; right: 0; top: 3px; height: 5px;
+    content: ''; position: absolute; left: 0; right: 0; height: 5px;
+    /* The sheen belongs on the BAR's crest, not the screen's — so it starts below
+       whatever safe-area padding pushed the bar down. */
+    top: calc(3px + env(safe-area-inset-top, 0px));
     background: linear-gradient(180deg,
       rgba(140,200,255,0) 0%, rgba(150,212,255,0.85) 50%, rgba(140,200,255,0) 100%);
     filter: blur(2px); pointer-events: none; z-index: 0;
@@ -189,46 +202,139 @@
   .title-gap { height: 58px; }
   @media (max-width: 600px) { .title-gap { height: 40px; } }
 
-  /* Rover the Search Companion: an authentic XP touch. The tip sits in a blue
-     rounded speech box (light-blue fill, white outline) and the dog sits just
-     below it, with a downward tail on the box's lower-left pointing at the dog. */
+  /* Rover the Search Companion, docked bottom-right like a tray notification.
+     Collapsed he is just the dog; click him and the balloon pops out ABOVE him,
+     right-aligned, its tail hanging off the lower-RIGHT so it points down at his
+     head. He's fixed, so he costs the page no layout at all — which is the whole
+     reason he moved here (he used to sit above the content and push it down).
+     z-index sits under the taskbar (500) and popups (1000): a real window always
+     wins over the dog. */
   .dog-assistant {
-    max-width: 900px; width: calc(100% - 44px); margin: 12px auto 0;
-    display: flex; flex-direction: column; align-items: flex-start; gap: 0;
+    position: fixed; right: 12px; z-index: 400;
+    bottom: calc(10px + env(safe-area-inset-bottom, 0px));
+    display: flex; flex-direction: column; align-items: flex-end;
+    pointer-events: none;                /* wallpaper behind him stays clickable */
   }
+  /* Rover is a dog, not a button — strip the Luna chrome completely. `box-shadow`
+     is the one that bites: the global button rule's `inset 0 0 0 1px #fff` drew a
+     white rounded rectangle around him that read as a matte baked into dog.webp
+     (it isn't — the art is properly transparent). border-radius goes too, so no
+     rounded corner survives on the hit area. */
+  /* :hover/:active must be spelled out — `button:hover` (0,1,1) OUTRANKS a bare
+     `.dog-btn` (0,1,0), so resetting only the base state left the Luna hot-track
+     to redraw the white ring the moment the pointer touched him. Same trap as the
+     a:visited one in AGENTS.md. */
+  .dog-btn, .dog-btn:hover, .dog-btn:active, .dog-btn:focus, .dog-btn:focus-visible {
+    pointer-events: auto; background: none; border: 0; padding: 0; margin: 0;
+    box-shadow: none; border-radius: 0; outline: none;
+    -webkit-appearance: none; appearance: none;
+    line-height: 0; cursor: pointer;
+    /* Tapping him must not flash anything. Three separate highlights to kill:
+       iOS's grey tap flash, the blue selection the tap-and-hold puts on the
+       image, and the long-press save-image callout. */
+    -webkit-tap-highlight-color: transparent;
+    -webkit-user-select: none; user-select: none; -webkit-touch-callout: none;
+  }
+  .dog-img { -webkit-user-drag: none; user-select: none; -webkit-user-select: none; }
   .dog-bubble {
-    position: relative; align-self: stretch; min-width: 0;
+    pointer-events: auto; display: none;
+    position: relative; width: 320px; max-width: calc(100vw - 26px);
+    margin: 0 4px 30px 0;                /* 30px of room for the tail + a gap */
     background: #d8dff5;                 /* light blue inside (rgb 216,223,245) */
     border: 2px solid #ffffff;           /* white outline */
     border-radius: 12px;
     padding: 11px 15px; font-size: 0.9em; color: #14396e; line-height: 1.42;
     box-shadow: 0 3px 7px rgba(0,0,20,0.28);
   }
-  /* Speech-bubble tail: a real triangle hanging from the box's lower-left. Its two
+  /* Open. The balloon snaps out from the tail corner in four discrete sizes —
+     steps(), not an ease, so it reads as 2003 software rather than 2026 spring
+     physics (same reason the hop below is stepped). */
+  .dog-assistant.open .dog-bubble { display: block; animation: dog-pop 0.16s steps(4, end) both; }
+  @keyframes dog-pop { from { transform: scale(0.25); transform-origin: 88% 100%; } to { transform: scale(1); transform-origin: 88% 100%; } }
+  /* Speech-bubble tail: a real triangle hanging from the box's lower-right. Its two
      top points A,B sit on the box's bottom edge, the tip C drops below and toward B,
      aimed at the dog below. The two pseudo-elements share one frame whose top 3px
-     overlap into the box. The white FILL... wait: the light-blue FILL triangle (in
-     front) is drawn so it covers the box's bottom border between A and B — so the
-     white outline appears to BREAK there and continue down the two slanted sides,
-     while the white outline triangle behind supplies those slanted edges. */
+     overlap into the box. The light-blue FILL triangle (in front) is drawn so it
+     covers the box's bottom border between A and B — so the white outline appears
+     to BREAK there and continue down the two slanted sides, while the white outline
+     triangle behind supplies those slanted edges. Coordinates are mirrored (x' =
+     28 - x) from the original left-hand tail, since the dog is now on the right. */
   .dog-bubble::before, .dog-bubble::after {
-    content: ''; position: absolute; left: 22px; bottom: -34px; width: 28px; height: 37px;
+    content: ''; position: absolute; right: 14px; bottom: -34px; width: 28px; height: 37px;
   }
-  /* white outline triangle (behind): A(2,3) B(19.6,3), tip C(18,35) — a long tail
-     with B pulled left so the right edge is near-vertical (like XP's Rover bubble). */
-  .dog-bubble::before { background: #ffffff; clip-path: polygon(2px 3px, 19.6px 3px, 18px 35px); }
-  /* light-blue fill (front): the outline triangle offset inward a true ~1px
+  /* white outline triangle (behind): A(26,3) B(8.4,3), tip C(10,35) — a long tail
+     with B pulled right so the left edge is near-vertical (like XP's Rover bubble). */
+  .dog-bubble::before { background: #ffffff; clip-path: polygon(26px 3px, 8.4px 3px, 10px 35px); }
+  /* light-blue fill (front): the outline triangle offset inward a true 2px
      PERPENDICULAR to the A→C and C→B edges (not a fixed x/y shift), so the white
-     border stays a constant 1px width all the way down to the tip. Its top sits at
-     y=1 (up inside the box) to hide the box's bottom border between A and B. */
-  .dog-bubble::after { background: #d8dff5; clip-path: polygon(2.12px 1px, 18.7px 1px, 17.19px 31.14px); }
+     border keeps a constant 2px width all the way to the tip — matching the 2px
+     border around the box itself, which is the thickness it has to be. (It was 1px
+     and visibly thinner than the box outline.) The inset also shortens the tail:
+     the two offset edges now meet at y=27.29 instead of 35. Its top sits at y=1
+     (up inside the box) to hide the box's bottom border between A and B. */
+  .dog-bubble::after { background: #d8dff5; clip-path: polygon(24.764px 1px, 10.303px 1px, 11.617px 27.293px); }
+  /* ——— Rover's idle attention loop ————————————————————————————————————
+     ONE 10s cycle shared by the dog and his exclamation marks, so the two never
+     collide: he hops at the top of the cycle, the marks pop at the halfway point,
+     and the effect you see alternates hop → alert → hop → alert every 5s.
+     Everything is stepped (`steps(1, end)`: each keyframe HOLDS, then jumps) —
+     XP's helper sprites were drawn frames at a low frame rate, not tweens, so
+     easing anything here would read as 2026. Both start `--dog-idle-delay` after
+     load, so the page settles before the dog starts asking for attention. ——— */
+  .dog-assistant { --dog-idle-cycle: 10s; --dog-idle-delay: 5s; }
   .dog-img {
-    width: 66px; height: auto; margin: 30px 0 0 34px; image-rendering: auto;
-    filter: drop-shadow(1px 2px 2px rgba(0,0,0,0.3));
-    /* Nudge the dog toward the bubble tail: half his own width right, a quarter
-       of his own height up. The standalone translate property (not transform)
-       so the pet-wiggle animation's transform doesn't stomp it mid-wiggle. */
-    translate: 50% -25%;
+    display: block; width: 66px; height: auto; image-rendering: auto;
+    filter: drop-shadow(1px 2px 3px rgba(0,0,0,0.4));
+    /* Double hop: up 10px, down, up, down — four holds of 100–150ms, then still
+       for the rest of the cycle. */
+    animation: dog-hop var(--dog-idle-cycle) steps(1, end) var(--dog-idle-delay) infinite;
+  }
+  @keyframes dog-hop {
+    0%   { transform: translateY(0); }
+    1%   { transform: translateY(-10px); }
+    2.5% { transform: translateY(0); }
+    4%   { transform: translateY(-10px); }
+    5.5% { transform: translateY(0); }
+    100% { transform: translateY(0); }
+  }
+  /* The two exclamation marks, one either side of his head, each leaning AWAY
+     from the dog (`--tilt`). Drawn, not typed: two hard-edged gradient blocks —
+     a 4px stem and a 4px dot under it — so they're literally pixel rectangles at
+     any zoom, with a hard offset shadow for that pixel-art drop shadow. Amber on
+     navy is the XP warning palette. */
+  .dog-btn { position: relative; }
+  .dog-btn::before, .dog-btn::after {
+    content: ''; position: absolute; pointer-events: none;
+    width: 4px; height: 19px; opacity: 0;
+    background:
+      linear-gradient(#ffd21e, #ffd21e) 0 0 / 4px 12px no-repeat,
+      linear-gradient(#ffd21e, #ffd21e) 0 15px / 4px 4px no-repeat;
+    filter: drop-shadow(2px 2px 0 rgba(0,0,40,0.55));
+    animation: dog-alert var(--dog-idle-cycle) steps(1, end) var(--dog-idle-delay) infinite;
+  }
+  /* Sat outside the button box on the left — inside it, the mark landed on his ear. */
+  .dog-btn::before { left: -5px; top: 6px; --tilt: -20deg; }
+  /* A beat behind its twin, so they land one-two instead of as a matched pair. */
+  .dog-btn::after  { right: 1px; top: 3px;  --tilt: 20deg;
+    animation-delay: calc(var(--dog-idle-delay) + 0.12s); }
+  /* Pops in at the cycle's halfway mark (5s after the hop), holds ~0.7s, pops out.
+     Two scale steps on the way in and one on the way out = a 3-frame sprite. */
+  @keyframes dog-alert {
+    0%,  49%  { opacity: 0; transform: rotate(var(--tilt)) scale(0.2); }
+    50%       { opacity: 1; transform: rotate(var(--tilt)) scale(0.6); }
+    52%, 57%  { opacity: 1; transform: rotate(var(--tilt)) scale(1); }
+    58%       { opacity: 1; transform: rotate(var(--tilt)) scale(0.6); }
+    59%, 100% { opacity: 0; transform: rotate(var(--tilt)) scale(0.2); }
+  }
+  /* Nothing to advertise once the balloon is open — he holds still while you read.
+     Must come BEFORE .dog-img.petted (equal specificity, later wins) so petting
+     an open Rover still wiggles him. */
+  .dog-assistant.open .dog-img { animation: none; }
+  .dog-assistant.open .dog-btn::before, .dog-assistant.open .dog-btn::after { animation: none; opacity: 0; }
+  @media (prefers-reduced-motion: reduce) {
+    .dog-img { animation: none; }
+    .dog-btn::before, .dog-btn::after { animation: none; opacity: 0; }
+    .dog-assistant.open .dog-bubble { animation: none; }
   }
   .dog-bubble b { color: #0a246a; }
   .dog-title { font-weight: bold; color: #0a246a; display: block; margin-bottom: 2px; }
@@ -237,8 +343,11 @@
   .dog-links { list-style: none; margin: 9px 0 1px; padding: 0; }
   .dog-links li { margin: 6px 0; }
   .dog-links a { display: flex; align-items: flex-start; gap: 9px; color: #0a3d91; font-weight: normal; text-decoration: none; }
+  /* Mirrored (flipped about its vertical axis) now that Rover and his balloon tail
+     live on the right-hand side — the arrow leans back toward the dog instead of
+     away off the screen edge. */
   .dog-links a::before { content: ''; flex: 0 0 auto; width: 18px; height: 18px; margin-top: 1px;
-    background: url(/arrow.png) center/contain no-repeat; }
+    background: url(/arrow.png) center/contain no-repeat; transform: scaleX(-1); }
   .dog-links a:hover { color: #1a52c8; text-decoration: underline; }
   @media (max-width: 600px) { .dog-img { width: 52px; } .dog-bubble { font-size: 0.85em; } }
   /* Rover reacts to being petted (clicked). What happens on the fifth pet is
@@ -259,20 +368,25 @@
   @media (max-width: 600px) { .xp-bsod { font-size: 10px; padding: 18px 12px; } }
   .xp-bsod-cursor { animation: bsod-blink 1s steps(1) infinite; }
   @keyframes bsod-blink { 50% { opacity: 0; } }
-  /* ——— The section switcher: a centered row of real XP desktop icons sitting
-     directly on the Bliss wallpaper above the windows (it replaced the old tab
-     control). Authentic desktop-icon anatomy: 40px icon art with a soft drop
+  /* ——— The section switcher: real XP desktop icons sitting directly on the Bliss
+     wallpaper above the windows (it replaced the old tab control). Laid out on the
+     desktop's own icon GRID — uniform 76px cells packed from the left edge with no
+     gutters between them, exactly like Arrange Icons By ▸ Name — rather than as a
+     centred row. Authentic desktop-icon anatomy: 32px icon art with a soft drop
      shadow, an 11px Tahoma label in white with the desktop's dark text shadow,
-     hover underlines like XP's single-click web view. ——— */
+     hover underlines like XP's single-click web view. The cell is deliberately
+     tighter than it was: this row is the first thing on the page now, so every
+     pixel it gives back is a pixel of actual content above the fold. ——— */
   .desktop-icons {
-    display: flex; justify-content: center; align-items: flex-start; gap: 10px;
-    max-width: 900px; width: calc(100% - 44px); margin: 18px auto 0;
+    display: flex; flex-wrap: wrap; justify-content: flex-start; align-items: flex-start;
+    gap: 4px 0;
+    max-width: 900px; width: calc(100% - 44px); margin: 0 auto 10px;
   }
   .desk-icon {
-    display: flex; flex-direction: column; align-items: center; gap: 5px;
-    width: 84px; padding: 3px 2px 4px; text-decoration: none;
+    display: flex; flex-direction: column; align-items: center; gap: 4px;
+    width: 76px; padding: 2px 2px 3px; text-decoration: none;
   }
-  .desk-icon-img { position: relative; width: 46px; height: 46px; }
+  .desk-icon-img { position: relative; width: 34px; height: 34px; }
   .desk-icon-img img { width: 100%; height: 100%; object-fit: contain; display: block;
     filter: drop-shadow(1px 2px 2px rgba(0,0,30,0.45)); }
   .desk-icon-label {
@@ -293,10 +407,13 @@
   .desk-icon.active .desk-icon-label {
     background: #316ac5; text-shadow: none; border-color: #9ec1f0;
   }
+  /* Phones: the five cells have to stay on ONE row (a wrapped second row costs
+     more height than the tighter icons save), so the cell shrinks to fit the
+     narrowest phone — 5 × 66px + the 24px page gutters clears 360px. */
   @media (max-width: 600px) {
-    .desktop-icons { gap: 2px; }
-    .desk-icon { width: 62px; }
-    .desk-icon-img { width: 34px; height: 34px; }
+    .desktop-icons { width: calc(100% - 24px); margin: 0 auto 8px; }
+    .desk-icon { width: 66px; }
+    .desk-icon-img { width: 30px; height: 30px; }
     .desk-icon-label { font-size: 10px; }
   }
   /* "you're not on the list yet" prompt — an XP info bar above the tab body. */
@@ -386,7 +503,9 @@
   .divider { text-align: center; color: #0a246a; margin: 14px 0; font-weight: bold; font-family: var(--fun-font); }
   /* The old GeoCities webring footer is gone (off-theme for XP); all we need at the
      bottom is a little breathing room below the last card. */
-  .site-foot-space { height: 40px; }
+  /* Breathing room under the last window — plus the home-indicator inset, which
+     viewport-fit=cover now makes ours to account for. */
+  .site-foot-space { height: calc(40px + env(safe-area-inset-bottom, 0px)); }
   .hitcounter { font-family: 'Courier New', monospace; background: #000; color: #00ff2a; padding: 2px 8px; border: 2px inset #888; letter-spacing: 2px; }
   input[type=text], input[type=number], input[type=email], select, textarea {
     background: #fff; border: 1px solid #7f9db9; padding: 5px 8px; font-family: inherit; border-radius: 0; color: #000;

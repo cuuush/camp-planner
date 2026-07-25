@@ -44,23 +44,26 @@ async function itemStats(db, item) {
     return { pledges, pledgedQty, voteCount: votes.length, voterIds: votes.map((v) => v.person_id), comments, adderName: adder ? adder.display_name : null };
 }
 
-// The whole list's stats in one parallel burst of four festival-wide queries,
-// instead of four queries PER item (the old N+1: a 20-item page spent ~80
-// sequential D1 round trips here alone). Returns a Map keyed by item id with
-// the same shape itemStats() produces.
-async function allItemStats(db, festivalId, items) {
-    const [pledges, votes, comments, adders] = await Promise.all([
+// The item rows AND the whole list's stats in ONE D1 round trip: five
+// festival-wide statements in a single db.batch(), instead of four queries PER
+// item (the old N+1: a 20-item page spent ~80 sequential D1 round trips here
+// alone) and then instead of items-first-then-stats (the stats only need the
+// festival id, never the rows, so waiting for the rows was a wasted hop).
+// Returns { rows, statsById } — statsById has the same shape itemStats() produces.
+async function loadItemsWithStats(db, festivalId) {
+    const [items, pledges, votes, comments, adders] = (await db.batch([
+        db.prepare('SELECT * FROM items WHERE festival_id = ? AND deleted_at IS NULL').bind(festivalId),
         db.prepare(`
             SELECT p.id, p.qty, p.person_id, p.item_id, pe.display_name FROM pledges p
             JOIN people pe ON pe.id = p.person_id
             JOIN items i ON i.id = p.item_id
             WHERE i.festival_id = ? AND p.deleted_at IS NULL ORDER BY p.created_at
-        `).bind(festivalId).all().then((r) => r.results),
+        `).bind(festivalId),
         db.prepare(`
             SELECT v.item_id, v.person_id FROM votes v
             JOIN items i ON i.id = v.item_id
             WHERE i.festival_id = ? AND v.deleted_at IS NULL
-        `).bind(festivalId).all().then((r) => r.results),
+        `).bind(festivalId),
         // Mirrors loadComments() (columns + INNER JOIN people + created_at order),
         // just fetched for every item of the fest at once.
         db.prepare(`
@@ -69,13 +72,13 @@ async function allItemStats(db, festivalId, items) {
             JOIN items i ON i.id = cm.target_id
             WHERE cm.target_type = 'item' AND i.festival_id = ? AND cm.deleted_at IS NULL
             ORDER BY cm.created_at
-        `).bind(festivalId).all().then((r) => r.results),
+        `).bind(festivalId),
         db.prepare(`
             SELECT i.id AS item_id, pe.display_name FROM items i
             JOIN people pe ON pe.id = i.added_by
             WHERE i.festival_id = ?
-        `).bind(festivalId).all().then((r) => r.results),
-    ]);
+        `).bind(festivalId),
+    ])).map((r) => r.results);
 
     const byItem = new Map(items.map((item) => [item.id,
         { pledges: [], pledgedQty: 0, voteCount: 0, voterIds: [], comments: [], adderName: null }]));
@@ -91,7 +94,7 @@ async function allItemStats(db, festivalId, items) {
         if (s) s.adderName = a.display_name;
     }
     for (const s of byItem.values()) s.pledgedQty = s.pledges.reduce((sum, p) => sum + p.qty, 0);
-    return byItem;
+    return { rows: items, statsById: byItem };
 }
 
 function itemRow(festival, item, stats, person, expanded = false, chatOpen = false) {
@@ -225,9 +228,7 @@ async function itemListFragment(c, festival) {
     const sort = c.req.query('sort') || 'votes';
     const expand = c.req.query('expand') || '';
 
-    const rows = (await db.prepare('SELECT * FROM items WHERE festival_id = ? AND deleted_at IS NULL').bind(festival.id).all()).results;
-
-    const statsById = await allItemStats(db, festival.id, rows);
+    const { rows, statsById } = await loadItemsWithStats(db, festival.id);
     const withStats = rows.map((item) => ({ item, stats: statsById.get(item.id) }));
 
     const bySort = (a, b) => (sort === 'name'
@@ -322,7 +323,8 @@ async function renderStuffBody(c, festival) {
 items.get('/f/:id/stuff', async (c) => {
     const festival = await loadFestival(c);
     if (!festival) return c.notFound();
-    const body = await renderStuffBody(c, festival);
+    // Unawaited: renderPage runs its own batch alongside these queries.
+    const body = renderStuffBody(c, festival);
     return c.html(await renderPage(c, { title: `${festival.name} — Stuff`, festival, activeTab: 'stuff', body }));
 });
 

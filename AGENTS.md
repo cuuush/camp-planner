@@ -44,9 +44,10 @@ the joke — lean into it.
 - **`public/retro.css`** — ALL the CSS (Luna theme). **`public/camp.js`** — ALL the
   client JS. Both static, loaded in `<head>`; camp.js deliberately has **no `defer`**.
   Freshness is `public/_headers` (`no-cache` + ETag), NOT a URL stamp — see Caching.
-- **`src/render/layout.js`** — page shell (`renderPage`), taskbar, Start menu, ticker,
-  Rover, tab themes. `renderPage` takes `pre:` for windows that render OUTSIDE
-  the main app window (Streets & Trips sits above Car Pool — two programs on the desktop).
+- **`src/render/layout.js`** — page shell (`renderPage`), taskbar, Start menu,
+  desktop icons, Rover, tab themes. `renderPage` takes `pre:` for windows that render
+  OUTSIDE the main app window (Streets & Trips sits above Car Pool — two programs on
+  the desktop). **Pass `body`/`pre`/`floating` UNAWAITED** — see Server patterns.
   htmx is **vendored** (`/htmx-1.9.12.min.js`, cached immutable), not a CDN link:
   version lives in the filename, so upgrading = new file + new `<script src>`.
 - **`src/render/popup.js`** — shared window components (below). **`src/render/msn.js`**
@@ -191,6 +192,22 @@ bigger size. The Streets & Trips status bar drops its stop-count and coordinate 
 
 ## 🏗️ Server patterns
 
+- **Page loads are latency-bound, not CPU-bound.** Every D1 statement is a network
+  round trip; the render itself is free by comparison. Two rules follow:
+  1. **Hand `renderPage` the body UNAWAITED** — `body: renderStuffBody(c, festival)`,
+     not `body: await renderStuffBody(...)`. It fires its own chrome batch first and
+     awaits `[chrome, body, pre, floating]` together, so the shell's queries overlap
+     the body's. Adding an `await` back at a call site silently re-serialises them:
+     the page still works, it's just a whole round trip slower, and nothing fails.
+     `pre`/`floating` take promises too (see `rides.js`, `mine.js`).
+  2. **Independent statements go in ONE `db.batch([...])`**, not N concurrent
+     `.all()`s — one request instead of N (`loadChrome` in `layout.js`,
+     `loadItemsWithStats` in `items.js`). D1 runs a batch's statements in series,
+     which is the right trade only while the queries are small; if one ever grows
+     expensive, split it back out. A batch fails as a UNIT, so wrap it in a
+     try/catch that degrades to safe defaults instead of per-statement `.catch()`.
+  Prefer answering a question in SQL over fetching rows to sift in JS —
+  `passStatement` is three `EXISTS` in one row where two queries used to be.
 - **Every mutation goes through `logAction`** (`src/lib/audit.js`). It auto-creates
   membership ("doing anything on a fest joins you") — one chokepoint, don't sprinkle
   join logic in routes.
@@ -201,7 +218,7 @@ bigger size. The Streets & Trips status bar drops its stop-count and coordinate 
   in the row and in the effect must be byte-identical** or undo silently skips
   (`changed_since`). Never call `sqlNow()` twice in one action.
 - **No-op saves are not updates**: if `before` equals `after`, skip the UPDATE and
-  the `logAction` entirely (no audit spam, no ticker noise) — see `POST /f/:id/meet`.
+  the `logAction` entirely (no audit spam, no Log noise) — see `POST /f/:id/meet`.
 - **Ghost people** (`src/lib/people.js`): `is_placeholder=1`, synthetic unique
   `normalized_name`, `placeholder_key` = normalized display name; absorbed into the
   real account on first login. **Person delete = soft-hide manifest**
@@ -314,7 +331,11 @@ until yes.
   Search Companion question ("Where is everyone meeting up?") then explain.
 - **Placeholders are SAMPLE VALUES**, never instructions: `Redmond, WA`,
   `9:00 AM`, `Thu`, `Type their name`. No meta-hints like "blank = idk".
-- **Help/tips**: the cheery "click **Start**, and then click…" voice (see `dogTip`).
+- **Help/tips**: the cheery "click **Start**, and then click…" voice (see
+  `dogAssistant`). Rover is a NOTIFICATION, not a mascot: he renders only when
+  something is undone (not signed in; passes unbought). The old rotating tip pool
+  is gone — do not add "did you know" chatter that pushes the page down to say
+  nothing.
 - Fun stays fun (tab names, Rover, BSOD) — but frame jokes in XP phrasing, never
   lowercase internet-casual.
 

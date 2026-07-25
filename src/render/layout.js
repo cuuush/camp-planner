@@ -2,73 +2,78 @@ import { html, raw } from 'hono/html';
 import { PIXMOJI_COVERED_RANGES } from './pixmoji-coverage.js';
 import { xpCaptionBtns } from './popup.js';
 
-export function tickerHtml(entries) {
-    if (!entries || !entries.length) {
-        return html`<div class="marquee-wrap"><div class="marquee-track"><span class="marquee" style="animation-duration:20s">There are no announcements to display. Be the first to do something!</span></div></div>`;
-    }
-    const text = entries.map((e) => e.summary).join('   ·   ');
-    // Duration scales with content length so the scroll speed (px/sec) stays roughly
-    // constant instead of whipping faster as more news accumulates.
-    const duration = Math.max(25, Math.round(text.length / 6));
-    return html`<div class="marquee-wrap"><div class="marquee-track"><span class="marquee" style="animation-duration:${duration}s">${text}&nbsp;&nbsp;·&nbsp;&nbsp;${text}</span></div></div>`;
+// The scrolling news marquee that used to sit at the top of every window body is
+// gone (along with tickerHtml() and its `SELECT … FROM audit_log ORDER BY
+// created_at DESC LIMIT 15` on every fest page). It cost a query per page load
+// and an animation that never stopped compositing. The Log tab still has the
+// same content, on purpose, and reads better sitting still.
+
+// Everything the page shell needs from the database, in ONE round trip. These
+// lookups are tiny and independent, so they go out as a single db.batch() rather
+// than 3 concurrent statements: same data, one request instead of three.
+function passStatement(db, festivalId, personId) {
+    // Rover's nag, answered by the database instead of by JS over a result set:
+    // "is this person a driver (so do they owe a car pass), and which of the two
+    // default passes have they already checked off?" Three EXISTS in one row —
+    // it replaces a cars lookup plus a fetch-every-checked-label query that then
+    // filtered the labels client-side.
+    return db.prepare(`
+        SELECT
+          EXISTS(SELECT 1 FROM cars
+                 WHERE festival_id = ? AND driver_person_id = ? AND deleted_at IS NULL) AS driving,
+          EXISTS(SELECT 1 FROM checklist_tasks t
+                 JOIN checklist_checks cc ON cc.task_id = t.id
+                 WHERE t.festival_id = ? AND t.is_default = 1 AND t.deleted_at IS NULL
+                   AND cc.person_id = ? AND cc.unchecked_at IS NULL
+                   AND lower(t.label) = 'festival pass') AS got_fest_pass,
+          EXISTS(SELECT 1 FROM checklist_tasks t
+                 JOIN checklist_checks cc ON cc.task_id = t.id
+                 WHERE t.festival_id = ? AND t.is_default = 1 AND t.deleted_at IS NULL
+                   AND cc.person_id = ? AND cc.unchecked_at IS NULL
+                   AND lower(t.label) = 'car pass') AS got_car_pass,
+          -- Fest-level, not person-level: has anyone put a schedule in at all?
+          EXISTS(SELECT 1 FROM schedule_sets
+                 WHERE festival_id = ? AND deleted_at IS NULL) AS has_schedule
+    `).bind(festivalId, personId, festivalId, personId, festivalId, personId, festivalId);
 }
 
-// Rover's idle chatter: once there's nothing important to say, he rotates through
-// XP-help-style tips instead of going quiet — feedback, the control panel, ghost
-// people, merging duplicates, the MSN emoticons, and one tip that is definitely
-// not a hint about what happens if you pet him five times (see public/camp.js).
-// Voice: authentic "click Start, and then click…" Windows XP help text.
-function dogTip(festival) {
-    const tips = [
-        {
-            title: 'Your opinion counts!',
-            body: html`camp planner is always looking for ways to improve. To report a problem or share an idea, click <b>Start</b>, and then click <b>Send Feedback</b>. Your report helps make camping better for everyone.`,
-            links: html`<li><a href="/feedback" hx-get="/feedback/window" hx-target="#popup-layer" hx-swap="beforeend">Send feedback now</a></li>`,
-        },
-        {
-            title: 'Personalize camp planner',
-            body: html`Did you know you can switch between 12-hour and 24-hour time, manage e-mail notifications, and turn confetti on or off? Click <b>Start</b>, and then click <b>Control Panel</b> to make camp planner truly yours.`,
-            links: html`<li><a href="/settings" hx-get="/settings/window" hx-target="#popup-layer" hx-swap="beforeend">Open Control Panel</a></li>`,
-        },
-        {
-            title: 'A blast from 2003',
-            body: html`The emoticons in every chat window are the original MSN Messenger graphics. Try typing <b>:)</b> or <b>(Y)</b> or <b>(8)</b> in a message. Some things never go out of style.`,
-        },
-        {
-            title: 'A note from Rover',
-            body: html`I am a professional Search Companion with an important job to do. Please do not pet me five times in a row. Nothing bad will happen. I am simply asking you not to.`,
-        },
-    ];
-    if (festival) {
-        tips.push({
-            title: 'Bringing a friend?',
-            body: html`You can add people who haven't signed up yet. Open <b>People</b>, click <b>Add Person</b>, and type their name. When they sign in with that name later, everything they were given links up automatically.`,
-            links: html`<li><a href="/f/${festival.id}/ppl">Open People</a></li>`,
-        });
-        tips.push({
-            title: 'Seeing double?',
-            body: html`If a camper accidentally signs in under two different names, open <b>People</b>, click <b>Merge</b>, and select both entries. They will be combined into one camper, and nothing they did is lost.`,
-            links: html`<li><a href="/f/${festival.id}/ppl">Open People</a></li>`,
-        });
-        tips.push({
-            title: 'Made a mistake? You can undo it!',
-            body: html`Almost everything that happens here is recorded and reversible. To take something back, open the <b>Log</b> and then click <b>undo</b> next to the entry. Changed your mind again? You can even undo an undo — click <b>redo</b> and it comes right back. Nothing is ever really lost.`,
-            links: html`<li><a href="/f/${festival.id}/log">Open the Log</a></li>`,
-        });
+async function loadChrome(db, festival, person) {
+    // The membership + pass lookups only mean anything for a signed-in person on
+    // a fest page; off that path the batch is a single statement.
+    const personal = !!(festival && person);
+    const stmts = [db.prepare('SELECT id, name FROM festivals WHERE deleted_at IS NULL ORDER BY name')];
+    if (personal) {
+        stmts.push(db.prepare('SELECT 1 AS ok FROM memberships WHERE festival_id = ? AND person_id = ? AND bailed_at IS NULL')
+            .bind(festival.id, person.id));
+        stmts.push(passStatement(db, festival.id, person.id));
     }
-    const t = tips[Math.floor(Math.random() * tips.length)];
-    return html`
-      <span class="dog-title">${t.title}</span>
-      ${t.body}
-      ${t.links ? html`<ul class="dog-links">${t.links}</ul>` : ''}`;
+    try {
+        const res = await db.batch(stmts);
+        return {
+            festivals: res[0].results,
+            // On lookup failure pretend they're a member so we don't flash the
+            // join banner at someone who is already on the list.
+            isMember: personal ? res[1].results.length > 0 : true,
+            passes: personal ? res[2].results[0] : null,
+        };
+    } catch {
+        // A batch fails as a unit, so one bad statement costs all three. Degrade
+        // to a shell that's still usable: no fest list in the Start menu, no join
+        // banner, no Rover — same "quietly do less" the per-query .catch()es did.
+        return { festivals: [], isMember: true, passes: null };
+    }
 }
 
-// Rover the XP Search Companion: a contextual assistant tip. Not signed in → nudge
-// to sign in; signed in on a fest → remind about the passes they still owe. Copy
-// is written in cheery early-2000s Windows-helper voice. When there's nothing
-// important left to say (passes done, or signed in off a fest page), he falls
-// back to the rotating dogTip() pool above instead of disappearing.
-async function dogAssistant(c, festival, person) {
+// Rover the XP Search Companion, docked bottom-right. He is a NOTIFICATION, not a
+// mascot: he only turns up when there is something you haven't done — sign in, or
+// buy the passes you still owe — and the page renders without him otherwise. (He
+// used to sit above the content cycling XP-help tips like "Your opinion counts!";
+// they pushed the actual page below the fold to say nothing, so they're gone.)
+// Copy stays in cheery early-2000s Windows-helper voice. The balloon is collapsed
+// until you click him (public/camp.js), so he costs one dog's worth of screen.
+// Pure rendering now — `passes` is the row loadChrome() already fetched, so
+// deciding whether to show him costs no queries of its own.
+function dogAssistant(c, festival, person, passes) {
     let bubble;
     if (!person) {
         // Only nudge on a festival page, where signing in has an obvious point (and
@@ -84,46 +89,83 @@ async function dogAssistant(c, festival, person) {
             <li><a href="/signin?next=${next}" hx-get="/signin/modal?next=${next}" hx-target="#signin-modal-overlay" hx-swap="innerHTML">Sign in &amp; join this fest</a></li>
           </ul>`;
     } else if (festival) {
-        const db = c.env.DB;
-        const [driving, passRows] = await Promise.all([
-            // Only drivers owe a car pass, so only nag drivers about it.
-            db.prepare('SELECT 1 FROM cars WHERE festival_id = ? AND driver_person_id = ? AND deleted_at IS NULL')
-                .bind(festival.id, person.id).first(),
-            // Which default passes has this person actually checked off?
-            db.prepare(`
-                SELECT t.label FROM checklist_tasks t
-                JOIN checklist_checks cc ON cc.task_id = t.id AND cc.person_id = ? AND cc.unchecked_at IS NULL
-                WHERE t.festival_id = ? AND t.is_default = 1 AND t.deleted_at IS NULL
-            `).bind(person.id, festival.id).all().then((r) => r.results),
-        ]);
-        const got = new Set(passRows.map((r) => (r.label || '').toLowerCase()));
-        const needFestPass = !got.has('festival pass');
-        const needCarPass = !!driving && !got.has('car pass');
+        // No row means the chrome batch failed — say nothing rather than guess.
+        if (!passes) return '';
+        const needFestPass = !passes.got_fest_pass;
+        // Only drivers owe a car pass, so only nag drivers about it.
+        const needCarPass = !!passes.driving && !passes.got_car_pass;
 
-        // All set (festival pass done; car pass done or not needed) → idle tips.
-        if (!needFestPass && !needCarPass) {
-            bubble = dogTip(festival);
-        } else {
-            const passes = needCarPass
+        if (needFestPass || needCarPass) {
+            // All THREE combinations, not two. The old copy branched only on
+            // needCarPass, so a driver who'd bought their festival pass but not
+            // their car pass was still told to buy "your festival pass and car
+            // pass" — nagged about something already ticked off their own list.
+            const both = needFestPass && needCarPass;
+            const owed = both
                 ? html`your <b>festival pass</b> and <b>car pass</b>`
-                : html`your <b>festival pass</b>`;
+                : needFestPass
+                    ? html`your <b>festival pass</b>`
+                    : html`your <b>car pass</b>`;
+            const it = both ? 'them' : 'it';
             bubble = html`
               <span class="dog-title">Hey ${person.display_name}!</span>
-              Did you remember to buy ${passes}? Once you've got ${needCarPass ? 'them' : 'it'}, check ${needCarPass ? 'them' : 'it'} off your list.
+              Did you remember to buy ${owed}? Once you've got ${it}, check ${it} off your list.
               <ul class="dog-links">
                 <li><a href="/f/${festival.id}/mine">Go to my checklist</a></li>
               </ul>`;
+        } else if (!passes.has_schedule) {
+            // Passes sorted, but nobody has put the set times in yet — the one
+            // feature that's useless until someone seeds it. Only surfaces once
+            // the more time-critical pass nags are out of the way, so Rover never
+            // stacks two things to do.
+            bubble = html`
+              <span class="dog-title">Your schedule is empty!</span>
+              Nobody has added the set times for <b>${festival.name}</b> yet. Open <b>Schedule</b>, click <b>Edit Schedule</b>, and then click <b>Import</b> — you can point camp planner straight at a photo of the lineup poster and it will read it for you.
+              <ul class="dog-links">
+                <li><a href="/f/${festival.id}/schedule">Open Schedule</a></li>
+              </ul>`;
+        } else {
+            // Nothing outstanding at all.
+            return '';
         }
     } else {
         // Signed in but not on a fest page (the festival list, settings, …) —
-        // Rover has nothing urgent, so he shares a tip.
-        bubble = dogTip(null);
+        // nothing is outstanding here, so Rover stays in his kennel.
+        return '';
     }
+    // Collapsed by default: the dog hops in place until you click him, then the
+    // balloon pops out above his head. `aria-expanded` on the button is the real
+    // state; camp.js keeps it in sync with the .open class.
     return html`
-    <div class="dog-assistant">
-      <div class="dog-bubble">${bubble}</div>
-      <img class="dog-img" src="/dog.webp" alt="Rover the assistant dog">
+    <div class="dog-assistant" id="dog-assistant">
+      <div class="dog-bubble" id="dog-bubble" role="status">${bubble}</div>
+      <button type="button" class="dog-btn" aria-expanded="false" aria-controls="dog-bubble"
+        title="Rover has something to tell you">
+        <img class="dog-img" src="/dog.webp" alt="Rover the assistant dog">
+      </button>
     </div>`;
+}
+
+// Rover lives OUTSIDE #main, so a partial swap of the page body leaves him
+// exactly as he was — check off your festival pass and the nag stayed up until a
+// reload (AGENTS.md gotcha 10). The fix is the repo's usual one: he sits in a slot
+// that is ALWAYS in the DOM, empty or not, and any mutation that can change what
+// he'd say re-emits the slot `hx-swap-oob`. It has to be a wrapper rather than the
+// dog himself — an OOB swap needs a target id to still be there, and "no dog" has
+// no element to carry one.
+export function dogSlot(inner) {
+    return html`<div id="dog-slot">${inner}</div>`;
+}
+
+// The same slot, as an out-of-band swap to staple onto a fragment response. Costs
+// one extra statement on the mutation; the alternative is a stale nag.
+export async function dogSlotOob(c, festival) {
+    const person = c.get('person');
+    let passes = null;
+    if (festival && person) {
+        passes = await passStatement(c.env.DB, festival.id, person.id).first().catch(() => null);
+    }
+    return html`<div id="dog-slot" hx-swap-oob="outerHTML">${dogAssistant(c, festival, person, passes)}</div>`;
 }
 
 // The XP taskbar + fake Start menu. The green Start button toggles a Start menu
@@ -259,32 +301,23 @@ function desktopIcons(festival, activeTab) {
 // floating mini windows, so the main window is an empty shell). #main survives
 // as an invisible element because it's the hx-target of every mine-tab form.
 // A join banner still forces the window — it needs somewhere to live.
+// `body`, `pre` and `floating` may be PROMISES — pass them unawaited. The shell's
+// own lookups don't depend on the body's, so this fires the chrome batch first and
+// lets the body's queries run alongside it. Handlers used to `await` the body and
+// then call this, which put the two sets of queries in series and cost a whole
+// extra round trip of latency on every single page load.
 export async function renderPage(c, { title, activeTab = '', body, festival = null, floating = '', pre = '', bare = false, windowTitle = null }) {
     const db = c.env.DB;
     const person = c.get('person');
 
-    // The page chrome needs four independent lookups; fire them together so the
-    // wall time is the slowest one, not the sum. Failures degrade the same way
-    // the old sequential try/catches did.
-    const [festivals, ticker, membership, dogHtml] = await Promise.all([
-        db.prepare('SELECT id, name FROM festivals WHERE deleted_at IS NULL ORDER BY name').all()
-            .then((r) => r.results).catch(() => []),
-        festival
-            ? db.prepare(`
-                SELECT summary FROM audit_log
-                WHERE festival_id = ? AND action != 'undo'
-                ORDER BY created_at DESC LIMIT 15
-              `).bind(festival.id).all().then((r) => r.results).catch(() => [])
-            : [],
-        // Signed-in-but-not-a-member of the fest you're looking at → offer to join.
-        // On lookup failure pretend they're a member so we don't flash the banner.
-        festival && person
-            ? db.prepare('SELECT 1 FROM memberships WHERE festival_id = ? AND person_id = ? AND bailed_at IS NULL')
-                .bind(festival.id, person.id).first().catch(() => 1)
-            : 1,
-        dogAssistant(c, festival, person),
-    ]);
-    const showJoin = !membership;
+    // Kick the shell's one batched round trip off BEFORE awaiting anything.
+    const chromeReq = loadChrome(db, festival, person);
+    const [chrome, bodyHtml, preHtml, floatingHtml] = await Promise.all([chromeReq, body, pre, floating]);
+    const { festivals, isMember, passes } = chrome;
+
+    // Signed-in-but-not-a-member of the fest you're looking at → offer to join.
+    const showJoin = !isMember;
+    const dogHtml = dogAssistant(c, festival, person, passes);
 
     const theme = (festival && TAB_THEMES[activeTab]) || null;
     // windowTitle lets themeless pages (admin, unsubscribe…) name their own
@@ -295,7 +328,18 @@ export async function renderPage(c, { title, activeTab = '', body, festival = nu
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <!-- viewport-fit=cover is what lets the Bliss wallpaper reach the very edges of
+       an iPhone screen. WITHOUT it iOS insets the whole layout viewport inside the
+       safe area and paints the leftover strips — behind the status bar / Dynamic
+       Island, and down by the home indicator — with the canvas colour. No element
+       can paint there at any size, which is why the wallpaper layer's 120px
+       overhang (retro.css) never covered them: it wasn't too small, it was out of
+       bounds. With cover, the viewport is edge-to-edge and the fixed wallpaper
+       layer fills those strips. Anything that must stay clear of the notch then
+       has to say so itself via env(safe-area-inset-*) — see .xp-taskbar.
+       Deliberately NO <meta name="theme-color">: setting it repaints the status
+       bar strip a flat colour, which is exactly the band we're getting rid of. -->
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <title>${title} :: camp planner</title>
   <!-- Self-hosted (was unpkg): first paint shouldn't wait on a third-party CDN's
        DNS + TLS + fetch. Version in the filename + immutable cache (public/_headers);
@@ -312,13 +356,15 @@ export async function renderPage(c, { title, activeTab = '', body, festival = nu
 <body>
   ${taskbar(c, festival, festivals)}
   <div class="title-gap" aria-hidden="true"></div>
-  ${dogHtml}
+  <!-- Icons first: they're the way into everything, so they sit directly under
+       the taskbar with the program window right below. Rover is position:fixed
+       bottom-right and renders last so he's out of the flow entirely. -->
+  ${festival ? desktopIcons(festival, activeTab) : ''}
   <div id="signin-modal-overlay"></div>
   <div id="popup-layer"></div>
   <div id="toast"></div>
-  ${festival ? desktopIcons(festival, activeTab) : ''}
-  ${pre}
-  ${bare && !showJoin ? html`<main id="main" hidden>${body}</main>` : html`
+  ${preHtml}
+  ${bare && !showJoin ? html`<main id="main" hidden>${bodyHtml}</main>` : html`
   <div class="xp-window ${theme && theme.full ? 'xp-window-full' : ''}">
     <div class="xp-titlebar">
       ${theme
@@ -336,7 +382,6 @@ export async function renderPage(c, { title, activeTab = '', body, festival = nu
       <span class="xp-address-field"><img src="/xp/folder.png" alt="">${theme.address(festival)}</span>
     </div>` : ''}
     <div class="xp-window-body">
-      ${tickerHtml(ticker)}
       ${showJoin ? html`
         <div class="join-banner">
           <span class="join-banner-text">You are browsing <b>${festival.name}</b> as a guest — you are not on the list yet.</span>
@@ -345,11 +390,12 @@ export async function renderPage(c, { title, activeTab = '', body, festival = nu
           </form>
         </div>` : ''}
       <main id="main">
-        ${body}
+        ${bodyHtml}
       </main>
     </div>
   </div>`}
-  <div id="mine-floating" class="mine-floating">${floating}</div>
+  <div id="mine-floating" class="mine-floating">${floatingHtml}</div>
+  ${dogSlot(dogHtml)}
   <div class="site-foot-space" aria-hidden="true"></div>
 </body>
 </html>`;

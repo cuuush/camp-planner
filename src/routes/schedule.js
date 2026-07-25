@@ -317,7 +317,8 @@ async function scheduleBody(c, festival, dayParam, { edit = false } = {}) {
 schedule.get('/f/:id/schedule', async (c) => {
     const festival = await loadFestival(c);
     if (!festival) return c.notFound();
-    const body = await scheduleBody(c, festival, c.req.query('day'));
+    // Unawaited: renderPage runs its own batch alongside these queries.
+    const body = scheduleBody(c, festival, c.req.query('day'));
     return c.html(await renderPage(c, { title: `${festival.name} — Schedule`, festival, activeTab: 'schedule', body }));
 });
 

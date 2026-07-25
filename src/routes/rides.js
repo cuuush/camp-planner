@@ -379,11 +379,13 @@ async function renderRidesBody(c, festival) {
 rides.get('/f/:id/rides', async (c) => {
     const festival = await loadFestival(c);
     if (!festival) return c.notFound();
-    const body = await renderRidesBody(c, festival);
     // Streets & Trips renders as its own window ABOVE the Car Pool window (via
     // `pre`), not nested inside it — two programs open on the desktop.
-    const from = await viewerDepartFrom(c.env.DB, festival.id, c.get('person'));
-    return c.html(await renderPage(c, { title: `${festival.name} — Cars`, festival, activeTab: 'rides', body, pre: meetBanner(festival, from) }));
+    // Both go in unawaited: the body, the meet banner's departure lookup and
+    // renderPage's own chrome batch then all fly at once instead of in series.
+    const body = renderRidesBody(c, festival);
+    const pre = viewerDepartFrom(c.env.DB, festival.id, c.get('person')).then((from) => meetBanner(festival, from));
+    return c.html(await renderPage(c, { title: `${festival.name} — Cars`, festival, activeTab: 'rides', body, pre }));
 });
 
 // The place/address/time rows of the meeting-spot form. A fragment because the
@@ -574,7 +576,7 @@ rides.post('/f/:id/meet', async (c) => {
     };
 
     // Opening Edit and pressing OK without touching anything is not an update:
-    // no write, no audit entry, no ticker noise — just hand back the banner so
+    // no write, no audit entry, no Log noise — just hand back the banner so
     // the swap is invisible and the popup closes.
     const changed = Object.keys(after).some((k) => (after[k] ?? null) !== (before[k] ?? null));
     if (changed) {

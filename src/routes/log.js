@@ -71,7 +71,8 @@ async function renderLogBody(c, festival) {
 log.get('/f/:id/log', async (c) => {
     const festival = await loadFestival(c);
     if (!festival) return c.notFound();
-    const body = await renderLogBody(c, festival);
+    // Unawaited: renderPage runs its own batch alongside these queries.
+    const body = renderLogBody(c, festival);
     return c.html(await renderPage(c, { title: `${festival.name} — Log`, festival, activeTab: 'log', body }));
 });
 

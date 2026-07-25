@@ -853,7 +853,7 @@ document.addEventListener('click', function (e) {
   if (e.target.closest('#xp-startmenu') || e.target.closest('.xp-start-btn')) return;
   m.hidden = true;
 });
-document.addEventListener('keydown', function (e) { if (e.key === 'Escape') { campCloseStart(); campCollapseSetTiles(null); } });
+document.addEventListener('keydown', function (e) { if (e.key === 'Escape') { campCloseStart(); campCollapseSetTiles(null); campToggleDog(false); } });
 
 // The little tray clock. No seconds, and it follows the 12h/24h preference
 // from the control panel (XP default: 12-hour).
@@ -865,19 +865,33 @@ function campTickClock() {
 document.addEventListener('DOMContentLoaded', campTickClock);
 setInterval(campTickClock, 15000);
 
-// ——— Rover's secret. He asked you nicely not to. ————————————————————
-// Five quick pets (clicks) on the dog = an authentic XP Stop error. Any key,
-// click, or tap brings the site back — no harm done, exactly like the real
-// thing except the opposite.
+// ——— Rover, bottom right. Click = read his message. ————————————————————
+// He only renders when there's something outstanding, and his balloon starts
+// collapsed, so the click both opens it and (still) counts as a pet: TEN quick
+// ones in a row are an authentic XP Stop error. Any key, click, or tap brings the
+// site back — no harm done, exactly like the real thing except the opposite.
+var DOG_PETS_TO_BSOD = 10;
+function campToggleDog(open) {
+  var wrap = document.getElementById('dog-assistant');
+  if (!wrap) return;
+  var want = open === undefined ? !wrap.classList.contains('open') : !!open;
+  wrap.classList.toggle('open', want);
+  var btn = wrap.querySelector('.dog-btn');
+  if (btn) btn.setAttribute('aria-expanded', want ? 'true' : 'false');
+}
 var dogPets = 0, dogPetTimer = null;
 document.addEventListener('click', function (e) {
-  if (!e.target.classList || !e.target.classList.contains('dog-img')) return;
+  var btn = e.target.closest && e.target.closest('.dog-btn');
+  if (!btn) return;
+  campToggleDog();
+  var img = btn.querySelector('.dog-img');
+  if (!img) return;
   clearTimeout(dogPetTimer);
   dogPets++;
-  e.target.classList.remove('petted');
-  void e.target.offsetWidth; // restart the wiggle animation on every pet
-  e.target.classList.add('petted');
-  if (dogPets >= 5) { dogPets = 0; campBsod(); return; }
+  img.classList.remove('petted');
+  void img.offsetWidth; // restart the wiggle animation on every pet
+  img.classList.add('petted');
+  if (dogPets >= DOG_PETS_TO_BSOD) { dogPets = 0; campBsod(); return; }
   dogPetTimer = setTimeout(function () { dogPets = 0; }, 1600);
 });
 function campBsod() {
@@ -902,7 +916,8 @@ function campBsod() {
     '',
     'Technical information:',
     '',
-    '*** STOP: 0x0000D06E (0xC0FFEE00, 0x00000005, 0x0BADD06E, 0x00000000)',
+    // Second parameter is the pet count that did it, in hex, like a real bugcheck.
+    '*** STOP: 0x0000D06E (0xC0FFEE00, 0x0000000A, 0x0BADD06E, 0x00000000)',
     '',
     '***  rover.sys - Address 0x0BADD06E base at 0xC0FFEE00, DateStamp 10/25/2001',
     '',
