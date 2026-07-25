@@ -141,6 +141,66 @@ function campLocalizeTimes(root) {
     }
     el.textContent = t;
   }
+  campLocalizeSchedule(root);
+}
+// Schedule times are stored as minutes-from-midnight, not a UTC instant (see
+// src/lib/schedule.js), so they need their own wrap/format logic rather than
+// riding campFmtClock's Date-based path. Server renders 12-hour text as the
+// no-JS fallback; data-*-min carries the raw minutes so the toggle can rewrite
+// it here without a round trip.
+function campWrapMin(min) { return ((Math.round(Number(min)) % 1440) + 1440) % 1440; }
+function campFmtSetTime(min) {
+  if (min == null || min === '' || !isFinite(Number(min))) return '';
+  var wrapped = campWrapMin(min);
+  var h = Math.floor(wrapped / 60), mi = wrapped % 60, mm = (mi < 10 ? '0' : '') + mi;
+  if (campTimeFmt() === '24') return (h < 10 ? '0' : '') + h + ':' + mm;
+  var ap = h >= 12 ? 'PM' : 'AM';
+  h = h % 12; if (h === 0) h = 12;
+  return h + ':' + mm + ' ' + ap;
+}
+function campFmtSetRange(startMin, endMin) {
+  var a = campFmtSetTime(startMin), b = campFmtSetTime(endMin);
+  if (a && b) return a + ' – ' + b;
+  return a || b || '';
+}
+function campFmtHourLabel(min) {
+  if (min == null || min === '' || !isFinite(Number(min))) return '';
+  var wrapped = campWrapMin(min);
+  var h = Math.floor(wrapped / 60);
+  if (campTimeFmt() === '24') return (h < 10 ? '0' : '') + h;
+  var ap = h >= 12 ? 'PM' : 'AM';
+  h = h % 12; if (h === 0) h = 12;
+  return h + ' ' + ap;
+}
+function campLocalizeSchedule(root) {
+  if (!root || !root.querySelectorAll) return;
+  var ranges = root.querySelectorAll('[data-start-min]');
+  for (var i = 0; i < ranges.length; i++) {
+    var el = ranges[i];
+    el.textContent = campFmtSetRange(el.getAttribute('data-start-min'), el.getAttribute('data-end-min'));
+  }
+  var hours = root.querySelectorAll('[data-hour-min]');
+  for (var j = 0; j < hours.length; j++) {
+    var hEl = hours[j];
+    hEl.textContent = campFmtHourLabel(hEl.getAttribute('data-hour-min'));
+  }
+  campInitScheduleScroll(root);
+}
+// The grid runs top→bottom as evening→late-night, so the headliners sit at the very
+// BOTTOM of the poster. Open it scrolled there — bottom-left — so the acts people
+// actually came for are the first thing on screen, not the afternoon openers. Once
+// per grid instance (the data flag): it never fights a manual scroll, and it doesn't
+// re-fire when only a tile's buttons swap (that swap's subtree has no .sched-scroll).
+function campInitScheduleScroll(root) {
+  if (!root || !root.querySelectorAll) return;
+  var scrollers = root.querySelectorAll('.sched-scroll');
+  for (var i = 0; i < scrollers.length; i++) {
+    var sc = scrollers[i];
+    if (sc.getAttribute('data-init-scroll')) continue;
+    sc.setAttribute('data-init-scroll', '1');
+    sc.scrollLeft = 0;
+    sc.scrollTop = sc.scrollHeight; // browser clamps to the max, i.e. the bottom
+  }
 }
 function campSetTimeFmt(v) {
   try { localStorage.setItem('campTimeFmt', v); } catch (e) {}

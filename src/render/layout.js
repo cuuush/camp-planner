@@ -17,24 +17,30 @@ function passStatement(db, festivalId, personId) {
     // default passes have they already checked off?" Three EXISTS in one row —
     // it replaces a cars lookup plus a fetch-every-checked-label query that then
     // filtered the labels client-side.
+    // ?1 = festival, ?2 = person, so the two ids bind once each however many
+    // subqueries reference them.
     return db.prepare(`
         SELECT
           EXISTS(SELECT 1 FROM cars
-                 WHERE festival_id = ? AND driver_person_id = ? AND deleted_at IS NULL) AS driving,
+                 WHERE festival_id = ?1 AND driver_person_id = ?2 AND deleted_at IS NULL) AS driving,
           EXISTS(SELECT 1 FROM checklist_tasks t
                  JOIN checklist_checks cc ON cc.task_id = t.id
-                 WHERE t.festival_id = ? AND t.is_default = 1 AND t.deleted_at IS NULL
-                   AND cc.person_id = ? AND cc.unchecked_at IS NULL
+                 WHERE t.festival_id = ?1 AND t.is_default = 1 AND t.deleted_at IS NULL
+                   AND cc.person_id = ?2 AND cc.unchecked_at IS NULL
                    AND lower(t.label) = 'festival pass') AS got_fest_pass,
           EXISTS(SELECT 1 FROM checklist_tasks t
                  JOIN checklist_checks cc ON cc.task_id = t.id
-                 WHERE t.festival_id = ? AND t.is_default = 1 AND t.deleted_at IS NULL
-                   AND cc.person_id = ? AND cc.unchecked_at IS NULL
+                 WHERE t.festival_id = ?1 AND t.is_default = 1 AND t.deleted_at IS NULL
+                   AND cc.person_id = ?2 AND cc.unchecked_at IS NULL
                    AND lower(t.label) = 'car pass') AS got_car_pass,
           -- Fest-level, not person-level: has anyone put a schedule in at all?
           EXISTS(SELECT 1 FROM schedule_sets
-                 WHERE festival_id = ? AND deleted_at IS NULL) AS has_schedule
-    `).bind(festivalId, personId, festivalId, personId, festivalId, personId, festivalId);
+                 WHERE festival_id = ?1 AND deleted_at IS NULL) AS has_schedule,
+          -- ...and has THIS person starred anything on it?
+          EXISTS(SELECT 1 FROM set_interests si
+                 JOIN schedule_sets ss ON ss.id = si.set_id
+                 WHERE ss.festival_id = ?1 AND si.person_id = ?2 AND si.deleted_at IS NULL) AS mine
+    `).bind(festivalId, personId);
 }
 
 async function loadChrome(db, festival, person) {
@@ -83,8 +89,8 @@ function dogAssistant(c, festival, person, passes) {
         // sign-in also joins them). Pop the modal in place rather than navigating.
         const next = encodeURIComponent(c.req.path);
         bubble = html`
-          <span class="dog-title">Hi there — I'm Rover!</span>
-          It looks like you're just visiting. Sign in and you can claim what you're bringing and save a seat in a carpool.
+          <span class="dog-title">Hi there, I'm Rover!</span>
+          It looks like you're just visiting. Sign in and I'll help you claim what you're bringing and save you a seat in a carpool.
           <ul class="dog-links">
             <li><a href="/signin?next=${next}" hx-get="/signin/modal?next=${next}" hx-target="#signin-modal-overlay" hx-swap="innerHTML">Sign in &amp; join this fest</a></li>
           </ul>`;
@@ -94,12 +100,14 @@ function dogAssistant(c, festival, person, passes) {
         const needFestPass = !passes.got_fest_pass;
         // Only drivers owe a car pass, so only nag drivers about it.
         const needCarPass = !!passes.driving && !passes.got_car_pass;
+        // Fest has set times posted, but this person hasn't starred a single act.
+        const needSchedulePick = !!passes.has_schedule && !passes.mine;
 
         if (needFestPass || needCarPass) {
-            // All THREE combinations, not two. The old copy branched only on
+            // All THREE combinations, not two. The copy used to branch only on
             // needCarPass, so a driver who'd bought their festival pass but not
-            // their car pass was still told to buy "your festival pass and car
-            // pass" — nagged about something already ticked off their own list.
+            // their car pass was still told to pick up "your festival pass and
+            // car pass" — nagged about something already ticked off their list.
             const both = needFestPass && needCarPass;
             const owed = both
                 ? html`your <b>festival pass</b> and <b>car pass</b>`
@@ -109,23 +117,33 @@ function dogAssistant(c, festival, person, passes) {
             const it = both ? 'them' : 'it';
             bubble = html`
               <span class="dog-title">Hey ${person.display_name}!</span>
-              Did you remember to buy ${owed}? Once you've got ${it}, check ${it} off your list.
+              Have you picked up ${owed} yet? Once you've got ${it}, just check ${it} off your list.
               <ul class="dog-links">
                 <li><a href="/f/${festival.id}/mine">Go to my checklist</a></li>
               </ul>`;
         } else if (!passes.has_schedule) {
-            // Passes sorted, but nobody has put the set times in yet — the one
-            // feature that's useless until someone seeds it. Only surfaces once
-            // the more time-critical pass nags are out of the way, so Rover never
-            // stacks two things to do.
+            // Nobody has put the set times in at all yet — the one feature that
+            // stays useless until someone seeds it. Sits below the pass nags so
+            // Rover never stacks two things to do.
             bubble = html`
-              <span class="dog-title">Your schedule is empty!</span>
-              Nobody has added the set times for <b>${festival.name}</b> yet. Open <b>Schedule</b>, click <b>Edit Schedule</b>, and then click <b>Import</b> — you can point camp planner straight at a photo of the lineup poster and it will read it for you.
+              <span class="dog-title">Shall we add the set times?</span>
+              Hi there, ${person.display_name}! Nobody has put the lineup for <b>${festival.name}</b> in yet, so the Schedule is empty. Would you like me to help? Open the <b>Schedule</b>, click <b>Edit Schedule</b>, and then click <b>Import</b>. You can point me straight at a photo of the lineup poster and I'll read it for you!
               <ul class="dog-links">
-                <li><a href="/f/${festival.id}/schedule">Open Schedule</a></li>
+                <li><a href="/f/${festival.id}/schedule">Open the Schedule</a></li>
+              </ul>`;
+        } else if (needSchedulePick) {
+            // Set times are up but this person hasn't starred anyone. Full XP Search
+            // Companion routine: Rover greets them, notices the gap, and OFFERS to help
+            // ("Would you like me to help?"), the way the real Search Companion always
+            // framed a task. Cheery, first person, no em dashes, no guilt.
+            bubble = html`
+              <span class="dog-title">Who do you want to see?</span>
+              Hi there, ${person.display_name}! I noticed you haven't picked any sets yet. Would you like me to help? Just open the <b>Schedule</b> and click <b>I'm Interested</b> next to each artist you'd like to catch. I'll keep your whole lineup safe, and your friends will know right where to find you!
+              <ul class="dog-links">
+                <li><a href="/f/${festival.id}/schedule">Open the Schedule</a></li>
               </ul>`;
         } else {
-            // Nothing outstanding at all.
+            // Nothing outstanding at all. No idle tips: Rover is a notification.
             return '';
         }
     } else {
