@@ -5,7 +5,7 @@ import { loadFestival } from '../lib/festival.js';
 import { logAction } from '../lib/audit.js';
 import { needsSignin, signinModalResponse } from '../lib/guard.js';
 import { isCarPassTask } from './people.js';
-import { xpCaptionBtns } from '../render/popup.js';
+import { xpCaptionBtns, xpDialogPopup } from '../render/popup.js';
 
 export const mine = new Hono();
 
@@ -116,9 +116,9 @@ async function renderMineBody(c, festival) {
             <span class="checklist-label">${t.label}</span>
             ${t.is_default
                 ? html`<span class="checklist-req" title="everyone needs this — can't be removed">required</span>`
-                : html`<form hx-post="/f/${festival.id}/mine/checklist/${t.id}/delete" hx-target="#main" hx-swap="innerHTML" class="checklist-del" hx-confirm="Are you sure you want to remove &quot;${t.label}&quot; from everyone's checklist?">
-                    <button class="btn btn-danger checklist-del-btn" type="submit" title="remove this item">✕</button>
-                  </form>`}
+                : html`<button class="btn btn-danger checklist-del-btn" type="button" title="remove this item"
+                    hx-get="/f/${festival.id}/mine/checklist/${t.id}/remove-window"
+                    hx-target="#popup-layer" hx-swap="beforeend">✕</button>`}
           </div>`;
         })}
       </div>
@@ -257,6 +257,35 @@ mine.post('/f/:id/mine/checklist/tasks', async (c) => {
     });
 
     return c.html(mineFragment(await renderMineBody(c, festival)));
+});
+
+// XP "are you sure?" window for removing a checklist item — replaces the native
+// hx-confirm, which drew the one browser-chrome dialog left in the app. Same shape
+// as the Leave Car prompt: a GET that renders the question, and the Remove button
+// does the real POST.
+mine.get('/f/:id/mine/checklist/:taskId/remove-window', async (c) => {
+    const festival = await loadFestival(c);
+    if (!festival) return c.notFound();
+    if (needsSignin(c)) return signinModalResponse(c);
+    const taskId = Number(c.req.param('taskId'));
+    const task = await c.env.DB.prepare('SELECT * FROM checklist_tasks WHERE id = ? AND festival_id = ? AND deleted_at IS NULL')
+        .bind(taskId, festival.id).first();
+    // Already gone, or one of the required defaults — nothing to ask about.
+    if (!task || task.is_default) return c.html('');
+
+    return c.html(xpDialogPopup({
+        title: 'Remove Checklist Item',
+        id: `rm-task-${task.id}`,
+        icon: 'warning',
+        centerMobile: true,
+        message: html`Remove <b>${task.label}</b> from everyone's checklist?`,
+        buttons: html`
+          <button class="btn btn-primary" type="button"
+            hx-post="/f/${festival.id}/mine/checklist/${task.id}/delete"
+            hx-target="#main" hx-swap="innerHTML"
+            hx-on::after-request="if(event.detail.successful) closePopup(this)">Remove</button>
+          <button class="btn" type="button" onclick="closePopup(this)">Cancel</button>`,
+    }));
 });
 
 // Remove a checklist item for everyone — but the default festival/car passes

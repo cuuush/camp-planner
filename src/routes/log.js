@@ -93,7 +93,7 @@ log.post('/f/:id/log/:auditId/undo', async (c) => {
     // active row, …) the engine reports them — surface an honest XP dialog rather
     // than silently pretending the whole thing undid. The log (#main) still swaps
     // normally; the dialog rides along out-of-band, appended into #popup-layer where
-    // the afterSwap handler centers it (same layer nameTakenWarning uses).
+    // the afterSwap handler centers it (the same layer every xpPopup uses).
     if (result.skippedMessage) {
         return c.html(html`${body}<div hx-swap-oob="beforeend:#popup-layer">${partialUndoDialog(result.skippedMessage)}</div>`);
     }

@@ -370,16 +370,15 @@
   .xp-bsod-cursor { animation: bsod-blink 1s steps(1) infinite; }
   @keyframes bsod-blink { 50% { opacity: 0; } }
   /* ——— The section switcher: real XP desktop icons sitting directly on the Bliss
-     wallpaper above the windows (it replaced the old tab control). Laid out on the
-     desktop's own icon GRID — uniform 76px cells packed from the left edge with no
-     gutters between them, exactly like Arrange Icons By ▸ Name — rather than as a
-     centred row. Authentic desktop-icon anatomy: 32px icon art with a soft drop
-     shadow, an 11px Tahoma label in white with the desktop's dark text shadow,
-     hover underlines like XP's single-click web view. The cell is deliberately
-     tighter than it was: this row is the first thing on the page now, so every
-     pixel it gives back is a pixel of actual content above the fold. ——— */
+     wallpaper above the windows (it replaced the old tab control). Uniform cells
+     with no gutters between them, like Arrange Icons By ▸ Name, centred as a row
+     over the window below. Authentic desktop-icon anatomy: 32px icon art with a
+     soft drop shadow, an 11px Tahoma label in white with the desktop's dark text
+     shadow, hover underlines like XP's single-click web view. The cell is
+     deliberately tighter than it was: this row is the first thing on the page now,
+     so every pixel it gives back is a pixel of actual content above the fold. ——— */
   .desktop-icons {
-    display: flex; flex-wrap: wrap; justify-content: flex-start; align-items: flex-start;
+    display: flex; flex-wrap: wrap; justify-content: center; align-items: flex-start;
     gap: 4px 0;
     max-width: 900px; width: calc(100% - 44px); margin: 0 auto 10px;
   }
@@ -589,8 +588,6 @@
     border: 1px solid #9fca77; border-radius: 4px;
   }
   .signin-hint { font-size: 0.8em; color: #4a4a3c; margin: 8px 0 0; }
-  .name-taken-notice { font-size: 0.8em; color: #b85c00; margin-top: 6px; }
-  .name-taken-notice:empty { display: none; }
   .signin-logon-ico { width: 24px; height: 24px; vertical-align: -5px; margin-right: 7px; }
   /* The pick-a-name list, hanging under the name field: an XP combo drop-down (1px
      dark blue frame, white well, Luna-blue highlight on the row under the pointer)
@@ -875,6 +872,19 @@
   .st-link:hover { color: #d5620a; }
   .st-map { flex: 1; position: relative; min-height: 210px; background: #dfe9d8; }
   .st-map-frame { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; display: block; }
+  /* Our zoom control, sitting over the map's top-right corner (OSM's own controls
+     are top-left inside the frame, so these don't cover them). Two stacked Luna
+     buttons, deliberately chunky enough to hit with a thumb. */
+  .st-zoom { position: absolute; top: 8px; right: 8px; z-index: 2; display: flex; flex-direction: column; gap: 3px; }
+  .st-zoom-btn {
+    width: 26px; height: 26px; padding: 0; line-height: 1;
+    display: flex; align-items: center; justify-content: center;
+    font-family: Tahoma, sans-serif; font-size: 15px; font-weight: bold; color: #10233f;
+    background: linear-gradient(180deg,#fdfdfb,#e3ebf7); border: 1px solid #7ba7dd;
+    border-radius: 3px; box-shadow: 0 1px 3px rgba(0,0,0,0.3); cursor: pointer;
+  }
+  .st-zoom-btn:hover { background: linear-gradient(180deg,#fff,#d5e6fb); border-color: #316ac5; }
+  .st-zoom-btn:active { background: #c8ddf5; }
   /* Empty map pane = an XP help prompt ("To do X, click Y"), not a shrug — plain
      roman text (the old italic fought the bold lead line), navy bolds like Rover's
      tips, and room for the Set Meeting Spot… task link underneath. */
@@ -1260,12 +1270,13 @@
   button.xp-caption-btn:active { filter: brightness(0.85); }
   button.xp-caption-btn:focus { outline: none; }
   /* A tab whose content is wider than it is tall (TAB_THEMES `full`, i.e. the
-     Schedule grid) runs nearly edge to edge instead of inside the usual centered
-     900px frame — the gutters are pure loss for a side-scrolling poster, and on a
-     phone they cost enough width to hide the time ruler. Just a 10px margin is
-     kept so the window still reads as a window sitting ON the wallpaper rather
-     than as the page itself (width:auto, so the margins subtract from the row). */
-  .xp-window-full { width: auto; max-width: none; margin: 12px 10px 24px; border-radius: 0; padding: 0 0 3px; }
+     Schedule grid) gets more room than the usual centered 900px frame — the gutters
+     are pure loss for a side-scrolling poster, and on a phone they cost enough width
+     to hide the time ruler. WIDTH is the only thing it changes: it used to also drop
+     the frame's rounded top corners and its 3px side rails, which made sense when it
+     ran truly edge to edge and made the Schedule's title bar the one square-cornered
+     window in the app once it didn't. */
+  .xp-window-full { width: auto; max-width: none; margin: 12px 10px 24px; }
   /* On a real screen there's no reason to stretch: the grid is a fixed number of
      fixed-width stage columns, so the window SHRINK-WRAPS it (fit-content) and a
      4-stage day sits at roughly half a laptop's width instead of being padded out
@@ -1280,7 +1291,6 @@
       margin: 12px auto 24px;
     }
   }
-  .xp-window-full .xp-titlebar { margin: 0; border-radius: 0; }
   .xp-window-full .xp-window-body { padding: 4px 3px 8px; }
   .xp-window-full .xp-window-body main { padding: 6px 2px; }
 
@@ -1309,10 +1319,11 @@
     .mine-col-left { gap: 50px; }
   }
 
-  /* Little draggable XP windows used for the "me" tab sections — each section is
-     its own Luna window (title bar + caption buttons) instead of a flat card, and
-     they're staggered slightly so they read like real stacked windows on a
-     desktop. Grab a title bar to drag it around. */
+  /* Little XP windows used for the "me" tab sections — each section is its own Luna
+     window (title bar + caption buttons) instead of a flat card, staggered slightly
+     so they read like real stacked windows on a desktop. They used to be draggable;
+     they aren't now — they sit in a two-column grid that dragging could only knock
+     them out of, and on a phone the drag handle ate vertical swipes. */
   .xp-mini {
     position: relative; margin: 16px 0 16px var(--mini-offset, 0px); max-width: 580px; width: 100%;
     background: #0831d9; padding: 0 3px 3px; border-radius: 8px 8px 0 0;
@@ -1325,14 +1336,13 @@
     color: #fff; font-weight: bold; font-family: Tahoma, sans-serif; font-size: 0.85em;
     text-shadow: 1px 1px 2px rgba(0,0,20,0.55);
     background: linear-gradient(180deg,#0997ff 0%,#0053ee 8%,#0050ee 40%,#0165ff 88%,#0165ff 93%,#0997ff 95%,#0165ff 100%);
-    cursor: move; user-select: none; touch-action: none;
+    user-select: none;
   }
   /* Program icon in the title bar, like every real XP window has. */
   .xp-mini-ico { width: 16px; height: 16px; flex: 0 0 auto; filter: drop-shadow(0 1px 1px rgba(0,0,0,0.4)); }
   .xp-mini-title { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .xp-mini-body { background: #ece9d8; padding: 12px 14px; }
   .xp-mini-body > h3:first-child { margin-top: 0; }
-  .xp-mini.dragging { opacity: 0.94; box-shadow: 0 16px 38px rgba(0,0,0,0.55); z-index: 60; }
   @media (max-width: 600px) { .xp-mini { transform: translateX(calc(var(--mini-offset, 0px) * 0.4)); max-width: 100%; } }
 
   /* Floating, draggable XP popup windows (add person / merge / add-to-car). They
@@ -1700,7 +1710,6 @@
     font-size: 0.68em; color: #6a6a5c; text-transform: uppercase; letter-spacing: 0.4px;
     border: 1px solid #c9c6b5; background: #f1efe4; border-radius: 2px; padding: 1px 6px;
   }
-  .checklist-del { margin: 0; }
   .checklist-del-btn { padding: 0 8px; font-size: 0.8em; line-height: 1.5; }
   .checklist-add { display: flex; gap: 6px; margin-top: 8px; padding-top: 9px; border-top: 1px solid #d6d3c3; }
   .checklist-add input[type=text] { flex: 1; min-width: 0; }

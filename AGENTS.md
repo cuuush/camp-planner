@@ -202,10 +202,12 @@ All in `src/render/popup.js` unless noted:
 
 **Popup mechanics** (`camp.js`): placement/cascade runs on `htmx:afterSwap`; a popup
 stuck at the viewport top-left means that handler didn't run (see gotcha 1).
-`closePopup(el)` / `closeAllPopups()` / `popupTop()`. The name-taken sign-in warning
-shows the pattern for "a second window that takes over": server sets
-`HX-Retarget`/`HX-Reswap` to `#popup-layer`, client stashes the modal
-(`campStashSignin`/`campRestoreSignin`) instead of stacking.
+`closePopup(el)` / `closeAllPopups()` / `popupTop()`. **Never `confirm()`/`alert()`**
+— an "are you sure?" is a GET route returning an `xpDialogPopup` into `#popup-layer`
+(`hx-target="#popup-layer" hx-swap="beforeend"`) whose Yes button carries the real
+`hx-post` and closes itself on success. `/cars/:carId/leave-window` and
+`…/checklist/:taskId/remove-window` are the two to copy. Only the `.xp-mini` "me"-tab
+windows are non-draggable; popups still drag by their title bar.
 
 **Mobile (≤600px) rules**: CSS overrides JS popup placement entirely (`left/right
 12px !important`, `top: 63px !important`, full-width) — those `!important`s beat the
@@ -266,13 +268,17 @@ bigger size. The Streets & Trips status bar drops its stop-count and coordinate 
   restores the whole footprint from the manifest).
 - **Sign-in is a pick list, not just a text box** (`nameField` in `guard.js`): the
   fest's roster ships embedded in `data-names` and is filtered locally by
-  `campSigninSuggest*` in camp.js — no fetch, so the list is up on the first
-  keystroke. This is a correctness feature, not a nicety: `normalized_name` IS the
-  credential, so a typo doesn't fail loudly, it silently opens a SECOND account that
-  then needs a hand-merge. A name already on that list also skips the
-  `/signin/check-name` "that name's taken" warning — picking it is the intended path.
-  Signed out, the About Me desktop icon renders as **Log In** (`desktopIcons`) with
-  `next` back to `/mine`, so logging on lands where they were headed.
+  `campSigninMatches` in camp.js — no fetch, so the list is up on the first keystroke
+  (and only from the first: an empty box offers nothing, or it drops open over the
+  form on autofocus). This is a correctness feature, not a nicety: `normalized_name`
+  IS the credential, so a typo doesn't fail loudly, it silently opens a SECOND
+  account that then needs a hand-merge. **Nothing warns you off an existing name** —
+  picking one is the intended path, and the old live `/signin/check-name` notice plus
+  the "Name Already in Use / Yes, That's Me" window (and `/signin/reclaim` behind it)
+  are gone. An existing name signs you in as them, trust-based, exactly as the no-JS
+  path always did. Signed out, the About Me desktop icon renders as **Log In**
+  (`desktopIcons`) with `next` back to `/mine`, so logging on lands where they were
+  headed.
 - **Signed-out guards**: window-opening GET routes get
   `if (needsSignin(c)) return signinModalResponse(c)` — the button pops the sign-in
   modal via HX-Retarget instead of a form that fails on POST. Also guard any endpoint
@@ -322,6 +328,12 @@ bigger size. The Streets & Trips status bar drops its stop-count and coordinate 
   tokens) — it's insurance for a messier poster, not a fix for a known miss.
 - **Personalize where cheap**: the Streets & Trips "1: Depart from …" leg reads the
   viewer's own car's `leaving_from` (`viewerDepartFrom`), falling back to "home".
+- **The map pane is a cross-origin iframe** (openstreetmap.org `export/embed.html`),
+  so nothing inside it can be scripted or styled from our page — including its own
+  +/− buttons, one of which doesn't zoom back out. The zoom control you see is OURS
+  (`.st-zoom` / `campMapZoom`), and it works the only way available: rewriting the
+  `bbox` in the embed URL around its own centre and reloading the frame. Don't try to
+  reach into the frame; don't assume a map bug is ours.
 
 ## 🗄️ D1 / dev / deploy / caching
 

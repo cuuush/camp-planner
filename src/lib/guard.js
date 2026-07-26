@@ -1,6 +1,6 @@
 import { html } from 'hono/html';
 import { festNameFromPath, festPeopleFromPath } from './festival.js';
-import { xpDialogPopup, xpCaptionBtns } from '../render/popup.js';
+import { xpCaptionBtns } from '../render/popup.js';
 
 export function needsSignin(c) {
     return !c.get('person');
@@ -15,12 +15,13 @@ function hiddenFields({ next, expandId, replayPath, replayBody }) {
 }
 
 // The name field, plus XP's Welcome-screen conceit: the fest's existing names as a
-// pick list under the box. The names ship WITH the page in a data attribute and are
-// filtered in campSigninSuggest() — no round trip, so the list is there on the first
-// keystroke. That matters because the overwhelmingly common sign-in is a regular who
-// lost their session, and a typo doesn't fail loudly here — it quietly opens a second
-// account (normalized_name IS the credential), which then has to be merged by hand.
-// `.name-taken-notice` is the live "that name's taken" heads-up (camp.js), kept.
+// pick list under the box, from the first letter typed. The names ship WITH the page
+// in a data attribute and are filtered locally (campSigninMatches) — no round trip,
+// so the list is there on that first keystroke. That matters because the
+// overwhelmingly common sign-in is a regular who lost their session, and a typo
+// doesn't fail loudly here — it quietly opens a second account (normalized_name IS
+// the credential), which then has to be merged by hand. Picking an existing name is
+// therefore the INTENDED path, which is why nothing here warns you off one.
 function nameField(ctx) {
     const names = ctx.festPeople && ctx.festPeople.length ? ctx.festPeople : null;
     return html`
@@ -29,11 +30,8 @@ function nameField(ctx) {
         autocomplete="off" autocapitalize="words" spellcheck="false" required autofocus
         ${names ? html`data-names="${JSON.stringify(names)}"` : ''}>
       ${names ? html`<div class="signin-suggest" hidden></div>` : ''}
-      <div class="name-taken-notice"></div>
     </div>
-    <p class="signin-hint">${names
-        ? html`To begin, click your user name. No password is required.`
-        : html`To begin, type your user name. No password is required.`}</p>`;
+    <p class="signin-hint">To begin, type your user name. No password is required.</p>`;
 }
 
 // The sign-in form, shown inside the modal. Submits via htmx back into the same
@@ -77,29 +75,6 @@ export function signinPageMarkup(ctx) {
         <button class="btn btn-primary" type="submit" style="width:100%; margin-top:12px;">Log On</button>
       </form>
     </div>`;
-}
-
-// Shown as a warning window stacked ON TOP of the sign-in dialog when the typed
-// name is already taken: confirm it's really you (→ trust-based reclaim) or back
-// out and pick another. Built on the reusable xpDialogPopup so it cascades over
-// the modal like a real second window.
-export function nameTakenWarning(reclaimName, ctx) {
-    const vals = { name: reclaimName, next: ctx.next || '', expand: ctx.expandId || '', replay_path: ctx.replayPath || '', replay_body: ctx.replayBody || '' };
-    return xpDialogPopup({
-        title: 'Name Already in Use',
-        id: 'name-taken',
-        icon: 'warning',
-        big: true,
-        // While this is up, the sign-in form is stashed; dismissing (✕ or "Choose
-        // Another") brings it back with whatever they'd typed still there.
-        onClose: 'campRestoreSignin()',
-        message: html`The name <b>${reclaimName}</b> is already in use. If this is you, click <b>Yes, That's Me</b> to sign in. If not, click <b>Choose Another</b> and pick a name that is more identifiable.`,
-        buttons: html`
-          <button class="btn" type="button" onclick="campRestoreSignin();closePopup(this)">Choose Another</button>
-          <button class="btn btn-primary" type="button"
-            hx-post="/signin/reclaim" hx-target="#signin-modal-overlay" hx-swap="innerHTML"
-            hx-vals='${JSON.stringify(vals)}'>Yes, That's Me</button>`,
-    });
 }
 
 function captureReplay(c) {

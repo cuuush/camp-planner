@@ -319,7 +319,17 @@ function meetBanner(festival, departFrom = null) {
           </div>
           <div class="st-map">
             ${osmSrc
-                ? html`<iframe class="st-map-frame" src="${osmSrc}" title="Map of the meeting spot" loading="lazy"></iframe>`
+                ? html`<iframe class="st-map-frame" src="${osmSrc}" title="Map of the meeting spot" loading="lazy"></iframe>
+                  <!-- Our own zoom control, because OSM's is out of reach: the map is a
+                       cross-origin iframe, so we can neither script nor style the +/−
+                       buttons drawn inside it (theirs zooms in but won't zoom back out).
+                       These re-frame the map the one way we DO control — by rewriting the
+                       bbox in the embed URL — and they get to look like Streets & Trips
+                       while they're at it. -->
+                  <div class="st-zoom">
+                    <button type="button" class="st-zoom-btn" aria-label="Zoom in" onclick="campMapZoom(this,-1)">+</button>
+                    <button type="button" class="st-zoom-btn" aria-label="Zoom out" onclick="campMapZoom(this,1)">−</button>
+                  </div>`
                 : html`<div class="st-map-empty">
                     <img src="/xp/globe.png" alt="" width="38" height="38">
                     ${hasSpot

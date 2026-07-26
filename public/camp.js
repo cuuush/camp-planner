@@ -374,20 +374,21 @@ document.addEventListener('htmx:afterSwap', function (e) { pixmojify(e.target); 
 // this hook their emoji silently lose the pixel font on every oob update.
 document.addEventListener('htmx:oobAfterSwap', function (e) { pixmojify(e.target); suppressPwManagers(e.target); campLocalizeTimes(e.target); });
 
-// Make the little "me"-tab XP windows draggable by their title bar. Position is
-// tracked as an accumulated translate on each window (dataset.dx/dy) so repeated
-// drags stack. Pressing a caption button doesn't start a drag. Document-level so it
-// keeps working for windows re-rendered by HTMX swaps.
+// Make the floating XP popups draggable by their title bar. Position is tracked as
+// an accumulated translate on each window (dataset.dx/dy) so repeated drags stack.
+// Pressing a caption button doesn't start a drag. Document-level so it keeps working
+// for windows re-rendered by HTMX swaps. The "me"-tab mini windows are deliberately
+// NOT draggable: they're laid out in a two-column grid that they'd only fall out of.
 (function () {
   var drag = null;
   document.addEventListener('pointerdown', function (e) {
     if (!e.target.closest) return;
-    var handle = e.target.closest('.xp-mini-titlebar, .xp-popup-titlebar');
+    var handle = e.target.closest('.xp-popup-titlebar');
     // Never start a drag (or pointer-capture!) from an interactive element — a
     // captured pointer retargets the follow-up click to the title bar, silently
     // eating ✕ taps. Match by tag, not class, so it survives markup renames.
     if (!handle || e.target.closest('button, a, input, select, label')) return;
-    var win = handle.closest('.xp-mini, .xp-popup');
+    var win = handle.closest('.xp-popup');
     if (!win) return;
     // Bring a clicked popup to the front of the stack.
     if (win.classList.contains('xp-popup')) win.style.zIndex = String(popupTop());
@@ -408,6 +409,32 @@ document.addEventListener('htmx:oobAfterSwap', function (e) { pixmojify(e.target
   document.addEventListener('pointercancel', endDrag);
 })();
 
+// Zoom the meeting-spot map. The map is OpenStreetMap's export/embed.html in a
+// cross-origin iframe, so its own +/− buttons are unreachable to us — we can't
+// script them, style them, or fix the one that doesn't work. What we CAN set is the
+// bbox in the embed URL, so zooming = widening or narrowing that box around its own
+// centre and reloading the frame. dir is +1 to zoom out, -1 to zoom in.
+// Clamped either way so it can't be zoomed down to a single pixel of asphalt or out
+// to the whole planet.
+var CAMP_MAP_STEP = 1.8, CAMP_MAP_MIN_SPAN = 0.0009, CAMP_MAP_MAX_SPAN = 1.2;
+function campMapZoom(btn, dir) {
+  var pane = btn.closest('.st-map');
+  var frame = pane && pane.querySelector('.st-map-frame');
+  if (!frame) return;
+  var url;
+  try { url = new URL(frame.src); } catch (err) { return; }
+  var bbox = (url.searchParams.get('bbox') || '').split(',').map(Number);
+  if (bbox.length !== 4 || bbox.some(isNaN)) return;
+  // bbox is west,south,east,north — hold the centre, scale the spans.
+  var cx = (bbox[0] + bbox[2]) / 2, cy = (bbox[1] + bbox[3]) / 2;
+  var f = dir > 0 ? CAMP_MAP_STEP : 1 / CAMP_MAP_STEP;
+  var w = (bbox[2] - bbox[0]) * f, h = (bbox[3] - bbox[1]) * f;
+  if (w < CAMP_MAP_MIN_SPAN || h < CAMP_MAP_MIN_SPAN / 1.5) return;
+  if (w > CAMP_MAP_MAX_SPAN || h > CAMP_MAP_MAX_SPAN / 1.5) return;
+  url.searchParams.set('bbox', [cx - w / 2, cy - h / 2, cx + w / 2, cy + h / 2].join(','));
+  frame.src = url.toString();
+}
+
 // Floating XP popups: remove one, remove all, and figure out the next z-index.
 function popupTop() {
   var wins = document.querySelectorAll('#popup-layer .xp-popup');
@@ -418,14 +445,9 @@ function popupTop() {
 function closePopup(el) { var w = el.closest('.xp-popup'); if (w) w.remove(); }
 function closeAllPopups() { var l = document.getElementById('popup-layer'); if (l) l.innerHTML = ''; }
 
-// Temporarily hide / bring back the sign-in modal when a takeover window (the
-// name-taken warning) shows and is then dismissed — so they don't stack.
-function campStashSignin() { var ov = document.getElementById('signin-modal-overlay'); if (ov) ov.style.display = 'none'; }
-function campRestoreSignin() { var ov = document.getElementById('signin-modal-overlay'); if (ov) ov.style.display = ''; }
-
 // Backdrop click-to-dismiss for the sign-in modal — but NOT when a second window
-// (e.g. the name-taken warning) is open on top, and NOT when the user has typed
-// something into the name or email field (don't throw away their input).
+// is open on top of it, and NOT when the user has typed something into the name or
+// email field (don't throw away their input).
 function campSigninBackdrop(e, backdrop) {
   if (e.target !== backdrop) return;
   var layer = document.getElementById('popup-layer');
@@ -693,8 +715,6 @@ document.addEventListener('htmx:afterSwap', function (e) {
       win.style.left = (cl + n * 28) + 'px';
       win.style.top = (ct + n * 28) + 'px';
       win.style.zIndex = String(popupTop());
-      // The name-taken warning takes over from the sign-in form rather than stacking.
-      if (pid === 'name-taken') campStashSignin();
       var input = win.querySelector('input[type=text], input:not([type])');
       if (input) input.focus();
     })(fresh[i]);
@@ -941,10 +961,13 @@ function campSigninNames(input) {
 function campSigninBox(input) { return input.parentElement.querySelector('.signin-suggest'); }
 
 // Prefix matches first, then anywhere-in-the-string; capped so the list stays a
-// list and not a directory. An empty box shows everyone, like the Welcome screen.
+// list and not a directory. An empty box offers NOTHING — the list is an assist for
+// someone already typing their name, not a roster to browse, and dropping it open
+// over the form the moment the field takes focus (autofocus does that on load) put
+// it in the way of people who were only ever going to type.
 function campSigninMatches(names, q) {
   var v = q.trim().toLowerCase();
-  if (!v) return names.slice(0, 8);
+  if (!v) return [];
   var starts = [], contains = [];
   for (var i = 0; i < names.length; i++) {
     var low = names[i].toLowerCase();
@@ -983,8 +1006,6 @@ function campSigninHide(input) {
 function campSigninPick(input, name) {
   input.value = name;
   campSigninHide(input);
-  var notice = (input.closest('form') || input.parentElement).querySelector('.name-taken-notice');
-  if (notice) notice.textContent = '';
   input.focus();
 }
 
@@ -1039,35 +1060,9 @@ document.addEventListener('keydown', function (e) {
   }
 });
 
-// Live "hey, that name's taken" heads-up as you type — never blocks submission,
-// just a nudge in case you didn't mean to pick an existing name.
-var campNameCheckTimer;
 document.addEventListener('input', function (e) {
   if (!e.target.classList || !e.target.classList.contains('signin-name-input')) return;
-  var input = e.target;
-  campSigninRender(input);
-  var notice = (input.closest('form') || input.parentElement).querySelector('.name-taken-notice');
-  if (!notice) return;
-  clearTimeout(campNameCheckTimer);
-  var val = input.value.trim();
-  if (!val) { notice.textContent = ''; return; }
-  // A name that's ON the pick list is a known name by definition, and choosing it is
-  // the intended path — warning them off it would be nonsense. Saves a round trip too.
-  var known = campSigninNames(input);
-  for (var i = 0; i < known.length; i++) {
-    if (known[i].toLowerCase() === val.toLowerCase()) { notice.textContent = ''; return; }
-  }
-  campNameCheckTimer = setTimeout(function () {
-    fetch('/signin/check-name?name=' + encodeURIComponent(val))
-      .then(function (r) { return r.json(); })
-      .then(function (data) {
-        if (input.value.trim() !== val) return;
-        notice.textContent = data.taken
-          ? ('The name "' + data.display_name + '" is already in use. If this is you, you will be signed in as them. If not, choose a name that is more identifiable.')
-          : '';
-      })
-      .catch(function () {});
-  }, 350);
+  campSigninRender(e.target);
 });
 
 // ——— XP taskbar: Start menu + tray clock ———————————————————————————

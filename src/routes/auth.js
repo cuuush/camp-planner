@@ -1,6 +1,6 @@
 import { Hono } from 'hono';
 import { renderPage } from '../render/layout.js';
-import { modalFormMarkup, signinPageMarkup, nameTakenWarning } from '../lib/guard.js';
+import { modalFormMarkup, signinPageMarkup } from '../lib/guard.js';
 import { normalizeName } from '../lib/names.js';
 import { ensureMembership, festIdFromPath, festNameFromPath, festPeopleFromPath } from '../lib/festival.js';
 import { absorbPlaceholders, resolveMergedPerson } from '../lib/people.js';
@@ -114,14 +114,6 @@ auth.get('/signin/modal', async (c) => {
     return c.html(modalFormMarkup(await withFestName(c, ctxFromQuery(c))));
 });
 
-// Live, non-blocking check as you type — just a heads-up, never prevents signing in.
-auth.get('/signin/check-name', async (c) => {
-    const normalized = normalizeName(c.req.query('name') || '');
-    if (!normalized) return c.json({ taken: false });
-    const existing = await c.env.DB.prepare('SELECT display_name FROM people WHERE normalized_name = ?').bind(normalized).first();
-    return c.json({ taken: !!existing, display_name: existing ? existing.display_name : null });
-});
-
 auth.post('/signin', async (c) => {
     const body = await c.req.parseBody();
     const rawName = (body.name || '').toString();
@@ -141,16 +133,12 @@ auth.post('/signin', async (c) => {
     const existing = await db.prepare('SELECT * FROM people WHERE normalized_name = ?').bind(normalized).first();
 
     if (existing) {
-        // Name's taken → pop a warning window on top of the sign-in dialog to confirm
-        // it's really them (they continue via /signin/reclaim). No-JS can't stack a
-        // popup, so it falls through to trust-based direct sign-in below.
-        if (htmx) {
-            await withFestName(c, ctx);
-            c.header('HX-Retarget', '#popup-layer');
-            c.header('HX-Reswap', 'beforeend');
-            return c.html(nameTakenWarning(existing.display_name, ctx));
-        }
-
+        // An existing name signs you straight in as them — trust-based, the same way
+        // the no-JS path always worked. There used to be a "Name Already in Use,
+        // is this you?" window in front of this for htmx clients, but the form now
+        // OFFERS the existing names as a pick list, so the answer is yes by
+        // construction and the window was a speed bump in front of the happy path.
+        //
         // The typed name may point at a merged-away identity; follow merged_into to
         // the surviving account and sign into that (the merge asserted they're one).
         const survivor = await resolveMergedPerson(db, existing);
@@ -204,45 +192,6 @@ auth.post('/signin', async (c) => {
     return c.redirect(destination);
 });
 
-auth.post('/signin/reclaim', async (c) => {
-    const body = await c.req.parseBody();
-    const normalized = normalizeName((body.name || '').toString());
-    const ctx = ctxFromBody(body);
-    const htmx = isHtmx(c);
-    const db = c.env.DB;
-    const person = await db.prepare('SELECT * FROM people WHERE normalized_name = ?').bind(normalized).first();
-
-    if (!person) {
-        if (htmx) return c.html(modalFormMarkup(await withFestName(c, ctx)));
-        const params = new URLSearchParams({ next: ctx.next, replay_path: ctx.replayPath, replay_body: ctx.replayBody, expand: ctx.expandId });
-        return c.redirect(`/signin?${params.toString()}`);
-    }
-
-    const survivor = await resolveMergedPerson(db, person);
-    const sessionToken = await createSession(c, survivor.id);
-    c.set('person', survivor);
-    const merges = await absorbPlaceholders(c, survivor.id, normalized);
-    await logAbsorbs(c, merges, survivor.id);
-
-    const meta = c.get('reqMeta') || {};
-    await db.prepare('INSERT INTO name_reclaim_log (person_id, reclaimed_ip) VALUES (?, ?)')
-        .bind(survivor.id, meta.ip || null).run();
-
-    await logAction(c, {
-        action: 'reclaim', entityType: 'person', entityId: survivor.id,
-        summary: `${survivor.display_name} reclaimed their name (trust-based)`,
-    });
-
-    await joinFestFromNext(c, ctx);
-    await replayOriginalAction(c, { replayPath: ctx.replayPath, replayBody: ctx.replayBody, sessionToken });
-
-    const destination = withExpand(ctx.next, ctx.expandId);
-    if (htmx) {
-        c.header('HX-Redirect', destination);
-        return c.body(null);
-    }
-    return c.redirect(destination);
-});
 
 auth.get('/signout', async (c) => {
     await destroySession(c);
