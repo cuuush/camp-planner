@@ -76,6 +76,11 @@ async function loadChrome(db, festival, person) {
 // buy the passes you still owe — and the page renders without him otherwise. (He
 // used to sit above the content cycling XP-help tips like "Your opinion counts!";
 // they pushed the actual page below the fold to say nothing, so they're gone.)
+// His links carry DESKTOP_HX themselves. The desktop icons inherit those attributes
+// from their <nav>, but Rover lives outside it (and outside #desktop), so without
+// them his links are ordinary navigations that tear the document down — and the OOB
+// #dog-slot swap that sends him hopping off never happens. Following "Open the
+// Schedule" has to look exactly like clicking the Schedule icon, because it is.
 // Copy is shaped like a real XP balloon tip, NOT like a help article: a short
 // question or greeting as the title, ONE short line of body, and the action as a
 // link below. No "would you like me to help?", no explaining which button to press
@@ -133,7 +138,7 @@ function dogAssistant(c, festival, person, passes) {
               <span class="dog-title">Hey ${person.display_name}!</span>
               Don't forget ${owed}. Check ${it} off when you've got ${it}.
               <ul class="dog-links">
-                <li><a href="/f/${festival.id}/mine">Go to my checklist</a></li>
+                <li><a href="/f/${festival.id}/mine" ${raw(DESKTOP_HX)}>Go to my checklist</a></li>
               </ul>`;
         } else if (needSchedulePick) {
             // Set times are up but this person hasn't starred anyone.
@@ -141,7 +146,7 @@ function dogAssistant(c, festival, person, passes) {
               <span class="dog-title">Who do you want to see?</span>
               You haven't picked any sets yet.
               <ul class="dog-links">
-                <li><a href="/f/${festival.id}/schedule">Open the Schedule</a></li>
+                <li><a href="/f/${festival.id}/schedule" ${raw(DESKTOP_HX)}>Open the Schedule</a></li>
               </ul>`;
         } else {
             // Nothing outstanding at all. No idle tips: Rover is a notification.
@@ -232,7 +237,7 @@ function taskbar(c, festival, festivals) {
           <a class="xp-startmenu-item" href="/admin" onclick="campCloseStart()">
             <img class="xp-startmenu-ico" src="/xp/admin.png" alt=""> Administrative Tools</a>
           ${festival ? html`
-          <a class="xp-startmenu-item" href="/f/${festival.id}/log" onclick="campCloseStart()">
+          <a class="xp-startmenu-item" href="/f/${festival.id}/log" onclick="campCloseStart()" ${raw(DESKTOP_HX)}>
             <img class="xp-startmenu-ico" src="/xp/desk-log.png" alt=""> Event Viewer (Log)</a>` : ''}
         </div>
         <div class="xp-startmenu-foot">
@@ -303,10 +308,34 @@ const TAB_THEMES = {
 // current section renders "selected": label highlighted in Luna blue and the icon
 // tinted, exactly like a clicked desktop icon. --ico feeds the CSS mask that
 // paints the selection tint over just the icon's own pixels.
+// Tab switching is an htmx swap of #desktop, NOT a full page load. The taskbar,
+// wallpaper, stylesheet and camp.js all live outside the swap, so they survive
+// untouched — which is the whole point: the tray icons used to visibly pop in on
+// every switch because a full navigation tore the document down and re-fetched,
+// re-decoded and re-painted them from scratch.
+// The attributes sit on the <nav> and are INHERITED by every <a> inside it, so an
+// icon only has to name its own hx-get. Anything in here that targets something
+// else (the signed-out Log In icon) must override BOTH hx-target and hx-push-url —
+// inheritance is per-attribute, so overriding only the target still pushes the URL.
+// `show:window:top` reproduces what a real navigation does to scroll position;
+// without it a swap keeps the old scroll offset and lands you mid-page.
+//
+// It MUST be hx-boost, not an hx-get per link. Boost is the only path in htmx that
+// honours a cmd/ctrl-click, and it's structural, not cosmetic — the click handler runs
+//     if (ft(a,e)) return;                 // boosted anchor + ctrl/meta -> native nav
+//     if (l || ut(e,a)) e.preventDefault(); // cancels the browser's navigation
+//     if (ct(s,a,e)) return;                // [trigger filters] — too late, already cancelled
+// so with an explicit hx-get, `ft` is false, preventDefault fires, and a cmd-click gets
+// swallowed: no new tab AND no swap. A `click[!metaKey]` trigger filter can't rescue it
+// either, because filters are evaluated after preventDefault. Boost also means the link
+// needs no hx-get at all — it just uses its own href, so href stays the single source of
+// truth for where an icon goes, and no-JS / middle-click / refresh keep doing full loads.
+const DESKTOP_HX = 'hx-boost="true" hx-target="#desktop" hx-swap="innerHTML show:window:top" hx-push-url="true"';
+
 function desktopIcons(festival, activeTab, person) {
     const next = `/f/${festival.id}/mine`;
     return html`
-    <nav class="desktop-icons" aria-label="sections">
+    <nav class="desktop-icons" aria-label="sections" ${raw(DESKTOP_HX)}>
       ${Object.entries(TAB_THEMES).filter(([, t]) => !t.hidden).map(([key, t]) => {
         // Signed out, "About Me" has nothing to be about — so the icon becomes the
         // way IN instead of a tab that can only tell you to log on. Same slot, same
@@ -314,11 +343,15 @@ function desktopIcons(festival, activeTab, person) {
         // with your stuff on it. The href is the no-JS path; htmx pops the box.
         const logon = key === 'mine' && !person;
         const ico = logon ? '/xp/logon.png' : t.ico;
+        const href = logon ? `/signin?next=${encodeURIComponent(next)}` : `/f/${festival.id}/${t.path}`;
         return html`
-        <a href="${logon ? `/signin?next=${encodeURIComponent(next)}` : `/f/${festival.id}/${t.path}`}"
+        <a href="${href}"
           class="desk-icon ${key === activeTab ? 'active' : ''}"
           style="--ico:url('${ico}')" ${key === activeTab ? html`aria-current="page"` : ''}
-          ${logon ? html`hx-get="/signin/modal?next=${encodeURIComponent(next)}" hx-target="#signin-modal-overlay" hx-swap="innerHTML"` : ''}>
+          ${logon
+            ? html`hx-get="/signin/modal?next=${encodeURIComponent(next)}" hx-target="#signin-modal-overlay"
+                   hx-swap="innerHTML" hx-push-url="false"`
+            : ''}>
           <span class="desk-icon-img"><img src="${ico}" alt=""></span>
           <span class="desk-icon-label">${logon ? 'Log In' : t.label}</span>
         </a>`;
@@ -356,53 +389,17 @@ export async function renderPage(c, { title, activeTab = '', body, festival = nu
     // window instead of getting the generic fallback.
     const winTitle = windowTitle || (theme ? theme.title(festival) : `${festival ? festival.name : 'camp planner'} — Camp Planner`);
 
-    return html`<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <!-- viewport-fit=cover is what lets the Bliss wallpaper reach the very edges of
-       an iPhone screen. WITHOUT it iOS insets the whole layout viewport inside the
-       safe area and paints the leftover strips — behind the status bar / Dynamic
-       Island, and down by the home indicator — with the canvas colour. No element
-       can paint there at any size, which is why the wallpaper layer's 120px
-       overhang (retro.css) never covered them: it wasn't too small, it was out of
-       bounds. With cover, the viewport is edge-to-edge and the fixed wallpaper
-       layer fills those strips. Anything that must stay clear of the notch then
-       has to say so itself via env(safe-area-inset-*) — see .xp-taskbar.
-       Deliberately NO <meta name="theme-color">: setting it repaints the status
-       bar strip a flat colour, which is exactly the band we're getting rid of. -->
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-  <title>${title} :: camp planner</title>
-  <!-- Stylesheet FIRST: it's the only render-blocking resource that actually
-       gates first paint, and behind the two scripts the browser didn't even start
-       fetching it until they'd been downloaded and run. -->
-  <link rel="stylesheet" href="/retro.css">
-  <script>window.PIXMOJI_RANGES=${raw(JSON.stringify(PIXMOJI_COVERED_RANGES))};</script>
-  <!-- Both deferred: neither is needed while the HTML parses, and the stuff page
-       is a lot of HTML to hold up. Deferred scripts still run in order and still
-       run BEFORE DOMContentLoaded, which is all either one needs — camp.js binds
-       to the document object (never document.body) and does its DOM work from
-       DOMContentLoaded/htmx events, htmx wires itself up on DOMContentLoaded, and
-       the inline onclick= handlers in the body only fire on a real tap. There are
-       no inline <script> blocks in the body to trip over this.
-       Self-hosted htmx (was unpkg): first paint shouldn't wait on a third-party
-       CDN's DNS + TLS + fetch. Version in the filename + immutable cache
-       (public/_headers); bump the name when upgrading htmx. camp.js's freshness
-       comes from Cache-Control: no-cache + ETag — revalidated each load, 304
-       unless it changed. -->
-  <script src="/htmx-1.9.12.min.js" defer></script>
-  <script src="/camp.js" defer></script>
-</head>
-<body>
-  ${taskbar(c, festival, festivals)}
-  <div class="title-gap" aria-hidden="true"></div>
+    // EVERYTHING that differs between two tabs of the same festival, in one
+    // contiguous block: the icon row (its selected state), any sibling window a
+    // page docks above the main one, the main window itself, and the mine tab's
+    // floating windows. This is exactly what a tab swap replaces — so anything
+    // added here is automatically handled by both paths, and anything that must
+    // SURVIVE a tab switch (taskbar, overlay layers, Rover) must stay out of it.
+    const desktopInner = html`
   <!-- Icons first: they're the way into everything, so they sit directly under
        the taskbar with the program window right below. Rover is position:fixed
        bottom-right and renders last so he's out of the flow entirely. -->
   ${festival ? desktopIcons(festival, activeTab, person) : ''}
-  <div id="signin-modal-overlay"></div>
-  <div id="popup-layer"></div>
-  <div id="toast"></div>
   ${preHtml}
   ${bare && !showJoin ? html`<main id="main" hidden>${bodyHtml}</main>` : html`
   <div class="xp-window ${theme && theme.full ? 'xp-window-full' : ''}">
@@ -434,7 +431,89 @@ export async function renderPage(c, { title, activeTab = '', body, festival = nu
       </main>
     </div>
   </div>`}
-  <div id="mine-floating" class="mine-floating">${floatingHtml}</div>
+  <div id="mine-floating" class="mine-floating">${floatingHtml}</div>`;
+
+    // A tab swap: send the new desktop and nothing else. Identified by HX-Target
+    // rather than a bare HX-Request check, because plenty of OTHER htmx requests
+    // hit these same URLs (fragment refreshes aimed at #main, #car-list, …) and
+    // must still get their own markup, not a whole desktop.
+    // HX-History-Restore-Request is excluded deliberately: on a history restore
+    // whose snapshot has been evicted from localStorage, htmx re-requests the URL
+    // and replaces the entire <body> with the response — so that one MUST be the
+    // full page or the taskbar and overlay layers vanish.
+    const isTabSwap = c.req.header('HX-Target') === 'desktop'
+        && c.req.header('HX-History-Restore-Request') !== 'true';
+    if (isTabSwap) {
+        // htmx pulls document.title out of any response containing a <title> tag,
+        // so the tab name tracks the swap without a line of client JS.
+        // Rover rides along out-of-band: what he has to say is per-tab (he goes
+        // quiet on the Schedule tab), and he lives outside #desktop so that a
+        // fragment swap of the page body can't disturb him. `passes` is already in
+        // hand from the chrome batch, so this costs no extra query.
+        return html`<title>${title} :: camp planner</title>${desktopInner}
+  <div id="dog-slot" hx-swap-oob="outerHTML">${dogHtml}</div>`;
+    }
+
+    return html`<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <!-- viewport-fit=cover is what lets the Bliss wallpaper reach the very edges of
+       an iPhone screen. WITHOUT it iOS insets the whole layout viewport inside the
+       safe area and paints the leftover strips — behind the status bar / Dynamic
+       Island, and down by the home indicator — with the canvas colour. No element
+       can paint there at any size, which is why the wallpaper layer's 120px
+       overhang (retro.css) never covered them: it wasn't too small, it was out of
+       bounds. With cover, the viewport is edge-to-edge and the fixed wallpaper
+       layer fills those strips. Anything that must stay clear of the notch then
+       has to say so itself via env(safe-area-inset-*) — see .xp-taskbar.
+       Deliberately NO <meta name="theme-color">: setting it repaints the status
+       bar strip a flat colour, which is exactly the band we're getting rid of. -->
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <title>${title} :: camp planner</title>
+  <!-- Stylesheet FIRST: it's the only render-blocking resource that actually
+       gates first paint, and behind the two scripts the browser didn't even start
+       fetching it until they'd been downloaded and run. -->
+  <link rel="stylesheet" href="/retro.css">
+  <!-- historyCacheSize:0 — tab switches push URLs, and on every push htmx snapshots
+       the ENTIRE body innerHTML into localStorage. The stuff page is ~390 KB raw
+       (it compresses to ~11 KB on the wire, but the snapshot is the raw string), so
+       the default cache of 10 would try to hold ~4 MB. localStorage tops out around
+       5 MB, and htmx's response to a quota error is to drop an entry and re-stringify
+       the whole array — megabytes of JSON serialisation on every single tab click,
+       which is precisely the jank the htmx swap exists to remove.
+       With the cache off, Back/Forward re-requests the URL with
+       HX-History-Restore-Request, and renderPage answers that with the full page —
+       consistent with this app already forcing a network fetch per navigation
+       (no-store, see app.js). Raise this only if the pages get much smaller. -->
+  <meta name="htmx-config" content='{"historyCacheSize":0}'>
+  <script>window.PIXMOJI_RANGES=${raw(JSON.stringify(PIXMOJI_COVERED_RANGES))};</script>
+  <!-- Both deferred: neither is needed while the HTML parses, and the stuff page
+       is a lot of HTML to hold up. Deferred scripts still run in order and still
+       run BEFORE DOMContentLoaded, which is all either one needs — camp.js binds
+       to the document object (never document.body) and does its DOM work from
+       DOMContentLoaded/htmx events, htmx wires itself up on DOMContentLoaded, and
+       the inline onclick= handlers in the body only fire on a real tap. There are
+       no inline <script> blocks in the body to trip over this.
+       Self-hosted htmx (was unpkg): first paint shouldn't wait on a third-party
+       CDN's DNS + TLS + fetch. Version in the filename + immutable cache
+       (public/_headers); bump the name when upgrading htmx. camp.js's freshness
+       comes from Cache-Control: no-cache + ETag — revalidated each load, 304
+       unless it changed. -->
+  <script src="/htmx-1.9.12.min.js" defer></script>
+  <script src="/camp.js" defer></script>
+</head>
+<body>
+  ${taskbar(c, festival, festivals)}
+  <div class="title-gap" aria-hidden="true"></div>
+  <!-- The three overlay layers sit ABOVE #desktop in the document so a tab swap
+       can't blow away an open modal, popup or toast. Position is unaffected: all
+       three are position:fixed at z-index 999/1000 and display:none while empty,
+       so DOM order among them and the flow content below is irrelevant. -->
+  <div id="signin-modal-overlay"></div>
+  <div id="popup-layer"></div>
+  <div id="toast"></div>
+  <div id="desktop">${desktopInner}</div>
   ${dogSlot(dogHtml)}
   <div class="site-foot-space" aria-hidden="true"></div>
   ${msnToolbarTemplate()}

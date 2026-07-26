@@ -38,6 +38,22 @@ function campPledgeOptimistic(btn) {
   if (!fill || pct === null) return;
   campStepProgress(fill, parseFloat(pct));
 }
+// Packing Mode: same trick again for ticking something off the list.
+// Flip the drawn tick, the row's packed styling AND the status bar's count, because
+// the swap that carries the real numbers is a whole round trip away and this is a
+// control people tap down a list of ten things in a row.
+function campPackOptimistic(btn) {
+  var box = btn.querySelector('.xp-checkbox');
+  var row = btn.closest('.bringing-row');
+  if (!box || !row) return;
+  var packed = box.classList.toggle('checked');
+  row.classList.toggle('packed', packed);
+  var win = row.closest('.xp-mini-body');
+  var out = win && win.querySelector('.bringing-packed-n');
+  if (!out) return;
+  var n = parseInt(out.textContent, 10);
+  if (!isNaN(n)) out.textContent = Math.max(0, n + (packed ? 1 : -1));
+}
 // Move a progress bar to `pct`, advancing one green block at a time like the XP
 // file-copy dialog instead of gliding smoothly. The bar's block pitch comes from
 // --progress-block (set beside the gradient that draws them, so the two can't drift
@@ -179,6 +195,10 @@ function pixCovered(cp) {
 }
 function pixmojify(root) {
   if (!root || root.nodeType === undefined || !document.createTreeWalker) return;
+  // Off (the default) → don't wrap at all, rather than wrap and then style the
+  // pixel font away. No wrapping means no flash of pixel emoji on load and none of
+  // the spans on the page (the stuff tab alone has hundreds).
+  if (!campPixmojiOn()) return;
   var walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
     acceptNode: function (n) {
       if (!n.nodeValue) return NodeFilter.FILTER_REJECT;
@@ -238,6 +258,51 @@ function suppressPwManagers(root) {
     if (!el.getAttribute('autocomplete')) el.setAttribute('autocomplete', 'off');
   }
 }
+// --- how much screen is ACTUALLY visible right now -------------------------
+// The layout viewport lies once a keyboard is up: it keeps its full height, the
+// keyboard is simply drawn on top of it, and position:fixed still spans the whole
+// thing. So a "centred" dialog centres against a box whose bottom half you can't
+// see, and it ends up crowded down by the keyboard and iOS's floating URL bar.
+// 100dvh doesn't help — on iOS it tracks the toolbars, not the keyboard.
+//
+// window.visualViewport is the thing that actually knows: .height is the region
+// being shown to you (keyboard, toolbars and URL bar all excluded) and .offsetTop
+// is where that region starts inside the layout viewport. We publish both as CSS
+// custom properties on <html>; .modal-backdrop sizes itself to them, and ordinary
+// centring then puts a dialog in the middle of the free space by construction.
+// Nothing has to know a keyboard exists.
+//
+// Kept always-on rather than switched on when a dialog opens: a stale value would
+// show up as a visible jump on the frame a dialog appears. The cost is two custom
+// property writes, only when the rounded numbers actually change — visualViewport
+// fires on keyboard show/hide, rotation, pinch-zoom pans and the iOS URL bar
+// collapsing mid-scroll, which is why the writes are rAF-throttled and diffed.
+var campVVFrame = 0, campVVLastH = -1, campVVLastT = -1;
+function campApplyViewport() {
+  campVVFrame = 0;
+  var vv = window.visualViewport;
+  // Round: iOS reports fractional heights that jitter by hundredths mid-scroll,
+  // and every distinct value would otherwise cost a style recalculation.
+  var h = Math.round(vv.height), t = Math.round(vv.offsetTop);
+  if (h === campVVLastH && t === campVVLastT) return;
+  campVVLastH = h;
+  campVVLastT = t;
+  var s = document.documentElement.style;
+  s.setProperty('--vv-height', h + 'px');
+  s.setProperty('--vv-top', t + 'px');
+}
+function campQueueViewport() {
+  if (!campVVFrame) campVVFrame = requestAnimationFrame(campApplyViewport);
+}
+function campTrackViewport() {
+  var vv = window.visualViewport;
+  if (!vv) return;                 // pre-iOS-13; CSS falls back to the full viewport
+  campApplyViewport();
+  vv.addEventListener('resize', campQueueViewport);
+  vv.addEventListener('scroll', campQueueViewport);
+}
+campTrackViewport();
+
 // Open an item's "how many are you bringing" dialog with the field already live,
 // so the iOS keyboard comes straight up instead of costing a second tap. The
 // focus() MUST happen synchronously inside the tap handler — iOS only raises the
@@ -324,6 +389,10 @@ function campTidyUrl() {
 // honoring the 12h/24h preference from the control panel.
 function campTimeFmt() { try { return localStorage.getItem('campTimeFmt') || '12'; } catch (e) { return '12'; } }
 function campConfettiOn() { try { return localStorage.getItem('campConfetti') !== 'off'; } catch (e) { return true; } }
+// Pixel emoji are OPT-IN (Control Panel → Appearance). Off by default means the
+// tree walk never runs, no .pixmoji spans land on the page, and the two Unifont
+// faces are never used — so the browser never downloads them.
+function campPixmojiOn() { try { return localStorage.getItem('campPixmoji') === 'on'; } catch (e) { return false; } }
 function campFmtClock(d) {
   var h = d.getHours(), mi = d.getMinutes(), mm = (mi < 10 ? '0' : '') + mi;
   if (campTimeFmt() === '24') return (h < 10 ? '0' : '') + h + ':' + mm;
@@ -456,6 +525,16 @@ function campSetConfetti(on, el) {
   try { localStorage.setItem('campConfetti', on ? 'on' : 'off'); } catch (e) {}
   if (on && el) campConfetti(el); // a little celebratory proof it's back on
 }
+// Pixel emoji on/off, applied to the page you're looking at so the Control Panel
+// shows its own effect. Turning it OFF can't just stop wrapping — the spans are
+// already in the DOM — so the pixel font is disabled from a root class; turning it
+// back ON drops that class and wraps whatever landed while it was off. Same
+// per-device localStorage shape as the clock and confetti prefs.
+function campSetPixmoji(on) {
+  try { localStorage.setItem('campPixmoji', on ? 'on' : 'off'); } catch (e) {}
+  document.documentElement.classList.toggle('no-pixmoji', !on);
+  if (on) pixmojify(document.body);
+}
 // The control panel's clock radios + effects checkbox reflect this device's
 // prefs, which the server can't render — fill them in after the popup lands.
 // (The email/notify checkbox is server-rendered state; leave it alone.)
@@ -465,6 +544,8 @@ function campInitSettings(root) {
   for (var i = 0; i < radios.length; i++) radios[i].checked = radios[i].value === campTimeFmt();
   var fx = root.querySelector('#camp-fx-check');
   if (fx) fx.checked = campConfettiOn();
+  var px = root.querySelector('#camp-pixmoji-check');
+  if (px) px.checked = campPixmojiOn();
 }
 
 function campReducedMotion() {
@@ -505,7 +586,13 @@ function campSmoothScrollEl(el, targetLeft, targetTop) {
 // page rendered — hence the two sections keep their server-rendered counts too.
 
 document.addEventListener('DOMContentLoaded', function () { pixmojify(document.body); suppressPwManagers(document.body); campAutoOpenPledge(); campTidyUrl(); campLocalizeTimes(document.body); campInitSettings(document.body); campFillMsnToolbars(document); });
-document.addEventListener('htmx:afterSwap', function (e) { pixmojify(e.target); suppressPwManagers(e.target); campLocalizeTimes(e.target); campInitSettings(e.target); campFillMsnToolbars(e.target); campResumeBars(); });
+// campInitScheduleScroll is in here as well as on `load` because switching to the
+// Schedule tab is now an htmx swap of #desktop, and `load` fires once per DOCUMENT
+// — it will never fire again for a swap. Browsers WITH ResizeObserver are already
+// covered (campWatchSchedScroll below observes the fresh grid and observe() itself
+// delivers a first callback), so this is the fallback path for those without it,
+// which would otherwise land on the schedule scrolled to the wrong end.
+document.addEventListener('htmx:afterSwap', function (e) { pixmojify(e.target); suppressPwManagers(e.target); campLocalizeTimes(e.target); campInitSettings(e.target); campFillMsnToolbars(e.target); campResumeBars(); campInitScheduleScroll(e.target); });
 // Out-of-band swaps (hx-swap-oob — the mine tab's #mine-floating, oob toasts,
 // dialogs riding along into #popup-layer) fire oobAfterSwap, NOT afterSwap; without
 // this hook their emoji silently lose the pixel font on every oob update.
@@ -1299,6 +1386,256 @@ document.addEventListener('click', function (e) {
   if (dogPets >= DOG_PETS_TO_BSOD) { dogPets = 0; campBsod(); return; }
   dogPetTimer = setTimeout(function () { dogPets = 0; }, 1600);
 });
+
+// ——— Rover leaves on foot ——————————————————————————————————————————————
+// Ticking off the last thing he was nagging about deletes him from the server's
+// answer, so the #dog-slot OOB swap simply blinked him out of existence. Now he
+// hops off to the right and over the edge of the screen instead. Un-tick the box and
+// he turns around and hops home — never in mid-air, and never mid-sit: he lands,
+// sits out his 250ms, and only then goes back the way he came, so a turn looks like
+// a decision he made rather than a rewind. The whole trip is ONE Web Animation on
+// ONE element and turning around is just a playback-rate flip, so he picks up from
+// exactly where he is; the only state a turn needs is which hop he's on, and the
+// animation is already holding it. Toggle as fast as you like: there is never a
+// second dog on screen, and never a jump cut. The element he flies with is the SAME
+// element that was in the slot (moved to <body> before the swap can destroy it) — a
+// clone would have to be reconciled with the server's markup later, and a reversal
+// would have nothing to reverse.
+var DOG_HOP_MS = 200;                       // one hop, through the air
+var DOG_LAND_MS = 250;                      // ...then he sits there this long
+var DOG_HOP_STOPS = [0.18, 0.38, 0.6, 1];   // where each of the four hops lands
+var DOG_HOP_SAMPLES = 8;                    // points plotted along each arc
+var DOG_SHRINK_MS = 160;                    // matches dog-unpop in retro.css
+// At most one trip is ever in progress: { el, anim, ground, total, want (the
+// direction he's been ASKED for), closeTimer (balloon still folding), turnTimer
+// (a turn waiting on him to land) }.
+var dogFly = null;
+var dogArriving = false;                    // a dog is landing in the slot this swap
+
+// The path, in the dog's own local pixels: four arcs to the right with a sit-down
+// between them, the last one carrying him clear of the screen. Measured at takeoff
+// rather than hard-coded, so a phone's smaller dog and a rotated window both get a
+// trip that actually ends off-screen.
+function campDogFlightPath(el) {
+  var r = el.getBoundingClientRect();
+  // Far enough right that every pixel of him — plus his drop shadow — is past the edge.
+  var dist = (window.innerWidth - r.right) + r.width + 16;
+  var last = DOG_HOP_STOPS.length - 1;
+  var total = DOG_HOP_STOPS.length * DOG_HOP_MS + last * DOG_LAND_MS;
+  // Every stretch of the trip where his feet are down, as [start, end] on the same
+  // clock: the dock he starts on, the three sit-downs, and the spot off the edge he
+  // ends on. Turning around is only allowed inside one of these.
+  var ground = [[0, 0]];
+  var frames = [], t = 0, from = 0;
+  for (var h = 0; h <= last; h++) {
+    var to = DOG_HOP_STOPS[h] * dist;
+    var apex = h === last ? 38 : 26;        // the hop that has to clear the edge jumps highest
+    for (var s = 0; s <= DOG_HOP_SAMPLES; s++) {
+      var u = s / DOG_HOP_SAMPLES;
+      // x is linear in time, y is a parabola over it: constant forward speed with
+      // gravity on the vertical. Plotted as frames rather than eased because an
+      // easing curve bends both axes together, and only one of them should bend.
+      frames.push({
+        offset: (t + u * DOG_HOP_MS) / total,
+        transform: 'translate(' + (from + (to - from) * u).toFixed(2) + 'px,' +
+          (-apex * 4 * u * (1 - u)).toFixed(2) + 'px)'
+      });
+    }
+    var landed = t + DOG_HOP_MS;
+    t = landed;
+    if (h < last) { t += DOG_LAND_MS; frames.push({ offset: t / total, transform: 'translate(' + to.toFixed(2) + 'px,0px)' }); }
+    ground.push([landed, t]);
+    from = to;
+  }
+  return { frames: frames, total: total, ground: ground };
+}
+
+// When he may turn round, given where he is (`t`) and which way he's going: at the
+// FAR end of the sit-down he's in — or of the one he's about to land in. So a turn
+// asked for in mid-hop lands him first, and one asked for while he's sat down lets
+// him finish sitting. Either way he sits exactly one full DOG_LAND_MS and then goes
+// back, rather than cutting the sit short or doing it twice.
+//   .at   — the moment the sit is over and he's free to go
+//   .back — the other end of that same sit, where his clock is moved to when he does.
+//           The two ends are the same PLACE (he's sat still between them), so moving
+//           the clock across is invisible, and it's what stops the sit playing twice.
+function campDogTurnGate(ground, t, rate) {
+  var pick = null, i, edge;
+  for (i = 0; i < ground.length; i++) {
+    edge = rate > 0 ? ground[i][1] : ground[i][0];
+    if (rate > 0 ? edge < t - 1 : edge > t + 1) continue;
+    if (!pick || (rate > 0 ? edge < pick.at : edge > pick.at)) {
+      pick = { at: edge, back: rate > 0 ? ground[i][0] : ground[i][1] };
+    }
+  }
+  return pick;
+}
+
+// The one entry point: rate > 0 sends him for the edge, rate < 0 brings him home.
+// The animation is built once per flight and then only ever has its playback rate
+// flipped, which is the whole trick — a flip keeps his exact position and the hop
+// he's on. Turning is gated on a SIT, though (campDogTurnGate): ask for one while
+// he's in the air and he finishes the arc; ask while he's sat down and he finishes
+// sitting. He is never yanked backwards out of mid-air, and never sits twice.
+function campDogGo(rate) {
+  var f = dogFly;
+  if (!f) return;
+  f.want = rate;
+  if (f.turnTimer) { clearTimeout(f.turnTimer); f.turnTimer = null; }
+  if (f.closeTimer) {
+    // Still folding the balloon away, so he hasn't moved a pixel yet.
+    if (rate > 0) return;                              // ...which is already the plan
+    clearTimeout(f.closeTimer); f.closeTimer = null;
+    f.el.classList.remove('closing');
+    campDogSettle();                                   // never launched: he just stays
+    return;
+  }
+  if (!f.anim) {
+    var path = campDogFlightPath(f.el);
+    f.anim = f.el.animate(path.frames, { duration: path.total, fill: 'both' });
+    f.anim.onfinish = campDogLanded;
+    f.ground = path.ground;
+    f.total = path.total;
+    if (rate < 0) f.anim.currentTime = path.total;     // arriving: start him off-screen
+    f.anim.playbackRate = rate;
+    f.anim.play();
+    return;
+  }
+  if (f.anim.playbackRate === rate) return;            // already going that way
+  var t = f.anim.currentTime;
+  var gate = campDogTurnGate(f.ground, t, f.anim.playbackRate);
+  if (!gate) return;                                   // nothing ahead; onfinish has it
+  if (Math.abs(gate.at - t) < 1) { campDogTurn(f, rate, gate.back); return; }
+  // He finishes the hop he's on and the sit at the end of it first. `want` is already
+  // recorded, so if the clock runs out before the gate (the leap over the edge, or the
+  // hop into the dock) the finish handler turns him instead of putting him away.
+  f.turnTimer = setTimeout(function () { campDogTurn(f, rate, gate.back); }, Math.abs(gate.at - t));
+}
+
+// He's done sitting: send him the other way. The clock moves to the far side of the
+// sit he just finished, which is the same PLACE he's already standing in — so this is
+// seamless, and the sit doesn't replay on the way back.
+function campDogTurn(f, rate, back) {
+  if (dogFly !== f) return;
+  if (f.turnTimer) { clearTimeout(f.turnTimer); f.turnTimer = null; }
+  // The two ends of the whole trip are ground as well, and there's nothing to play out
+  // from them — he's simply arrived. (play() at either end, with the rate pointing off
+  // the end of the timeline, makes WAAPI seek to the OTHER end, which would teleport
+  // him the width of the screen.)
+  if (rate < 0 && back <= 0) { campDogSettle(); return; }
+  if (rate > 0 && back >= f.total) { campDogVanish(); return; }
+  f.anim.currentTime = back;
+  f.anim.playbackRate = rate;
+  f.anim.play();
+}
+
+// The clock ran out at one end of the trip or the other.
+function campDogLanded() {
+  var f = dogFly;
+  if (!f) return;
+  // A turn was asked for while he was in the air and the air has now run out: he's
+  // standing on something (the far side of the edge, or his own dock), so he may turn.
+  if (f.anim && f.want && (f.want > 0) !== (f.anim.playbackRate > 0)) {
+    if (f.turnTimer) { clearTimeout(f.turnTimer); f.turnTimer = null; }
+    f.anim.playbackRate = f.want;
+    f.anim.play();
+    return;
+  }
+  if (f.anim && f.anim.playbackRate > 0) campDogVanish(); else campDogSettle();
+}
+
+// Home. Back into the slot he came out of, so the next OOB swap can replace him
+// normally and the click handlers find him by id again.
+function campDogSettle() {
+  var f = campDogEndFlight();
+  if (!f) return;
+  f.el.classList.remove('hopping');
+  f.el.id = 'dog-assistant';
+  var slot = document.getElementById('dog-slot');
+  if (slot) slot.appendChild(f.el); else f.el.remove();
+}
+
+// Gone: off the edge for good, or dropped mid-trip so the server's markup can stand
+// (reduced motion, no Web Animations).
+function campDogVanish() {
+  var f = campDogEndFlight();
+  if (f) f.el.remove();
+}
+
+function campDogEndFlight() {
+  var f = dogFly;
+  if (!f) return null;
+  dogFly = null;
+  clearTimeout(f.closeTimer);
+  clearTimeout(f.turnTimer);
+  if (f.anim) { f.anim.onfinish = null; f.anim.cancel(); }
+  return f;
+}
+
+function campDogDepart(el) {
+  document.body.appendChild(el);            // out of the slot before the swap eats it
+  el.removeAttribute('id');                 // the slot may hold a dog again before he lands
+  el.classList.add('hopping');
+  var f = dogFly = { el: el, anim: null, ground: null, total: 0, closeTimer: null, turnTimer: null, want: 1 };
+  if (!el.classList.contains('open')) { campDogGo(1); return; }
+  // He can't hop off mid-sentence: the balloon shrinks back into his head first,
+  // the same four steps it grew in, and then he goes.
+  el.classList.remove('open');
+  el.classList.add('closing');
+  var btn = el.querySelector('.dog-btn');
+  if (btn) btn.setAttribute('aria-expanded', 'false');
+  f.closeTimer = setTimeout(function () {
+    if (dogFly !== f) return;
+    f.closeTimer = null;
+    el.classList.remove('closing');
+    campDogGo(1);
+  }, DOG_SHRINK_MS);
+}
+
+// Every #dog-slot swap boils down to "he should be here" or "he shouldn't"; this
+// turns that into a direction of travel. Tab switches count: they swap #desktop and
+// re-send the slot with it, and the "you haven't picked any sets" nag is silenced ON
+// the schedule tab — so opening Schedule sends him hopping off, and leaving it hops
+// him back in. That works because he flies from <body>, outside the swapped #desktop.
+document.addEventListener('htmx:oobBeforeSwap', function (e) {
+  var d = e.detail;
+  if (!d || !d.target || d.target.id !== 'dog-slot' || !d.fragment || !d.fragment.querySelector) return;
+  dogArriving = false;
+  var incoming = d.fragment.querySelector('.dog-assistant');
+  var parked = document.querySelector('#dog-slot .dog-assistant');
+  if (campReducedMotion() || !document.body.animate) { campDogVanish(); return; }
+
+  if (incoming && dogFly) {
+    // Wanted back while he's still out there: turn HIM around instead of landing a
+    // second dog in the slot. The freshest words win, though — what he's nagging
+    // about can change while he's away (pass ticked, then a car posted).
+    var said = incoming.querySelector('.dog-bubble'), his = dogFly.el.querySelector('.dog-bubble');
+    if (said && his) his.innerHTML = said.innerHTML;
+    incoming.remove();
+    campDogGo(-1);
+  } else if (incoming && !parked) {
+    dogArriving = true;                     // the element doesn't exist yet — see below
+  } else if (!incoming && parked) {
+    campDogDepart(parked);
+  } else if (!incoming && dogFly) {
+    campDogGo(1);                           // he was heading home; send him back out
+  }
+});
+
+// A dog who wasn't on screen at all arrives the same way he left, in reverse. He
+// only exists once the swap has run, so this half waits for it.
+document.addEventListener('htmx:oobAfterSwap', function (e) {
+  if (!dogArriving || !e.detail || !e.detail.target || e.detail.target.id !== 'dog-slot') return;
+  dogArriving = false;
+  var el = document.querySelector('#dog-slot .dog-assistant');
+  if (!el) return;
+  el.removeAttribute('id');
+  el.classList.add('hopping');
+  document.body.appendChild(el);
+  dogFly = { el: el, anim: null, ground: null, total: 0, closeTimer: null, turnTimer: null, want: -1 };
+  campDogGo(-1);
+});
+
 function campBsod() {
   if (document.getElementById('xp-bsod')) return;
   var lines = [

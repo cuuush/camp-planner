@@ -82,6 +82,18 @@ Plenty of good icons remain unused in `~/Downloads/Windows XP High Resolution Ic
 Pack/` — and the names are literal, so shop by concept: Cars uses `Activation`
 (XP's product-key icon = keys).
 
+**A live control cannot look like the scenery.** Because so much XP chrome here is
+deliberately inert, the *authentic* place for a control is often the wrong place for
+it: a toolbar toggle is what Explorer would really use for a view mode, but in a
+window full of dead toolbar buttons it reads as more scenery, and it's a ~20px tap
+target on the phone this is mostly used from. Pick the most XP-authentic control
+*that is obviously live and thumb-sized* — a checkbox with a full-width label, a
+Luna push button — and put it where fingers go, not where a mouse-era toolbar would.
+**And the same drawn control can mean two different things in two windows** — the
+tick box in What I'm Bringing is your own packing, the one on an item in Stuff is
+the promise to bring it. When that happens, one of them has to say so in prose; XP
+would have put a line of Help and Support text under the list, so we do too.
+
 Real data beats fake data *inside* the fake chrome: the Streets & Trips map pane is
 a live OpenStreetMap embed; the status bar shows the real lat/lon parsed from the
 Google Maps link. That contrast (authentic 2003 chrome, working 2026 internals) IS
@@ -387,12 +399,60 @@ bigger size. The Streets & Trips status bar drops its stop-count and coordinate 
      try/catch that degrades to safe defaults instead of per-statement `.catch()`.
   Prefer answering a question in SQL over fetching rows to sift in JS —
   `passStatement` is three `EXISTS` in one row where two queries used to be.
+- **Tab switches are htmx swaps of `#desktop`, not page loads.** `renderPage` builds
+  `desktopInner` — icon row, `pre` window, main window, `#mine-floating` — and serves
+  it two ways: wrapped in `<div id="desktop">` for a full page, or bare (plus a
+  `<title>` and Rover as `hx-swap-oob`) when the request carries **`HX-Target:
+  desktop`**. Routes call `renderPage` exactly as before; none of them know.
+  Three rules follow, and breaking any of them is silent:
+  1. **Anything that must SURVIVE a tab switch lives outside `#desktop`** — taskbar,
+     the three overlay layers, `#dog-slot`. Put a thing inside and it is destroyed
+     and rebuilt on every tab click. The tray icons visibly popped in on every switch
+     for exactly this reason, back when the whole document was torn down.
+  2. **Detect on `HX-Target`, never a bare `HX-Request`.** Other htmx requests hit
+     these same URLs aiming at `#main`, `#car-list`, … and must get their own markup.
+     And `HX-History-Restore-Request` must fall through to the **full page**: htmx
+     replaces the entire `<body>` with that response, so a fragment would delete the
+     taskbar.
+  3. **`hx-target`/`hx-swap`/`hx-push-url` are inherited** from the `<nav>` by every
+     `<a>` inside it. A link that targets something else (the signed-out Log In icon)
+     must override `hx-push-url` **as well as** `hx-target`, or it pushes a URL that
+     was never navigated to. Inheritance is per-attribute.
+  4. **It is `hx-boost`, and must stay `hx-boost`** — not an `hx-get` per link. This
+     looks like a style choice and is not. htmx's click handler runs
+     `if (ft) return;` (boosted anchor + ctrl/meta → let the browser have it) *before*
+     `if (ut) preventDefault()`, and `ft` tests the **boosted** flag specifically. Swap
+     in `hx-get` and cmd/ctrl-click gets eaten: no new tab and no swap. A
+     `click[!metaKey]` trigger filter does not rescue it either — filters are evaluated
+     after `preventDefault`. Boost also reads the link's own `href`, so `href` stays the
+     single source of truth for where an icon points.
+  `historyCacheSize` is **0** on purpose (`<meta name="htmx-config">`): htmx snapshots
+  the whole body into localStorage per push, the stuff page is ~390 KB raw, and the
+  default of 10 would thrash a ~5 MB quota with megabytes of JSON on every click.
+  Back/Forward therefore re-requests — which rule 2 already answers correctly.
+  Anything reached this way must re-init on `htmx:afterSwap`, because `DOMContentLoaded`
+  and `load` fire once per DOCUMENT and never again (that's why
+  `campInitScheduleScroll` is on both).
 - **htmx cannot do optimistic UI.** It paints only what the server sends, so a
   tapped control sits visibly still for a whole round trip (very obvious on a
   phone). For counters/toggles, flip the element's own state in an `onclick` and
   let the swap land on top with the authoritative value — `campVoteOptimistic` is
   the pattern. Keep it dumb: no request tracking, no rollback. The swap always
   wins, so a failed request is briefly off by one and self-corrects.
+- **Preferences: per-DEVICE → localStorage, per-PERSON → a column on `people`.**
+  Clock format, confetti and pixel emoji are device prefs (`campSetTimeFmt` /
+  `campSetConfetti` / `campSetPixmoji`, reflected into the Control Panel by
+  `campInitSettings` because the server can't render them). Anything that must
+  follow you between phone and laptop goes on the person row (`email`,
+  `email_unsubscribed`), because **a column on `people` is free to read**: the
+  session middleware already SELECTs the whole row on every request, so the page
+  pays nothing, where a `preferences` table would add a query to every render.
+  Write it with a bare UPDATE and then **mutate `c.get('person')` in place** before
+  re-rendering (`/settings/email` does this) — re-reading the row is a wasted round
+  trip. Before adding either kind, though, ask whether the setting should exist:
+  What I'm Bringing shipped with a "Packing Mode" switch (and a `people.packing_mode`
+  column) for all of an afternoon before it was obvious the mode wanted to be the
+  only mode. A pref you can't imagine anyone turning off is a pref you don't need.
 - **Every mutation goes through `logAction`** (`src/lib/audit.js`). It auto-creates
   membership ("doing anything on a fest joins you") — one chokepoint, don't sprinkle
   join logic in routes.
@@ -531,6 +591,12 @@ until yes.
   that opens a dialog is authentic ("Add…", "Browse…"); a leading ＋/emoji is not.
 - **Confirms**: "Are you sure you want to…". **Progress**: "Please wait while…".
   **Empty states**: "There are no X in this view." **Spelling**: "e-mail".
+- **No em dashes in NEW user-visible copy**, not just in Rover's balloon. An em dash
+  is a 2026 tell and Chris spots every one. Split the sentence or use a comma. Note
+  the existing copy is not clean: roughly thirty shipped strings still have one
+  (`grep '—' src/routes/*.js`). Don't add to the pile; sweeping the rest is its own
+  job. (Code comments in this repo are full of them, and that's fine. This is a rule
+  about shipped strings.)
 - **Labels** end with a colon ("Search for:", "Place:"). **Dialog headers** ask the
   Search Companion question ("Where is everyone meeting up?") then explain.
 - **Placeholders are SAMPLE VALUES**, never instructions: `Redmond, WA`,
@@ -556,8 +622,14 @@ those a pixel-font stack: **UnifontExMono** (jsDelivr, covers emoji ≤ Unicode 
 of GNU Unifont 16, fills every 2019+ emoji — mirror, wood, coin…) → system.
 `window.PIXMOJI_RANGES` (from `src/render/pixmoji-coverage.js`, generated by
 `scripts/gen-pixmoji-coverage.mjs`) gates wrapping so uncovered emoji stay native
-instead of tofu. **"Emoji X isn't pixelated" checklist**: (1) is it inside a
-`.pixmoji` span? if not → regex/coverage/`pixmojify` didn't run; (2) which font
+instead of tofu. **It is OPT-IN**: Control Panel → Appearance → "Use pixelated
+emoticons", a per-device localStorage pref (`campPixmojiOn`). Off is the default and
+means `pixmojify` returns immediately — no tree walk, no spans, and the two Unifont
+faces are never used so the browser never downloads them. Un-ticking mid-session
+can't un-wrap what's already in the DOM, so it kills the pixel font from a
+`.no-pixmoji` class on `<html>` instead. **"Emoji X isn't pixelated" checklist**:
+(0) is the option even on? (1) is it inside a `.pixmoji` span? if not →
+regex/coverage/`pixmojify` didn't run; (2) which font
 owns that codepoint (new emoji = the gap-filler); (3) did that font load —
 `document.fonts.check('16px UnifontEmoji16', '🪞')`; (4) **check on the phone** —
 Safari rejects fonts Chrome accepts (gotcha 9), and the color fallback hides it.

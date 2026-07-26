@@ -3,6 +3,12 @@
      Chalkboard SE on iOS, then the platform's cursive default. No web font —
      not worth a render-blocking fetch for a fallback face. */
   :root { --fun-font: 'Comic Sans MS', 'Chalkboard SE', cursive; }
+  /* The shadow XP casts under a window: tight, and offset down-AND-right, because
+     it models a light source up and to the left. A big soft evenly-spread halo is a
+     2015 web idiom — XP's was a hard little 5px drop. One token, because one OS
+     draws every window here: the app frame, the dialogs, Streets & Trips, the me-tab
+     minis, the chat. Menus and balloons keep their own smaller shadow, as they did. */
+  :root { --xp-window-shadow: 5px 5px 12px rgba(0,0,0,0.45); }
   /* UnifontEX — a bitmap/pixel font with full emoji coverage. We render EVERY
      emoji through it (via .pixmoji spans the client wraps around emoji) so they
      look like chunky 8-bit pixel glyphs, matching the XP/MSN vibe. Only the
@@ -39,6 +45,15 @@
     -webkit-font-smoothing: none; -moz-osx-font-smoothing: unset; font-smooth: never;
     /* No-character way to ask for the pixel glyph over the system color emoji. */
     font-variant-emoji: text;
+  }
+  /* Pixel emoji are opt-in (Control Panel → Appearance → "Use pixelated
+     emoticons"), so .pixmoji spans only exist for people who asked for them. This
+     is the un-tick path within a session: set on <html> by campSetPixmoji so spans
+     already in the DOM go back to the system font immediately, where a reload
+     simply never wraps anything. (0,2,0) beats .pixmoji's (0,1,0), no !important. */
+  .no-pixmoji .pixmoji {
+    font-family: inherit; -webkit-font-smoothing: auto; font-smooth: auto;
+    font-variant-emoji: normal;
   }
   /* The canvas colour — with viewport-fit=cover (layout.js) the wallpaper layer
      covers the screen edges itself, so this is now only what shows during a
@@ -261,6 +276,13 @@
      physics (same reason the hop below is stepped). */
   .dog-assistant.open .dog-bubble { display: block; animation: dog-pop 0.16s steps(4, end) both; }
   @keyframes dog-pop { from { transform: scale(0.25); transform-origin: 88% 100%; } to { transform: scale(1); transform-origin: 88% 100%; } }
+  /* Closing is dog-pop run backwards — the same four steps, the same corner — so the
+     balloon folds back into his head the way it came out. Rover closes it himself
+     before hopping off (camp.js): he can't leave mid-sentence. This rule MUST stay
+     BELOW the .open one: both are (0,2,1), and .closing supplies the display:block
+     that .open was providing, since the class swap happens in one go. */
+  .dog-assistant.closing .dog-bubble { display: block; animation: dog-unpop 0.16s steps(4, end) both; }
+  @keyframes dog-unpop { from { transform: scale(1); transform-origin: 88% 100%; } to { transform: scale(0.25); transform-origin: 88% 100%; } }
   /* Speech-bubble tail: a real triangle hanging from the box's lower-right. Its two
      top points A,B sit on the box's bottom edge, the tip C drops below and toward B,
      aimed at the dog below. The two pseudo-elements share one frame whose top 3px
@@ -342,6 +364,12 @@
   /* Nothing to advertise once the balloon is open — he holds still while you read. */
   .dog-assistant.open .dog-img { animation: none; }
   .dog-assistant.open .dog-btn::before, .dog-assistant.open .dog-btn::after { animation: none; opacity: 0; }
+  /* Leaving (camp.js flies the WRAPPER off to the right). Mid-hop he's cargo, not a
+     button: the idle loop and the exclamation marks would fight the arc he's actually
+     travelling, and clicking a dog who is on his way out should do nothing. */
+  .dog-assistant.hopping .dog-img { animation: none; }
+  .dog-assistant.hopping .dog-btn::before, .dog-assistant.hopping .dog-btn::after { animation: none; opacity: 0; }
+  .dog-assistant.hopping .dog-btn { pointer-events: none; cursor: default; }
   @media (prefers-reduced-motion: reduce) {
     .dog-img { animation: none; }
     .dog-btn::before, .dog-btn::after { animation: none; opacity: 0; }
@@ -455,10 +483,18 @@
   .log-table .log-skip-hint { margin-top: 3px; font-size: 0.9em; color: #7a5c00; font-style: italic; }
   td, th { border: 1px solid #7e9dc4; padding: 6px 8px; }
   th { background: linear-gradient(180deg,#c1d7f2,#9cbde4); color: #0a246a; }
-  .btn, button, input[type=submit] {
-    /* Authentic Luna push button: dark-blue hairline border, rounded 3px,
-       pale vertical gradient with a bright top highlight. */
-    background: linear-gradient(180deg,#fdfeff 0%,#f2f2ec 45%,#ebebdf 52%,#f6f5ee 90%,#ffffff 100%);
+  /* ===== THE Luna push button — one definition, every button-shaped thing =====
+     Anything that should read as a Windows XP button rides these four rules and
+     overrides nothing but size. The <a>s that look like buttons (the sort toggle,
+     the day switcher) are in the selector lists on purpose: a hand-copied near-miss
+     of this chrome is exactly what lands in the uncanny valley.
+     Two details make or break the XP read:
+       • the face DARKENS to a tan bottom edge (#d8d0c4). The old gradient came back
+         to white at the bottom, which flattened the button into a modern chip.
+       • hot-track glows on the INSIDE of the border. XP never tints the border
+         itself and never throws an outer halo. */
+  .btn, button, input[type=submit], .sort-toggle a, .sched-day {
+    background: linear-gradient(180deg,#ffffff 0%,#f4f3ee 43%,#ecebe5 86%,#d8d0c4 100%);
     border: 1px solid #003c74;
     color: #000;
     padding: 4px 15px;
@@ -467,20 +503,22 @@
     font-size: 0.9em;
     line-height: 1.4;
     border-radius: 3px;
-    box-shadow: inset 0 0 0 1px #fff, inset 0 -6px 6px -6px rgba(0,60,116,0.25);
+    box-shadow: inset 0 1px 0 #fff;
     text-decoration: none;
   }
-  /* Luna hot-track: a soft amber glow on hover, exactly like a moused-over XP button. */
-  .btn:hover, button:hover, input[type=submit]:hover {
-    border-color: #e08a1e;
-    box-shadow: inset 0 0 0 1px #fff, 0 0 4px 1px rgba(255,177,40,0.75);
-    background: linear-gradient(180deg,#fffefb 0%,#fdf6e4 45%,#fbeecb 52%,#fdf6e0 90%,#ffffff 100%);
+  /* Luna hot-track: the amber rim glows just inside the border, border unchanged.
+     Shadows paint front-to-back, so the 1px pair sits over the 2px pair. */
+  .btn:hover, button:hover, input[type=submit]:hover, .sort-toggle a:hover, .sched-day:hover {
+    box-shadow: inset 1px 1px #fedf9c, inset -1px -1px #fff0cf,
+                inset 2px 2px #fbc63e, inset -2px -2px #fbc63e;
   }
-  .btn:active, button:active, input[type=submit]:active {
-    background: linear-gradient(180deg,#e3e3da 0%,#eceadf 60%,#f6f5ee 100%);
-    box-shadow: inset 1px 1px 2px rgba(0,0,0,0.28);
+  /* Pressed: the gradient flips — dark at the top, light at the bottom. */
+  .btn:active, button:active, input[type=submit]:active, .sort-toggle a:active, .sched-day:active {
+    background: linear-gradient(180deg,#cdcac3 0%,#e3e3db 8%,#e5e5de 94%,#f2f2f1 100%);
+    box-shadow: inset 1px 1px 2px rgba(0,0,0,0.22);
   }
-  .btn:focus-visible, button:focus-visible, input[type=submit]:focus-visible {
+  .btn:focus-visible, button:focus-visible, input[type=submit]:focus-visible,
+  .sort-toggle a:focus-visible, .sched-day:focus-visible {
     outline: 1px dotted #4a4a3c; outline-offset: -4px;
   }
   .rainbow { font-weight: bold; }
@@ -565,10 +603,32 @@
   #signin-modal-overlay:not(:empty) {
     position: fixed; inset: 0; z-index: 999;
   }
+  /* The backdrop covers the VISUAL viewport, not the layout viewport: --vv-height
+     and --vv-top are the live window.visualViewport box, written to <html> by
+     campTrackViewport() in camp.js. That box is exactly the space the browser is
+     actually showing you — the on-screen keyboard, the URL bar and the toolbars are
+     all outside it — so "centre the dialog in what's left" is just the usual flex
+     centring against a correctly-sized box. No guessing at keyboard heights, and it
+     re-centres by itself as the keyboard opens, closes or swaps to an emoji panel.
+     The fallback values are today's full-viewport behaviour, for anything without
+     visualViewport (iOS has had it since 13, so this is theoretical).
+     margin:auto on the box rather than align-items:center — same centring, but if a
+     dialog is ever taller than the space left over, the overflow stays reachable by
+     scrolling instead of having its title bar clipped off the top. */
   .modal-backdrop {
-    position: fixed; inset: 0; z-index: 1000; background: rgba(40,90,110,0.45);
-    display: flex; align-items: center; justify-content: center; padding: 16px;
+    position: fixed; left: 0; right: 0; z-index: 1000;
+    top: var(--vv-top, 0px);
+    height: var(--vv-height, 100%);
+    display: flex; padding: 16px;
+    overflow-y: auto; overscroll-behavior: contain;
+    /* No scrim — it used to dim to rgba(40,90,110,0.45). XP doesn't darken the
+       screen behind a dialog; the dialog just opens. What makes it modal is that
+       clicks land on it instead of on the window underneath, and this element still
+       does that job unpainted (a transparent box is still hit-tested, so
+       click-the-backdrop-to-dismiss keeps working). Depth comes from the dialog's
+       own drop shadow, exactly as it did on the real thing. */
   }
+  .modal-backdrop > .modal-box { margin: auto; }
   /* Modals AND the sign-in page share one look: an authentic XP dialog window —
      blue Luna caption bar + red close button, thin blue frame, gray dialog face. */
   .modal-box, .xp-dialog {
@@ -577,7 +637,7 @@
     border-radius: 8px 8px 6px 6px;
     padding: 0 3px 3px;
     max-width: 420px; width: 100%;
-    box-shadow: 0 12px 44px rgba(0,0,0,0.55);
+    box-shadow: var(--xp-window-shadow);
   }
   .xp-dialog-title {
     height: 28px; display: flex; align-items: center; gap: 6px;
@@ -657,19 +717,11 @@
     left: 6px; top: 1px; width: 6px; height: 13px; border-width: 0 3px 3px 0;
   }
 
-  /* "like" is a normal Luna button in the action row; liked = the same pressed/on
-     toggle face an XP toolbar button gets. */
+  /* "like" is a normal Luna button in the action row; liked = the shared latched
+     face (see .sched-going), which is what "the same pressed/on toggle an XP
+     toolbar button gets" is supposed to mean — it used to be a lookalike copy in
+     its own blue. */
   .like-btn .vote-count { color: #0a246a; }
-  .like-btn.voted {
-    color: #0a246a;
-    background: linear-gradient(180deg,#cfe0f7,#aecbec);
-    border-color: #5a8fd6;
-    box-shadow: inset 1px 1px 2px rgba(0,0,60,0.28);
-  }
-  .like-btn.voted:hover {
-    background: linear-gradient(180deg,#d9e8fb,#bcd4f0); border-color: #5a8fd6;
-    box-shadow: inset 1px 1px 2px rgba(0,0,60,0.28);
-  }
   @keyframes vote-pop { 0% { transform: scale(1); } 45% { transform: scale(1.5); } 100% { transform: scale(1); } }
   .like-btn.pop, .pledge-check.pop { animation: vote-pop 0.35s ease; }
   @keyframes confetti-burst {
@@ -806,7 +858,7 @@
   .st-window {
     max-width: 900px; width: calc(100% - 44px); margin: 22px auto 0;
     background: #0831d9; padding: 0 3px 3px; border-radius: 8px 8px 0 0;
-    box-shadow: 0 10px 30px rgba(0,0,0,0.55);
+    box-shadow: var(--xp-window-shadow);
   }
   .st-titlebar {
     height: 26px; display: flex; align-items: center; gap: 6px;
@@ -909,15 +961,15 @@
      are top-left inside the frame, so these don't cover them). Two stacked Luna
      buttons, deliberately chunky enough to hit with a thumb. */
   .st-zoom { position: absolute; top: 8px; right: 8px; z-index: 2; display: flex; flex-direction: column; gap: 3px; }
+  /* Real Luna buttons (they used to only claim to be) — face, border and hot-track
+     all come from the shared rule; only the square size and the drop shadow that
+     lifts them off the map are local. */
   .st-zoom-btn {
     width: 26px; height: 26px; padding: 0; line-height: 1;
     display: flex; align-items: center; justify-content: center;
-    font-family: Tahoma, sans-serif; font-size: 15px; font-weight: bold; color: #10233f;
-    background: linear-gradient(180deg,#fdfdfb,#e3ebf7); border: 1px solid #7ba7dd;
-    border-radius: 3px; box-shadow: 0 1px 3px rgba(0,0,0,0.3); cursor: pointer;
+    font-family: Tahoma, sans-serif; font-size: 15px; font-weight: bold;
+    filter: drop-shadow(0 1px 2px rgba(0,0,0,0.45));
   }
-  .st-zoom-btn:hover { background: linear-gradient(180deg,#fff,#d5e6fb); border-color: #316ac5; }
-  .st-zoom-btn:active { background: #c8ddf5; }
   /* Empty map pane = an XP help prompt ("To do X, click Y"), not a shrug — plain
      roman text (the old italic fought the bold lead line), navy bolds like Rover's
      tips, and room for the Set Meeting Spot… task link underneath. */
@@ -967,20 +1019,41 @@
      under the leaving-from line. */
   .car-note { font-style: italic; color: #5a5a4c; }
 
-  /* Proper Windows default button: the same Luna chrome as a normal button, marked
-     as the default action with just a slightly darker border + inner highlight.
-     Real XP default buttons are NOT bold and do NOT glow — no ring, no halo. */
-  .btn-primary {
-    border-color: #3c7fb1; color: #0b2f5c;
-    box-shadow: inset 0 0 0 1px #cfe4fb, inset 0 -6px 6px -6px rgba(0,60,116,0.25);
-  }
-  .btn-primary:hover {
-    border-color: #3c7fb1;
-    box-shadow: inset 0 0 0 1px #cfe4fb, inset 0 -6px 6px -6px rgba(0,60,116,0.25);
-  }
+  /* Proper Windows default button: the SAME border and face as every other button
+     — the only mark is XP's pale blue ring painted just inside the frame. It used
+     to lighten the border to #3c7fb1, which is what made "Add an Item…" and the
+     sort buttons above it look like they came from two different toolkits.
+     Real XP default buttons are not bold, and they hot-track like any other. */
+  .btn-primary { box-shadow: inset 0 0 0 1px #b6d2f0; }
   /* Delete stays a plain Luna button (Windows doesn't colour destructive
      buttons); just a red label so it reads as the dangerous one. */
   .btn-danger { color: #9a1616; }
+
+  /* ===== the LATCHED button: "this one is on" =====
+     A Luna toolbar button held pressed in with a blue tint. One definition for
+     every on/off control in the app — "you're going" on a set, the liked heart,
+     the chosen option in the stuff tab's sort toggle — so ON looks identical
+     everywhere instead of being three lookalike blues. Deliberately NOT
+     btn-primary: primary means "the thing to do next", and once you're going the
+     thing to do next is nothing. It still hot-tracks, though: that's the bit
+     promising it comes back off. The border stays #003c74 — a latched button is
+     the same button, just pushed in.
+     Must stay AFTER the shared :hover rule above, and each state needs its own
+     latched override or the plain hover/active face wins on source order. */
+  .sched-going, .sort-toggle a.active, .like-btn.voted {
+    color: #14304f;
+    background: linear-gradient(180deg,#c5dcf0 0%,#dceaf7 100%);
+    box-shadow: inset 1px 1px 2px rgba(0,50,100,0.28), inset -1px -1px 0 rgba(255,255,255,0.5);
+  }
+  .sched-going:hover, .sort-toggle a.active:hover, .like-btn.voted:hover {
+    background: linear-gradient(180deg,#cfe4f5 0%,#e6f1fa 100%);
+    box-shadow: inset 1px 1px 2px rgba(0,50,100,0.28),
+                inset 2px 2px #fbc63e, inset -2px -2px #fbc63e;
+  }
+  .sched-going:active, .sort-toggle a.active:active, .like-btn.voted:active {
+    background: linear-gradient(180deg,#b5d0e9 0%,#d2e5f4 100%);
+    box-shadow: inset 1px 1px 3px rgba(0,50,100,0.4);
+  }
 
   /* An XP dialog: a normal-sized field inline with its unit, then a button bar
      pinned bottom-right with fixed-width buttons — not a full-width mega input. */
@@ -1001,39 +1074,23 @@
     font-size: 16px !important; text-align: left; font-weight: normal;
     padding: 5px 8px !important;
   }
-  /* Phones only: pin the "how many" dialog to the top of the screen. Focusing the
-     field raises the keyboard over the bottom half, and Safari's usual rescue —
-     scrolling the focused field into view — can't help a position:fixed backdrop,
-     so a vertically-centred dialog ends up sitting behind the keyboard with its OK
-     button out of reach. Up top it stays clear of the keyboard entirely. The safe-
-     area pad keeps it out from under the notch (viewport-fit=cover means the
-     viewport really does start at the top of the screen). Desktop keeps the
-     classic centred XP dialog — there's no keyboard to dodge. */
-  @media (max-width: 600px) {
-    .pledge-modal {
-      align-items: flex-start;
-      /* Roughly halfway between pinned-to-the-top and centred: hard against the top
-         read as too high, dead centre sits behind the keyboard. A ~180px dialog on a
-         tall phone centres at about 39vh, so 20vh splits the difference and still
-         leaves it well clear of the keyboard's top edge (~55vh). Deliberately vh and
-         not dvh — dvh shrinks when the keyboard opens, which would make the dialog
-         jump upward the instant you focus the field. */
-      padding-top: max(20vh, env(safe-area-inset-top, 0px));
-    }
-  }
+  /* There used to be a phones-only rule here pinning this dialog 20vh from the top,
+     because focusing the field raised the keyboard over a centred dialog and Safari
+     can't scroll a position:fixed backdrop to rescue it. That was a guess at where
+     the keyboard's top edge lands (~55vh on a tall phone). The backdrop now sizes
+     itself to the visual viewport instead, so the dialog is genuinely centred in
+     whatever space is left and the guess isn't needed — on any phone, in either
+     orientation, keyboard up or down. */
   /* XP message-box buttons: always centered along the bottom (even a lone OK, or a
      Yes/No pair — both sit centered, never hugging the right edge). The default
-     button gets XP's understated treatment: a slightly darker border only — no bold
-     label and no outer glow (real XP dialog buttons don't glow). */
+     button gets XP's understated treatment: the pale blue inner ring from
+     .btn-primary and nothing else — no bold label, no colouring. */
   .dialog-buttons {
     display: flex; justify-content: center; gap: 8px;
     margin-top: 20px;
   }
   .dialog-buttons .btn { min-width: 82px; text-align: center; }
-  .dialog-buttons .btn-primary {
-    font-weight: normal;
-    box-shadow: inset 0 0 0 1px #cfe4fb, inset 0 -6px 6px -6px rgba(0,60,116,0.25);
-  }
+  .dialog-buttons .btn-primary { font-weight: normal; }
 
   /* Edit is a proper little XP dialog: a group-box face, right-aligned field
      labels lined up in a column, and an OK/Cancel-style button bar at the
@@ -1054,6 +1111,9 @@
   /* Breathing room between the stacked fields in the "add an item" dialog. */
   #add-stuff-modal .edit-field + .edit-field { margin-top: 12px; }
   #add-stuff-modal .dialog-buttons { margin-top: 16px; }
+  /* (This dialog briefly carried a translateY(-25px) to dodge iOS's floating URL
+      bar. The visual-viewport backdrop above measures that space instead of
+      guessing at it, so the nudge is gone.) */
   /* XP-style "please wait" spinner — hidden until htmx flips on .htmx-request
      (via hx-indicator) while the add-item POST waits on the LLM emoji lookup. */
   .xp-spinner-row { display: none; align-items: center; gap: 9px; margin-top: 14px;
@@ -1079,13 +1139,13 @@
   .msn-chat {
     border: 1px solid #0a3d91; border-radius: 6px 6px 4px 4px; overflow: hidden;
     background: #ece9d8;
-    box-shadow: 0 8px 22px rgba(0,0,0,0.38), 0 1px 0 rgba(255,255,255,0.6) inset;
+    box-shadow: var(--xp-window-shadow), 0 1px 0 rgba(255,255,255,0.6) inset;
   }
-  /* Collapsed, the chat is a compact glossy blue Luna button ("💬 Chat (N…)")
-     that doesn't span the row — no window frame, no fake min/max/close. */
   /* Collapsed, the chat is a rectangular glossy XP taskbar button — icon + title,
      the same blue Luna caption gradient, a bright top highlight and a 3px radius
-     (not a modern pill). Hover glows amber; pressed it sinks in. */
+     (not a modern pill). It sits in a row with real push buttons but is NOT one,
+     so it hot-tracks the way a taskbar button does: the blue lightens. The amber
+     rim belongs to Luna push buttons only — using it here was the tell. */
   .msn-chat:not([open]) {
     align-self: flex-start; max-width: 100%;
     border: 1px solid #17458f; border-radius: 3px;
@@ -1093,9 +1153,8 @@
   }
   .msn-chat:not([open]) > summary.msn-titlebar { height: auto; padding: 6px 14px; }
   .msn-chat:not([open]) .xp-caption-btns { display: none; }
-  .msn-chat:not([open]):hover {
-    border-color: #e08a1e;
-    box-shadow: inset 0 1px 0 rgba(255,255,255,0.6), 0 0 5px 1px rgba(255,177,40,0.8);
+  .msn-chat:not([open]):hover > summary.msn-titlebar {
+    background: linear-gradient(180deg,#4cb3ff 0%,#1a76ff 8%,#1a72ff 40%,#3d90ff 88%,#3d90ff 93%,#4cb3ff 95%,#3d90ff 100%);
   }
   .msn-chat:not([open]):active {
     box-shadow: inset 1px 2px 4px rgba(0,0,60,0.5);
@@ -1182,7 +1241,9 @@
   /* Stuff-tab controls row: sort toggle on the left, expand-all on the right. */
   .stuff-controls { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; margin: 10px 0; }
   .stuff-controls .sort-toggle { margin: 0; }
-  .expand-all-btn { font-size: 0.8em; padding: 3px 12px; }
+  /* Same font-size and padding as .sort-toggle a — the two ends of this row are
+     side by side, so any difference in height reads as a mistake. */
+  .expand-all-btn { font-size: 0.85em; padding: 3px 12px; }
 
   /* Items grouped into "still need these" / "all covered" sections, styled like
      XP Explorer's "show in groups" headers: a blue bold label with a hairline
@@ -1215,26 +1276,21 @@
   .stuff-section-header.done .section-count { color: #2f8f3a; border: 1px solid #86bf8c; }
   .stuff-empty { color: #555; font-style: italic; text-align: center; padding: 20px 0; }
 
-  /* Sort control reads as an XP toolbar: a label + small toggle buttons where the
-     active one is depressed (sunken with a light-blue tint), like a pressed
-     toolbar button — not a big blue slab. */
+  /* Sort control reads as an XP toolbar: a label + two small toggle buttons where
+     the chosen one is LATCHED (pressed in, blue tint — the shared latched face,
+     defined next to .btn-primary and used by "you're going" and "liked" too). The
+     buttons themselves are plain Luna push buttons; all this block is allowed to
+     set is their size, so they can't drift from the "Expand All" button sharing
+     their row. Everything else comes from the shared button rule up top. */
   .sort-toggle { display: flex; align-items: center; justify-content: center; gap: 6px; margin: 10px 0; font-size: 0.85em; }
   .sort-toggle .sort-label { color: #333; }
-  .sort-toggle a {
-    text-decoration: none; color: #000; padding: 3px 12px; border-radius: 3px;
-    border: 1px solid #003c74;
-    background: linear-gradient(180deg,#fdfeff 0%,#f2f2ec 45%,#ebebdf 52%,#f6f5ee 90%,#ffffff 100%);
-    box-shadow: inset 0 0 0 1px #fff;
-  }
-  .sort-toggle a:hover { border-color: #e08a1e; box-shadow: inset 0 0 0 1px #fff, 0 0 3px 1px rgba(255,177,40,0.7); }
-  .sort-toggle a.active {
-    background: linear-gradient(180deg,#c9dbf2,#aecbec); font-weight: bold;
-    box-shadow: inset 1px 1px 2px rgba(0,0,0,0.30);
-  }
+  .sort-toggle a { padding: 3px 12px; font-size: 1em; }
 
   /* "add an item…" opens an XP dialog (see .modal-box) rather than expanding inline. */
   .add-stuff-bar { margin: 10px 0; }
-  .add-stuff-btn { width: 100%; font-size: 1.05em; font-weight: bold; padding: 10px; }
+  /* Not bold — XP marks the default action with .btn-primary's blue inner ring,
+     never with a heavy label. Full width + 1.05em is what makes it the loud one. */
+  .add-stuff-btn { width: 100%; font-size: 1.05em; padding: 10px; }
 
   /* ===== authentic Windows XP "Luna" window chrome =====
      The whole app sits inside one XP window: rounded blue frame, glossy
@@ -1244,7 +1300,7 @@
     background: #0831d9;               /* the 3px blue window frame */
     padding: 0 3px 3px;
     border-radius: 8px 8px 0 0;
-    box-shadow: 0 10px 30px rgba(0,0,0,0.55);
+    box-shadow: var(--xp-window-shadow);
   }
   .xp-titlebar {
     height: 28px; display: flex; align-items: center; gap: 6px;
@@ -1374,7 +1430,7 @@
   .xp-mini {
     position: relative; margin: 16px 0 16px var(--mini-offset, 0px); max-width: 580px; width: 100%;
     background: #0831d9; padding: 0 3px 3px; border-radius: 8px 8px 0 0;
-    box-shadow: 0 8px 22px rgba(0,0,0,0.42);
+    box-shadow: var(--xp-window-shadow);
   }
   @media (min-width: 601px) { .xp-mini { margin: 0; max-width: none; } }
   .xp-mini-titlebar {
@@ -1400,7 +1456,7 @@
   .xp-popup {
     position: fixed; width: 300px; max-width: calc(100vw - 24px); pointer-events: auto;
     background: #0831d9; padding: 0 3px 3px; border-radius: 8px 8px 0 0;
-    box-shadow: 0 14px 40px rgba(0,0,0,0.5);
+    box-shadow: var(--xp-window-shadow);
   }
   .xp-popup.wide { width: 360px; }
   /* Message dialogs (xpDialogPopup): reasonable on desktop, ~95vw on mobile. */
@@ -1768,13 +1824,13 @@
   .checklist-add { display: flex; gap: 6px; margin-top: 8px; padding-top: 9px; border-top: 1px solid #d6d3c3; }
   .checklist-add input[type=text] { flex: 1; min-width: 0; }
 
-  /* me-tab: ONE row shape for both My Ride and What I'm Bringing — an Explorer
-     detail row. They're the same shape of fact ("this thing, this detail, go here"),
-     so they get the same anatomy: framed 32px icon, bold primary line, grey
-     secondary line, an optional right-hand cell. They used to be two unrelated
-     designs — a gradient panel with a 1.8em emoji above a list of white rows with
-     pills — which read as two programs in one column. */
-  .mine-empty { color: #555; font-style: italic; margin: 4px 0; }
+  /* me-tab: the My Ride row — a task-pane row (framed 32px icon, bold primary line,
+     grey secondary line, an optional right-hand cell). My Ride is ONE fact about you
+     with a way through to the tab that owns it, which is exactly the shape XP's task
+     panes use. What I'm Bringing shared this shape until it grew columns and tick
+     boxes; a variable-length list of homogeneous rows with per-column data is an
+     Explorer DETAILS view in XP, so it moved to .xp-listview below. Two shapes here
+     is right — they're two different kinds of thing, not two designs for one. */
   .mine-list { display: flex; flex-direction: column; gap: 4px; margin-top: 2px; }
   .mine-row, .mine-row:visited {
     display: flex; align-items: center; gap: 10px; padding: 5px 8px;
@@ -1799,21 +1855,37 @@
   .mine-row-go { flex: 0 0 auto; font-size: 0.82em; font-weight: bold; color: #0a3d91; white-space: nowrap; }
   /* "Nothing here yet" state: XP's manila note colour, not an error red. */
   .mine-row-empty { background: linear-gradient(180deg,#fffef6,#fdf6e0); border-color: #d9c98f; }
-  .bringing-row.packed { background: #f2f8f2; border-color: #b7d7b7; }
-  .bringing-qty {
-    font-size: 0.85em; color: #0a246a; white-space: nowrap;
-    background: linear-gradient(180deg,#fff,#e8eefb); border: 1px solid #9fbbe4;
-    border-radius: 2px; padding: 1px 7px;
+
+  /* me-tab: What I'm Bringing is an Explorer "details" view — it borrows the whole
+     .xp-listview anatomy from the car roster (sunken white field, Luna column-header
+     bar, zebra rows, blue hover) instead of the free-floating white cards it used to
+     be, which looked like a web list sitting inside an XP window. The two columns
+     line up because header and row use the SAME width classes. */
+  .bringing-col-check { flex: 0 0 20px; display: inline-flex; margin: 0; }
+  .bringing-col-qty { flex: 0 0 72px; text-align: right; }
+  .bringing-lv .xp-listview-head .bringing-col-qty { color: #37352c; }
+  .bringing-name {
+    flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    color: inherit; text-decoration: none;
   }
-  .bringing-packed { color: #1a7a1a; text-transform: uppercase; letter-spacing: 0.3px; }
-  /* The task-pane "see also" line each of these windows ends on, so every window
-     offers the way through to the tab that owns its data. */
-  .mine-more {
-    display: inline-flex; align-items: center; gap: 6px; margin-top: 10px;
-    font-size: 0.85em; font-weight: bold; color: #0a3d91; text-decoration: none;
-  }
-  .mine-more:hover { text-decoration: underline; }
-  .mine-more img { width: 16px; height: 16px; }
+  .bringing-name:visited { color: inherit; }
+  .bringing-name:hover { text-decoration: underline; }
+  .bringing-lv .roster-row:hover { background: linear-gradient(180deg,#eaf3ff,#d4e6fb); }
+  /* Packed = greyed and struck through, the way a completed item reads in a
+     wizard's task list. The row keeps its zebra stripe underneath. */
+  .bringing-row.packed .bringing-name { color: #7d8590; text-decoration: line-through; }
+  .bringing-row.packed .roster-emoji { opacity: 0.55; }
+  .bringing-qty { color: #4a4a3c; font-size: 0.9em; white-space: nowrap; }
+  /* The Help-and-Support prose under the list. It exists to head off a real
+     ambiguity: this window's boxes are a packing aid, while the box on an item over
+     in Stuff is the promise to bring the thing. Same drawn control, two meanings —
+     so one of them has to say which it is. */
+  .bringing-hint { margin: 10px 2px 0; font-size: 0.78em; color: #4a4a3c; line-height: 1.45; }
+  /* Status bar on the window's bottom edge — the shared Explorer cells, same as the
+     one in Streets & Trips. Output only: object count, and how much of it is packed. */
+  .bringing-statusbar { margin-top: 10px; }
+  .bringing-packed-cell { flex: 0 0 auto; }
+  .bringing-packed-n { color: #1a7a1a; font-weight: bold; }
 
   /* XP "group box" — the etched fieldset used across Control Panel dialogs. */
   fieldset { border: 1px solid #d6d3c3; border-top-color: #b7b4a5; border-radius: 3px; margin: 10px 0; padding: 10px 12px; background: rgba(255,255,255,0.35); }
@@ -1855,17 +1927,11 @@
   /* Day switcher (Friday / Saturday / Sunday) — the tab's primary control, so:
      big, tappable, and lit up in Luna orange when it's the day you're looking at. */
   .sched-days { display: flex; flex-wrap: wrap; gap: 6px; }
-  .sched-day {
-    padding: 9px 22px; font-size: 0.95em; font-weight: bold; letter-spacing: 0.01em;
-    color: #12325e; text-decoration: none; cursor: pointer; border-radius: 4px;
-    border: 1px solid #7e9dc4;
-    background: linear-gradient(180deg,#fdfeff 0%,#eaf1fb 46%,#d8e5f6 54%,#eef4fd 100%);
-    box-shadow: inset 0 0 0 1px rgba(255,255,255,0.85), 0 1px 2px rgba(0,0,0,0.14);
-  }
-  .sched-day:hover {
-    border-color: #e08a1e;
-    box-shadow: inset 0 0 0 1px rgba(255,255,255,0.85), 0 0 4px 1px rgba(255,177,40,0.7);
-  }
+  /* An idle day is an ordinary Luna push button (chrome from the shared rule up
+     top — it used to carry its own blue-tinted copy); only the size is local. */
+  .sched-day { padding: 9px 22px; font-size: 0.95em; font-weight: bold; letter-spacing: 0.01em; }
+  /* The day you're looking at, lit up in Luna orange. Higher specificity than
+     .sched-day:hover, so hovering the current day leaves it alone. */
   .sched-day.active {
     color: #5a3000; border-color: #d98f00;
     background: linear-gradient(180deg,#ffe6a8 0%,#ffc44d 46%,#ff9f10 54%,#ffc65a 100%);
@@ -2069,24 +2135,8 @@
     opacity: 0.65; cursor: wait;
     box-shadow: inset 1px 1px 2px rgba(0,50,100,0.28);
   }
-  /* You're going: a LATCHED toolbar button, pressed in and holding a ticked box.
-     Deliberately NOT btn-primary — primary means "the thing to do next", and once
-     you're going the thing to do next is nothing. It keeps the hover glow, though:
-     that's the bit promising the tick comes back off. */
-  .sched-going {
-    border-color: #7f9db9; color: #14304f;
-    background: linear-gradient(180deg,#dceaf7 0%,#c5dcf0 100%);
-    box-shadow: inset 1px 1px 2px rgba(0,50,100,0.28), inset -1px -1px 0 rgba(255,255,255,0.5);
-  }
-  .sched-going:hover {
-    border-color: #7f9db9;
-    background: linear-gradient(180deg,#e6f1fa 0%,#cfe4f5 100%);
-    box-shadow: inset 1px 1px 2px rgba(0,50,100,0.28), 0 0 4px 1px rgba(255,177,40,0.75);
-  }
-  .sched-going:active {
-    background: linear-gradient(180deg,#c5dcf0 0%,#dceaf7 100%);
-    box-shadow: inset 1px 1px 3px rgba(0,50,100,0.4);
-  }
+  /* The latched face itself is shared app-wide — it lives with the other button
+     rules, up by .btn-primary. Only the tick alignment is local. */
   /* Borrows .xp-checkbox from the About Me packing list — same control, same tick,
      so a ticked box means the same thing everywhere in the app. Only the alignment
      inside a centred button is local. */

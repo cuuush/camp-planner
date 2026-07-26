@@ -53,6 +53,11 @@ function settingsBody(person) {
         <span class="xp-checkbox"></span>
         Show confetti and celebration effects
       </label>
+      <label class="xp-check-label" style="margin-top:7px;">
+        <input type="checkbox" class="xp-check-input" id="camp-pixmoji-check" onchange="campSetPixmoji(this.checked)">
+        <span class="xp-checkbox"></span>
+        Use pixelated emoticons 🎪
+      </label>
     </fieldset>`;
 }
 

@@ -45,11 +45,6 @@ function mineRow({ href, ico, icoImg, title, sub, right, cls }) {
         : html`<span class="mine-row ${cls || ''}">${inner}</span>`;
 }
 
-// XP task-pane footer link — the "see also" line real Explorer windows end on.
-function mineMoreLink(href, ico, label) {
-    return html`<a class="mine-more" href="${href}"><img src="${ico}" alt="">${label}</a>`;
-}
-
 // htmx fragment for partial updates: swaps the primary target (#main) as usual,
 // plus an out-of-band swap for #mine-floating, which lives outside the main
 // .xp-window and isn't reachable by an ordinary hx-target.
@@ -71,30 +66,40 @@ async function renderMineBody(c, festival) {
     const daysToGo = festival.start_date ? Math.ceil((new Date(festival.start_date) - new Date()) / 86400000) : null;
     const near = daysToGo !== null && daysToGo <= 14;
 
-    const pledges = (await db.prepare(`
+    // Five independent reads = five D1 round trips if you await them one at a time,
+    // and this body is re-rendered by every toggle on the tab. One batch = one.
+    const [pledgesQ, tasksQ, checksQ, drivingQ, ridingQ] = await db.batch([
+        db.prepare(`
         SELECT p.*, i.name as item_name, i.emoji, i.unit FROM pledges p
         JOIN items i ON i.id = p.item_id
         WHERE p.person_id = ? AND p.deleted_at IS NULL AND i.festival_id = ? AND i.deleted_at IS NULL
         ORDER BY i.name
-    `).bind(person.id, festival.id).all()).results;
-
-    const tasks = (await db.prepare('SELECT * FROM checklist_tasks WHERE festival_id = ? AND deleted_at IS NULL ORDER BY id').bind(festival.id).all()).results;
-    const checks = (await db.prepare(`
+    `).bind(person.id, festival.id),
+        db.prepare('SELECT * FROM checklist_tasks WHERE festival_id = ? AND deleted_at IS NULL ORDER BY id').bind(festival.id),
+        db.prepare(`
         SELECT * FROM checklist_checks WHERE person_id = ? AND task_id IN (SELECT id FROM checklist_tasks WHERE festival_id = ?)
-    `).bind(person.id, festival.id).all()).results;
-    const isChecked = (taskId) => checks.some((ch) => ch.task_id === taskId && !ch.unchecked_at);
-
-    const drivingCar = await db.prepare('SELECT * FROM cars WHERE festival_id = ? AND driver_person_id = ? AND deleted_at IS NULL').bind(festival.id, person.id).first();
-    // Exclude a seat in your OWN car: if you added yourself to the car you drive,
-    // the "you're driving!" panel already covers it — a second "riding with
-    // <yourself>" panel is just a confusing duplicate.
-    const ridingSeat = await db.prepare(`
+    `).bind(person.id, festival.id),
+        db.prepare('SELECT * FROM cars WHERE festival_id = ? AND driver_person_id = ? AND deleted_at IS NULL').bind(festival.id, person.id),
+        // Exclude a seat in your OWN car: if you added yourself to the car you drive,
+        // the "you're driving!" panel already covers it — a second "riding with
+        // <yourself>" panel is just a confusing duplicate.
+        db.prepare(`
         SELECT s.*, c.driver_person_id, pe.display_name as driver_name FROM seats s
         JOIN cars c ON c.id = s.car_id
         JOIN people pe ON pe.id = c.driver_person_id
         WHERE s.person_id = ? AND s.deleted_at IS NULL AND c.festival_id = ?
           AND c.deleted_at IS NULL AND c.driver_person_id != ?
-    `).bind(person.id, festival.id, person.id).first();
+    `).bind(person.id, festival.id, person.id),
+    ]);
+
+    const pledges = pledgesQ.results;
+    const tasks = tasksQ.results;
+    const checks = checksQ.results;
+    const isChecked = (taskId) => checks.some((ch) => ch.task_id === taskId && !ch.unchecked_at);
+    const drivingCar = drivingQ.results[0] || null;
+    const ridingSeat = ridingQ.results[0] || null;
+
+    const packedCount = pledges.filter((p) => p.packed_at).length;
 
     // Signed in, everything lives in the mini windows — the main window renders
     // bare (see renderPage), so there's no main content at all.
@@ -147,30 +152,38 @@ async function renderMineBody(c, festival) {
         right: html`<span class="mine-row-go">Cars ›</span>`,
     }) : ''}
       </div>
-      ${mineMoreLink(`/f/${festival.id}/rides`, '/xp/desk-cars.png', 'Open Cars')}
     `)}
     </div>
 
     <div class="mine-col mine-col-right">
     ${miniWindow("What I'm Bringing", 'bringing', 14, '/xp/desk-stuff.png', html`
-      ${pledges.length === 0
-            ? html`<p class="mine-empty">Nothing yet — claim something in Stuff.</p>`
-            : html`<div class="mine-list">
-          ${pledges.map((p) => html`
-            <div class="mine-row bringing-row ${p.packed_at ? 'packed' : ''}">
-              ${near ? html`
-                <form hx-post="/pledges/${p.id}/packed" hx-target="#main" hx-swap="innerHTML" class="checklist-check">
-                  <button class="check-toggle" type="submit" aria-label="toggle packed"><span class="xp-checkbox ${p.packed_at ? 'checked' : ''}"></span></button>
-                </form>` : ''}
-              <span class="mine-row-ico">${p.emoji}</span>
-              <a class="mine-row-text" href="/f/${festival.id}/stuff#item-${p.item_id}">
-                <span class="mine-row-title">${p.item_name}</span>
-                ${p.packed_at ? html`<span class="mine-row-sub bringing-packed">✓ packed</span>` : ''}
-              </a>
-              <span class="bringing-qty">${p.qty} ${p.unit || ''}</span>
-            </div>`)}
-        </div>`}
-      ${mineMoreLink(`/f/${festival.id}/stuff`, '/xp/desk-stuff.png', 'Open Stuff')}
+      <div class="xp-listview bringing-lv">
+        <div class="xp-listview-head">
+          <span class="bringing-col-check" aria-hidden="true"></span>
+          <span class="lv-head-title">Item <span class="roster-count">(${pledges.length})</span></span>
+          <span class="bringing-col-qty">Quantity</span>
+        </div>
+        ${pledges.length === 0
+            ? html`<div class="roster-empty">There are no items in this view.</div>`
+            : pledges.map((p) => html`
+          <div class="roster-row bringing-row ${p.packed_at ? 'packed' : ''}">
+            <form hx-post="/pledges/${p.id}/packed" hx-target="#main" hx-swap="innerHTML" class="checklist-check bringing-col-check">
+              <button class="check-toggle" type="submit" aria-label="packed: ${p.item_name}" onclick="campPackOptimistic(this)"><span class="xp-checkbox ${p.packed_at ? 'checked' : ''}"></span></button>
+            </form>
+            <span class="roster-emoji">${p.emoji}</span>
+            <a class="bringing-name" href="/f/${festival.id}/stuff#item-${p.item_id}">${p.item_name}</a>
+            <span class="bringing-col-qty bringing-qty">${p.qty} ${p.unit || ''}</span>
+          </div>`)}
+      </div>
+      <!-- Where the "Open Stuff" link used to be: the Help-and-Support line saying
+           what these boxes are for — and, just as importantly, what they are NOT (the
+           box on an item in Stuff is the promise to bring it; these are only your own
+           packing) — then a real Explorer status bar on the window's bottom edge. -->
+      ${pledges.length ? html`<p class="bringing-hint">Check things off as you pack them (just for you, doesn't change anything).</p>` : ''}
+      <div class="st-statusbar bringing-statusbar">
+        <span class="st-status-cell st-status-main">${pledges.length} object${pledges.length === 1 ? '' : 's'}</span>
+        <span class="st-status-cell bringing-packed-cell"><b class="bringing-packed-n">${packedCount}</b> of ${pledges.length} packed</span>
+      </div>
     `)}
     </div>
   `;
@@ -313,22 +326,32 @@ mine.post('/f/:id/mine/checklist/:taskId/delete', async (c) => {
     return c.html(mineFragment(await renderMineBody(c, festival)));
 });
 
+// Tick one thing off the packing list. One JOIN gets the pledge, its item's name
+// (for the log line) and the fest columns renderMineBody needs — it used to walk
+// pledge → item → festival as three separate awaits. `person_id = ?` scopes it to
+// your own pledges: the window only ever renders yours, so anything else is a
+// hand-crafted POST.
 mine.post('/pledges/:pledgeId/packed', async (c) => {
     if (needsSignin(c)) return signinModalResponse(c);
     const id = Number(c.req.param('pledgeId'));
     const db = c.env.DB;
     const person = c.get('person');
-    const pledge = await db.prepare('SELECT * FROM pledges WHERE id = ?').bind(id).first();
-    if (!pledge) return c.notFound();
-    const item = await db.prepare('SELECT * FROM items WHERE id = ?').bind(pledge.item_id).first();
-    const festival = await db.prepare('SELECT * FROM festivals WHERE id = ?').bind(item.festival_id).first();
+    const row = await db.prepare(`
+        SELECT p.packed_at, i.name AS item_name, f.id AS festival_id, f.start_date AS festival_start
+        FROM pledges p
+        JOIN items i ON i.id = p.item_id
+        JOIN festivals f ON f.id = i.festival_id
+        WHERE p.id = ? AND p.person_id = ? AND p.deleted_at IS NULL
+    `).bind(id, person.id).first();
+    if (!row) return c.notFound();
+    const festival = { id: row.festival_id, start_date: row.festival_start };
 
-    const nowPacked = !pledge.packed_at;
+    const nowPacked = !row.packed_at;
     await db.prepare(`UPDATE pledges SET packed_at = ? WHERE id = ?`).bind(nowPacked ? new Date().toISOString() : null, id).run();
 
     await logAction(c, {
         festivalId: festival.id, action: 'update', entityType: 'pledges', entityId: id,
-        summary: `${person ? person.display_name : 'someone'} ${nowPacked ? 'packed' : 'unpacked'} ${item.name}`,
+        summary: `${person.display_name} ${nowPacked ? 'packed' : 'unpacked'} ${row.item_name}`,
     });
 
     return c.html(mineFragment(await renderMineBody(c, festival)));
