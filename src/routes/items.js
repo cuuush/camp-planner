@@ -35,6 +35,22 @@ function midSentence(name) {
     return s.charAt(0).toLowerCase() + s.slice(1);
 }
 
+// Rough English plural for the LAST word of an item's name, used when the name is
+// standing in for a missing unit: "How many broom are you bringing?" is worse than
+// anything this can get wrong. Names are typed however people type them, so it's
+// deliberately conservative — already ends in an s (Tapestries, Spare chairs), or
+// doesn't end in a letter at all ("Ice (bagged)"), and it's left alone.
+function pluralize(name) {
+    const m = (name || '').match(/^(.*?)([A-Za-z]+)$/);
+    if (!m) return name;
+    const [, head, word] = m;
+    const lower = word.toLowerCase();
+    if (lower.endsWith('s')) return name;
+    if (/(x|z|ch|sh)$/.test(lower)) return `${head}${word}es`;
+    if (/[^aeiou]y$/.test(lower)) return `${head}${word.slice(0, -1)}ies`;
+    return `${head}${word}s`;
+}
+
 async function itemStats(db, item) {
     // Four independent lookups — fire them together, one round trip of wall time.
     const [pledges, votes, comments, adder] = await Promise.all([
@@ -124,24 +140,27 @@ function itemRow(festival, item, stats, person, expanded = false, chatOpen = fal
     // which case the ticked box stays as the way to back out again.
     const covered = pledgedQty >= item.needed_qty;
     const showCheck = !covered || !!myPledge;
-    // The dialog only earns its interruption when there's a real question to ask,
-    // and the question depends on which way the tick is going:
-    //   ticking   → how many of the OUTSTANDING amount are you taking? One left to
-    //               cover and the answer can only be "one", so don't ask.
-    //   unticking → you're down for several; dropping all of them is rarely what
-    //               you meant, so ask and let the number come down (0 withdraws).
-    //               A pledge of exactly one has nothing to reduce — straight off.
+    // The dialog only earns its interruption when there's a real question to ask, and
+    // that's only ever on the way IN: how many of the OUTSTANDING amount are you
+    // taking? One left to cover and the answer can only be "one", so don't ask.
     // Note it's REMAINING, not needed_qty: an item wanting six with five spoken for
     // behaves exactly like a one-of item.
+    //
+    // Unticking never asks. A ticked box means "I'm bringing some of this", so the
+    // only thing clicking it can mean is "no I'm not" — it drops your pledge whole,
+    // whatever the number was. It used to reopen the dialog to let you talk the
+    // figure down instead, which put a question in front of the one gesture on the
+    // card that reads as instant. Changing your mind about the amount is now
+    // untick → tick, and the second tick asks you the number again.
     // Also gates whether the modal is rendered at all: every card used to carry a
     // hidden dialog it had no way to raise, ~19% of the page's HTML for nothing.
     // Needs a signed-in person and a visible check box, or there's no way to open
     // the dialog on this page at all: signed out, the box goes to the sign-in
     // window instead, and the sign-in round trip re-renders the card anyway.
-    const askQty = !!person && showCheck && (myPledge ? myPledge.qty > 1 : remaining > 1);
+    const askQty = !!person && showCheck && !myPledge && remaining > 1;
     // The dialog's own notes, kept here rather than as HTML comments inside it:
-    // min=0 on the qty field is deliberate (0 is how you take your name back off,
-    // there being no separate "withdraw" button); it carries no autofocus attribute
+    // min=0 on the qty field is deliberate — it's the same as Cancel, and posting a 0
+    // is harmless (you weren't down for any). It carries no autofocus attribute
     // because that does nothing on a dialog that starts hidden — campOpenPledge
     // focuses it on the way in; and the bar can't move while the box is merely
     // opening a dialog, so the optimistic update runs on OK instead, off
@@ -151,7 +170,7 @@ function itemRow(festival, item, stats, person, expanded = false, chatOpen = fal
     // What the dialog counts in. Most items get a unit from the LLM ("cases", "bags"),
     // but plenty don't — and "How many are you bringing?" beside a bare number box is
     // a worse question than the item's own name answers: for Tapestries, tapestries.
-    const pledgeUnit = item.unit || midSentence(item.name);
+    const pledgeUnit = item.unit || pluralize(midSentence(item.name));
     // Every control in the card swaps the WHOLE card out, so each one has to hand
     // back the two bits of open/closed state the server can't know: whether the card
     // is expanded and whether its comments window is open. Miss either and liking
@@ -191,13 +210,16 @@ function itemRow(festival, item, stats, person, expanded = false, chatOpen = fal
                 : askQty
                     // There's a number to settle — hand it to the dialog. The tick
                     // itself waits for OK (campPledgeDialogOptimistic), so cancelling
-                    // leaves the box exactly as it was.
-                    ? html`<button type="button" class="pledge-check" role="checkbox" aria-checked="${myPledge ? 'true' : 'false'}" aria-label="i'll bring this"
+                    // leaves the box exactly as it was. Always an EMPTY box: askQty is
+                    // the ticking direction only, so you can't be pledged here.
+                    ? html`<button type="button" class="pledge-check" role="checkbox" aria-checked="false" aria-label="i'll bring this"
                         onclick="event.stopPropagation(); ${openPledgeDialog}">
-                        <span class="xp-checkbox ${myPledge ? 'checked' : ''}"></span>
+                        <span class="xp-checkbox"></span>
                       </button>`
                     // Nothing to ask: one left to cover, or you're unticking. Straight
-                    // through — ticking puts you down for whatever's outstanding.
+                    // through — ticking puts you down for whatever's outstanding, and
+                    // unticking posts qty 0, which takes your whole pledge off however
+                    // many you were down for.
                     // The two bar widths this tick moves between, handed over so the
                     // client can run the bar the instant it's tapped instead of
                     // waiting on the round trip. Off = what everyone else has
@@ -279,13 +301,13 @@ function itemRow(festival, item, stats, person, expanded = false, chatOpen = fal
               hx-vals='js:{expanded: ${expandedVal}, chat_open: ${chatOpenVal}}'
               onsubmit="campPledgeDialogOptimistic(this)"
               data-item-id="${item.id}" data-needed="${item.needed_qty}"
-              data-others="${pledgedQty - (myPledge ? myPledge.qty : 0)}">
+              data-others="${pledgedQty}">
               <div class="pledge-prompt">
                 <img class="xp-dialog-icon" src="/xp/dlg-question.png" alt="" aria-hidden="true">
                 <div class="pledge-field-col">
                   <label class="pledge-label">How many ${pledgeUnit} are you bringing?</label>
                   <div class="pledge-input-row">
-                    <input type="number" name="qty" value="${myPledge ? myPledge.qty : remaining}" min="0" class="pledge-modal-input">
+                    <input type="number" name="qty" value="${remaining}" min="0" class="pledge-modal-input">
                   </div>
                 </div>
               </div>
