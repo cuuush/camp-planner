@@ -166,6 +166,8 @@ schedule.get('/f/:id/schedule/set/:setId/spotify-pick', async (c) => {
         title: 'Play on Spotify',
         id: `spotify-pick-${set.id}`,
         icon: 'question',
+        // Buttons only, no input — safe to centre on a phone.
+        centerMobile: true,
         message: html`<b>${set.artist}</b> is ${choices.length === 2 ? 'two artists' : `${choices.length} artists`} playing one set. Who do you want to hear?`,
         buttons: html`
           ${choices.map((name) => html`
@@ -202,6 +204,14 @@ function scheduleGrid(festival, sets, edit = false) {
           <div class="sched-corner"></div>
           <div class="sched-ruler-body" style="height:${totalH}px">
             ${hours.map((h) => html`<div class="sched-hour" data-hour-min="${h}" style="top:${Math.round((h - minMin) * PX_PER_MIN)}px">${fmtHourLabel(h)}</div>`)}
+            <!-- The grid runs evening → late-night top to bottom, so the headliners
+                 are at the BOTTOM. This zero-size marker sits at the bottom-left of
+                 the scrollport and carries scroll-initial-target, which asks the
+                 BROWSER to open the scroller here. Native, so it lands after layout
+                 instead of racing it (see campInitScheduleScroll for why the JS
+                 version was losing that race). In the ruler, not a stage column, so
+                 "nearest" resolves to the far left. -->
+            <div class="sched-start-here" aria-hidden="true"></div>
           </div>
         </div>
         <div class="sched-stages">
@@ -307,10 +317,14 @@ async function scheduleBody(c, festival, dayParam, { edit = false } = {}) {
     <div id="sched-body" class="sched-body ${edit ? 'is-editing' : ''}">
       ${hasSets ? html`<div class="sched-top">
         ${dayButtons(festival, days, day, edit)}
-        ${edit ? '' : scheduleToolbar(festival, day)}
       </div>` : ''}
       ${hasSets && edit ? editBanner(festival, day) : ''}
       ${hasSets ? scheduleGrid(festival, sets, edit) : scheduleEmpty(festival)}
+      <!-- Below the grid, not above it. Up top it pushed the poster down and sat
+           between you and the thing you opened the tab to read; it's a once-in-a-
+           while action, so it belongs after the content, where XP put a window's
+           secondary buttons anyway. -->
+      ${hasSets && !edit ? scheduleToolbar(festival, day) : ''}
     </div>`;
 }
 

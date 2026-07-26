@@ -60,10 +60,16 @@ const DIALOG_ICONS = {
 // ('warning', 'error', 'question', 'info', 'success', 'security') or a raw path
 // under /public. `big` doubles the icon. `buttons` is caller html (each can carry
 // its own onclick / hx-* attrs).
-export function xpDialogPopup({ title, icon = '', message, buttons, id = '', big = false, onClose = '' }) {
+// `centerMobile` vertically centres the dialog on phones instead of pinning it near
+// the top. OPT-IN, and only ever for a dialog with NO text field: the top pin exists
+// because the on-screen keyboard shoves a centred window off the top of the screen
+// (see the note on the mobile rules in retro.css). A pure question-and-buttons box
+// never summons a keyboard, so it can sit where a dialog belongs. Don't set this on
+// anything a user can type into.
+export function xpDialogPopup({ title, icon = '', message, buttons, id = '', big = false, onClose = '', centerMobile = false }) {
     icon = DIALOG_ICONS[icon] || icon;
     return xpPopup({
-        title, id, cls: 'dialog', onClose,
+        title, id, cls: `dialog${centerMobile ? ' center-mobile' : ''}`, onClose,
         body: html`
           <div class="xp-dialog-prompt">
             ${icon ? html`<img class="xp-dialog-icon ${big ? 'big' : ''}" src="${icon}" alt="" aria-hidden="true">` : ''}

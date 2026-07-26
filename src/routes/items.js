@@ -124,7 +124,7 @@ function itemRow(festival, item, stats, person, expanded = false, chatOpen = fal
             <button type="button" class="vote-thumb ${iVoted ? 'voted' : ''}"
               hx-post="/items/${item.id}/vote" hx-target="#item-${item.id}" hx-swap="outerHTML"
               hx-vals='js:{expanded: document.getElementById("item-${item.id}").querySelector(".item-details").open ? "1" : "0"}'
-              onclick="event.stopPropagation(); if (!this.classList.contains('voted')) campConfetti(this);">
+              onclick="event.stopPropagation(); if (!this.classList.contains('voted')) campConfetti(this); campVoteOptimistic(this);">
               👍<span class="vote-count">${voteCount}</span>
             </button>
           </div>

@@ -148,6 +148,30 @@ the joke — lean into it.
    ship under a new filename + updated `@font-face` URL (see
    `scripts/build-unifont-emoji.sh`).
 
+13. **`DOMContentLoaded` fires BEFORE `retro.css` applies.** Every `<script>` in
+    `<head>` comes before the stylesheet `<link>` and nothing follows it, so
+    nothing blocks on it. Any load-time JS that **measures layout** is therefore
+    reading an unstyled page: `.sched-scroll` has no overflow cap yet, so
+    `scrollHeight === clientHeight` and `el.scrollTop = el.scrollHeight` silently
+    clamps to 0. This cost a day: the schedule opened at the headliners about half
+    the time on prod (CSS usually cached) and **never** on dev (`no-cache`
+    revalidates over the network every load). A "works locally, flaky in prod,
+    broken on dev" bug is this shape until proven otherwise. Fixes, in order of
+    preference: (a) let CSS do it — `scroll-initial-target: nearest` on a marker
+    element hands the browser the job and it runs after layout, no timing to lose
+    (see `.sched-start-here`); (b) if you must use JS, **verify the effect landed
+    before marking it done** and retry on `window.load` (which does wait for
+    stylesheets) plus a `ResizeObserver`. Never set a "done" flag on the attempt.
+
+14. **The Luna button skin lands on EVERY `<button>`**, including ones that aren't
+    meant to look like buttons. `.dog-btn` inherited `box-shadow: inset 0 0 0 1px
+    #fff` and drew a white rectangle around Rover that read convincingly as a matte
+    baked into `dog.webp` (the art is fine — checking the alpha proved it). Resetting
+    the base rule is not enough: `button:hover` (0,1,1) **outranks** `.dog-btn`
+    (0,1,0), so the ring came back the instant the pointer touched it. Spell out
+    `:hover, :active, :focus` on any button you strip — same specificity trap as
+    gotcha 11.
+
 ## 🧱 Shared XP components — use these, don't hand-roll
 
 All in `src/render/popup.js` unless noted:
@@ -183,6 +207,9 @@ vertically like desktop.** It looks wrong for a short dialog and it is genuinely
 tempting, but every popup with a text field (rename, add person, chat, Spotify link)
 gets the keyboard thrown up under it, and a centred window is then shoved off the top
 of the screen. Pinned near the top is the only position that survives the keyboard.
+The ONE exception is opt-in and narrow: `xpDialogPopup({ centerMobile: true })` for a
+dialog with **no text field** (the b2b "who do you want to hear?" picker) — nothing to
+type into means no keyboard to be shoved off-screen. Never set it on a form.
 Body height caps use **`dvh`, never `vh`** — iOS `vh` includes the collapsed toolbar,
 which pushes bottom buttons off the visible screen. Caption buttons grow to 30×27
 (21px is well under Apple's 44pt touch-target guideline) — and any glyph drawn inside
@@ -208,6 +235,12 @@ bigger size. The Streets & Trips status bar drops its stop-count and coordinate 
      try/catch that degrades to safe defaults instead of per-statement `.catch()`.
   Prefer answering a question in SQL over fetching rows to sift in JS —
   `passStatement` is three `EXISTS` in one row where two queries used to be.
+- **htmx cannot do optimistic UI.** It paints only what the server sends, so a
+  tapped control sits visibly still for a whole round trip (very obvious on a
+  phone). For counters/toggles, flip the element's own state in an `onclick` and
+  let the swap land on top with the authoritative value — `campVoteOptimistic` is
+  the pattern. Keep it dumb: no request tracking, no rollback. The swap always
+  wins, so a failed request is briefly off by one and self-corrects.
 - **Every mutation goes through `logAction`** (`src/lib/audit.js`). It auto-creates
   membership ("doing anything on a fest joins you") — one chokepoint, don't sprinkle
   join logic in routes.
@@ -331,11 +364,16 @@ until yes.
   Search Companion question ("Where is everyone meeting up?") then explain.
 - **Placeholders are SAMPLE VALUES**, never instructions: `Redmond, WA`,
   `9:00 AM`, `Thu`, `Type their name`. No meta-hints like "blank = idk".
-- **Help/tips**: the cheery "click **Start**, and then click…" voice (see
-  `dogAssistant`). Rover is a NOTIFICATION, not a mascot: he renders only when
-  something is undone (not signed in; passes unbought). The old rotating tip pool
-  is gone — do not add "did you know" chatter that pushes the page down to say
-  nothing.
+- **Rover is a NOTIFICATION, not a mascot** (`dogAssistant`): he renders only when
+  something is undone (not signed in; passes unbought; schedule posted but nothing
+  starred). The rotating tip pool is gone — no "did you know" chatter. An EMPTY
+  schedule deliberately gets no nag: importing a poster is too big an ask.
+- **His copy is a balloon tip, not a help article**: short question/greeting as the
+  title, ONE short line of body, action as the link. "You haven't picked any sets
+  yet." — not "I noticed you haven't picked any sets yet. Would you like me to
+  help? Just open the Schedule and click…". The link IS the button, so never spell
+  out which control to click. First person, cheery, no em dashes. Wordiness creeps
+  back one helpful clause at a time; cut it.
 - Fun stays fun (tab names, Rover, BSOD) — but frame jokes in XP phrasing, never
   lowercase internet-casual.
 

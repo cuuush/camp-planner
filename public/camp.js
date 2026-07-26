@@ -2,6 +2,22 @@
    runs before <body> exists: top-level code must bind listeners to `document`
    (never document.body — that's null here and the throw silently kills every
    listener declared after it). document.body inside callbacks is fine. */
+// Optimistic vote count. htmx CANNOT do this on its own — it only paints what the
+// server sends back, so on a phone the number sat still for a whole round trip and
+// the tap felt broken. So: flip the button's own state the instant it's pressed,
+// then let the htmx swap land on top with the authoritative count a moment later.
+// Deliberately dumb — no request tracking, no rollback. The swap is the source of
+// truth and always wins, so the worst case for a failed request is a number that's
+// briefly off by one and corrects itself on the next render.
+function campVoteOptimistic(btn) {
+  var out = btn.querySelector('.vote-count');
+  if (!out) return;
+  var voted = btn.classList.contains('voted');
+  var n = parseInt(out.textContent, 10);
+  if (isNaN(n)) return;
+  out.textContent = Math.max(0, n + (voted ? -1 : 1));
+  btn.classList.toggle('voted', !voted);
+}
 function campConfetti(el) {
   if (!campConfettiOn()) return; // "visual effects" switched off in the control panel
   el.classList.add('pop');
@@ -191,15 +207,55 @@ function campLocalizeSchedule(root) {
 // actually came for are the first thing on screen, not the afternoon openers. Once
 // per grid instance (the data flag): it never fights a manual scroll, and it doesn't
 // re-fire when only a tile's buttons swap (that swap's subtree has no .sched-scroll).
+// FALLBACK ONLY: .sched-start-here + scroll-initial-target (retro.css) is the real
+// mechanism. This covers browsers without it — and must not repeat the bug it used
+// to have, which was flagging itself done before it had actually moved anything.
 function campInitScheduleScroll(root) {
   if (!root || !root.querySelectorAll) return;
   var scrollers = root.querySelectorAll('.sched-scroll');
   for (var i = 0; i < scrollers.length; i++) {
     var sc = scrollers[i];
     if (sc.getAttribute('data-init-scroll')) continue;
+    // THE BUG: this runs at DOMContentLoaded, which can fire before retro.css has
+    // applied (it's last in <head> with no script after it, so nothing blocks on
+    // it). Until it applies there's no overflow cap, so scrollHeight ===
+    // clientHeight and scrollTop silently clamps to 0 — and the old code still
+    // marked it done, so nothing ever retried. Symptom: never worked on dev (CSS
+    // revalidates over the network every load), worked ~half the time on prod
+    // (usually cached). If it isn't scrollable yet, it isn't ready: leave the flag
+    // off and let a later pass have it.
+    if (sc.scrollHeight <= sc.clientHeight) continue;
     sc.setAttribute('data-init-scroll', '1');
     sc.scrollLeft = 0;
     sc.scrollTop = sc.scrollHeight; // browser clamps to the max, i.e. the bottom
+  }
+}
+// The later passes. `load` waits for stylesheets, so by then the grid is real; the
+// ResizeObserver catches the case where layout settles later still (a slow font or
+// a late reflow) without polling. Both no-op once the flag is set, so neither can
+// yank the grid out from under someone who has already scrolled it.
+window.addEventListener('load', function () { campInitScheduleScroll(document.body); });
+if (typeof ResizeObserver === 'function') {
+  var campSchedRO = new ResizeObserver(function (entries) {
+    for (var i = 0; i < entries.length; i++) {
+      var sc = entries[i].target;
+      if (sc.getAttribute('data-init-scroll')) { campSchedRO.unobserve(sc); continue; }
+      if (sc.scrollHeight > sc.clientHeight) {
+        sc.setAttribute('data-init-scroll', '1');
+        sc.scrollLeft = 0;
+        sc.scrollTop = sc.scrollHeight;
+        campSchedRO.unobserve(sc);
+      }
+    }
+  });
+  document.addEventListener('DOMContentLoaded', function () { campWatchSchedScroll(document.body); });
+  document.addEventListener('htmx:afterSwap', function (e) { campWatchSchedScroll(e.target); });
+}
+function campWatchSchedScroll(root) {
+  if (!campSchedRO || !root || !root.querySelectorAll) return;
+  var scrollers = root.querySelectorAll('.sched-scroll');
+  for (var i = 0; i < scrollers.length; i++) {
+    if (!scrollers[i].getAttribute('data-init-scroll')) campSchedRO.observe(scrollers[i]);
   }
 }
 function campSetTimeFmt(v) {
@@ -944,13 +1000,8 @@ document.addEventListener('click', function (e) {
   var btn = e.target.closest && e.target.closest('.dog-btn');
   if (!btn) return;
   campToggleDog();
-  var img = btn.querySelector('.dog-img');
-  if (!img) return;
   clearTimeout(dogPetTimer);
   dogPets++;
-  img.classList.remove('petted');
-  void img.offsetWidth; // restart the wiggle animation on every pet
-  img.classList.add('petted');
   if (dogPets >= DOG_PETS_TO_BSOD) { dogPets = 0; campBsod(); return; }
   dogPetTimer = setTimeout(function () { dogPets = 0; }, 1600);
 });

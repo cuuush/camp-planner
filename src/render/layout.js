@@ -75,8 +75,12 @@ async function loadChrome(db, festival, person) {
 // buy the passes you still owe — and the page renders without him otherwise. (He
 // used to sit above the content cycling XP-help tips like "Your opinion counts!";
 // they pushed the actual page below the fold to say nothing, so they're gone.)
-// Copy stays in cheery early-2000s Windows-helper voice. The balloon is collapsed
-// until you click him (public/camp.js), so he costs one dog's worth of screen.
+// Copy is shaped like a real XP balloon tip, NOT like a help article: a short
+// question or greeting as the title, ONE short line of body, and the action as a
+// link below. No "would you like me to help?", no explaining which button to press
+// — the link is the button. ("There are unused icons on your desktop", not three
+// sentences about it.) The balloon is collapsed until you click him
+// (public/camp.js), so he costs one dog's worth of screen.
 // Pure rendering now — `passes` is the row loadChrome() already fetched, so
 // deciding whether to show him costs no queries of its own.
 function dogAssistant(c, festival, person, passes) {
@@ -90,7 +94,7 @@ function dogAssistant(c, festival, person, passes) {
         const next = encodeURIComponent(c.req.path);
         bubble = html`
           <span class="dog-title">Hi there, I'm Rover!</span>
-          It looks like you're just visiting. Sign in and I'll help you claim what you're bringing and save you a seat in a carpool.
+          You're just visiting. Sign in and I'll save your spot.
           <ul class="dog-links">
             <li><a href="/signin?next=${next}" hx-get="/signin/modal?next=${next}" hx-target="#signin-modal-overlay" hx-swap="innerHTML">Sign in &amp; join this fest</a></li>
           </ul>`;
@@ -101,7 +105,16 @@ function dogAssistant(c, festival, person, passes) {
         // Only drivers owe a car pass, so only nag drivers about it.
         const needCarPass = !!passes.driving && !passes.got_car_pass;
         // Fest has set times posted, but this person hasn't starred a single act.
-        const needSchedulePick = !!passes.has_schedule && !passes.mine;
+        // The has_schedule half also means an EMPTY schedule gets no nag at all:
+        // starring an act is one tap, but seeding the schedule means importing a
+        // poster, which is too much to ask of whoever happens to land here. Don't
+        // add a "your schedule is empty" nudge back — that was deliberately cut.
+        // Silenced ON the schedule tab itself: pointing someone at the Schedule
+        // while they are standing on it is noise, and the dog would sit over the
+        // grid they came to read. Path-based (not activeTab) so the tab's own
+        // fragment routes count too, and so dogSlotOob gets the same answer.
+        const onScheduleTab = /^\/f\/\d+\/schedule/.test(c.req.path || '');
+        const needSchedulePick = !!passes.has_schedule && !passes.mine && !onScheduleTab;
 
         if (needFestPass || needCarPass) {
             // All THREE combinations, not two. The copy used to branch only on
@@ -117,28 +130,15 @@ function dogAssistant(c, festival, person, passes) {
             const it = both ? 'them' : 'it';
             bubble = html`
               <span class="dog-title">Hey ${person.display_name}!</span>
-              Have you picked up ${owed} yet? Once you've got ${it}, just check ${it} off your list.
+              Don't forget ${owed}. Check ${it} off when you've got ${it}.
               <ul class="dog-links">
                 <li><a href="/f/${festival.id}/mine">Go to my checklist</a></li>
               </ul>`;
-        } else if (!passes.has_schedule) {
-            // Nobody has put the set times in at all yet — the one feature that
-            // stays useless until someone seeds it. Sits below the pass nags so
-            // Rover never stacks two things to do.
-            bubble = html`
-              <span class="dog-title">Shall we add the set times?</span>
-              Hi there, ${person.display_name}! Nobody has put the lineup for <b>${festival.name}</b> in yet, so the Schedule is empty. Would you like me to help? Open the <b>Schedule</b>, click <b>Edit Schedule</b>, and then click <b>Import</b>. You can point me straight at a photo of the lineup poster and I'll read it for you!
-              <ul class="dog-links">
-                <li><a href="/f/${festival.id}/schedule">Open the Schedule</a></li>
-              </ul>`;
         } else if (needSchedulePick) {
-            // Set times are up but this person hasn't starred anyone. Full XP Search
-            // Companion routine: Rover greets them, notices the gap, and OFFERS to help
-            // ("Would you like me to help?"), the way the real Search Companion always
-            // framed a task. Cheery, first person, no em dashes, no guilt.
+            // Set times are up but this person hasn't starred anyone.
             bubble = html`
               <span class="dog-title">Who do you want to see?</span>
-              Hi there, ${person.display_name}! I noticed you haven't picked any sets yet. Would you like me to help? Just open the <b>Schedule</b> and click <b>I'm Interested</b> next to each artist you'd like to catch. I'll keep your whole lineup safe, and your friends will know right where to find you!
+              You haven't picked any sets yet.
               <ul class="dog-links">
                 <li><a href="/f/${festival.id}/schedule">Open the Schedule</a></li>
               </ul>`;
@@ -273,7 +273,9 @@ const TAB_THEMES = {
     schedule: {
         label: 'Schedule', path: 'schedule', ico: '/xp/desk-schedule.png',
         title: (f) => `Set Times - ${f.name}`,
-        menus: ['File', 'View', 'Play', 'Tools', 'Help'],
+        // Decorative, like every other tab's. ("Play" dropped — it was the one
+        // menu label promising something the window can't do.)
+        menus: ['File', 'View', 'Tools', 'Help'],
         // The set-times grid is a wide, side-scrolling poster, so this window drops
         // the usual gutters and runs the full width of the screen — on a phone those
         // gutters cost enough room to push the time ruler out of view.

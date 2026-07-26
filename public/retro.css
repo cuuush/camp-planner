@@ -285,15 +285,15 @@
   .dog-img {
     display: block; width: 66px; height: auto; image-rendering: auto;
     filter: drop-shadow(1px 2px 3px rgba(0,0,0,0.4));
-    /* Double hop: up 10px, down, up, down — four holds of 100–150ms, then still
+    /* Double hop: up 5px, down, up, down — four holds of 100–150ms, then still
        for the rest of the cycle. */
     animation: dog-hop var(--dog-idle-cycle) steps(1, end) var(--dog-idle-delay) infinite;
   }
   @keyframes dog-hop {
     0%   { transform: translateY(0); }
-    1%   { transform: translateY(-10px); }
+    1%   { transform: translateY(-5px); }
     2.5% { transform: translateY(0); }
-    4%   { transform: translateY(-10px); }
+    4%   { transform: translateY(-5px); }
     5.5% { transform: translateY(0); }
     100% { transform: translateY(0); }
   }
@@ -326,9 +326,7 @@
     58%       { opacity: 1; transform: rotate(var(--tilt)) scale(0.6); }
     59%, 100% { opacity: 0; transform: rotate(var(--tilt)) scale(0.2); }
   }
-  /* Nothing to advertise once the balloon is open — he holds still while you read.
-     Must come BEFORE .dog-img.petted (equal specificity, later wins) so petting
-     an open Rover still wiggles him. */
+  /* Nothing to advertise once the balloon is open — he holds still while you read. */
   .dog-assistant.open .dog-img { animation: none; }
   .dog-assistant.open .dog-btn::before, .dog-assistant.open .dog-btn::after { animation: none; opacity: 0; }
   @media (prefers-reduced-motion: reduce) {
@@ -350,11 +348,11 @@
     background: url(/arrow.png) center/contain no-repeat; transform: scaleX(-1); }
   .dog-links a:hover { color: #1a52c8; text-decoration: underline; }
   @media (max-width: 600px) { .dog-img { width: 52px; } .dog-bubble { font-size: 0.85em; } }
-  /* Rover reacts to being petted (clicked). What happens on the fifth pet is
-     documented nowhere, which is the point. */
+  /* Tapping him toggles the balloon and nothing else. There WAS a wiggle on every
+     tap, left over from when petting was only an easter egg — now that the tap has
+     a real job, a wobble on top of the balloon popping open is just noise. The pet
+     COUNT still runs (see camp.js), it simply isn't advertised. */
   .dog-img { cursor: pointer; }
-  @keyframes dog-wiggle { 0% { transform: rotate(0); } 30% { transform: rotate(-8deg) scale(1.06); } 70% { transform: rotate(7deg); } 100% { transform: rotate(0); } }
-  .dog-img.petted { animation: dog-wiggle 0.35s ease; }
   /* The forbidden fifth pet: an authentic XP Stop error. Lucida Console on that
      unmistakable blue, dismissed by any key or tap. */
   .xp-bsod {
@@ -1318,6 +1316,13 @@
      the only position that survives the keyboard. */
   @media (max-width: 600px) {
     .xp-popup { left: 12px !important; right: 12px; width: auto !important; max-width: none; top: 63px !important; }
+    /* The one sanctioned exception to the top pin: a keyboard-less question box
+       (xpDialogPopup centerMobile, e.g. the b2b "who do you want to hear?" picker).
+       Nothing to type into means nothing to be shoved off-screen, and a short
+       dialog stranded at the top of a tall phone reads as a mis-render. `translate`
+       rather than `transform` so it can't stomp a transform used for animation —
+       same reason .dog-img uses it. */
+    .xp-popup.center-mobile { top: 50% !important; translate: 0 -50%; }
     .xp-popup .xp-popup-body { max-height: calc(100dvh - 150px); }
     /* 21px is well under Apple's 44pt touch-target guideline — grow the caption
        buttons and the bar they live in to a real touch size. */
@@ -1714,7 +1719,13 @@
      pushed to the right — deliberately unalike, since one is the thing you use
      every time and the other is the thing you use once. */
   .sched-top { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; margin: 2px 0 8px; }
-  .sched-toolbar { display: flex; flex-wrap: wrap; gap: 6px; }
+  /* Sits UNDER the grid now, so it needs the gap the .sched-top row used to give
+     it, and a hairline to read as a separate strip rather than as a stray button
+     floating off the bottom of the poster. */
+  .sched-toolbar {
+    display: flex; flex-wrap: wrap; gap: 6px;
+    margin-top: 10px; padding-top: 9px; border-top: 1px solid #cbd6e6;
+  }
   .sched-tbtn { display: inline-flex; align-items: center; gap: 5px; }
   .sched-tbtn-ico { width: 16px; height: 16px; image-rendering: auto; }
 
@@ -1778,6 +1789,22 @@
   .sched-ruler-body {
     position: relative;
     background: repeating-linear-gradient(to bottom, rgba(20,60,110,0.10) 0, rgba(20,60,110,0.10) 1px, transparent 1px, transparent var(--hour-h));
+  }
+  /* Opens the grid at the headliners. The grid runs evening → late-night downward,
+     so "the acts you came for" are the last pixel row; this marker sits there, at
+     the far left, and scroll-initial-target hands the job to the BROWSER, which
+     does it once layout is final. That timing is the whole point: the JS version
+     ran at DOMContentLoaded, which can fire BEFORE retro.css applies (the
+     stylesheet is last in <head> with no script after it, so nothing blocks on
+     it) — and until it does, .sched-scroll has no overflow cap, scrollHeight
+     equals clientHeight, and setting scrollTop silently clamps to 0. That is the
+     race: reliably lost on dev, where the CSS revalidates over the network every
+     load; won about half the time on prod, where it's usually cached.
+     Unsupported browsers just ignore this and fall back to the (now retrying) JS. */
+  .sched-start-here {
+    position: absolute; left: 0; bottom: 0; width: 1px; height: 1px;
+    pointer-events: none; visibility: hidden;
+    scroll-initial-target: nearest;
   }
   /* Labels are whole hours ("11 PM"), right-aligned against the columns and sitting
      just ABOVE their gridline rather than straddling it — so a line reads as "this
