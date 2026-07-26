@@ -17,6 +17,34 @@ import { webring } from './routes/webring.js';
 
 export const app = new Hono();
 
+// Plain HTTP on the public domain is a SILENT SIGN-IN BREAKER, not just a security
+// nit. Over HTTPS the session cookie is set with `Secure` (see lib/session.js). Over
+// HTTP it isn't — and Chromium implements RFC 6265bis §5.4 "leave secure cookies
+// alone": a non-Secure cookie is NOT allowed to overwrite an existing Secure cookie
+// of the same name. So for anyone who had ever visited over HTTPS, http:// sign-in
+// set `camp_session` into the void — no error, no warning, just permanently signed
+// out. Safari doesn't enforce that rule, and localhost never has a Secure cookie to
+// collide with, which is exactly why this only ever reproduced in Chrome/Brave on
+// prod and looked impossible to pin down.
+//
+// Fixed at the door rather than by loosening the cookie: dropping `Secure` would
+// hand the session token to anyone on the same coffee-shop wifi.
+//
+// Scoped to the public host on purpose. Dev is served over plain HTTP — localhost
+// and Tailscale from a phone (AGENTS.md gotcha 4) — and blanket-redirecting every
+// http:// request would make the app unreachable there.
+const PROD_HOST = 'camp.cuuush.com';
+app.use('*', async (c, next) => {
+    const url = new URL(c.req.url);
+    if (url.protocol === 'http:' && url.hostname === PROD_HOST) {
+        url.protocol = 'https:';
+        // 301: this is permanent, and letting browsers remember it means the
+        // insecure hop happens once per client instead of on every navigation.
+        return c.redirect(url.toString(), 301);
+    }
+    await next();
+});
+
 app.use('*', async (c, next) => {
     c.set('reqMeta', requestMeta(c));
     c.set('person', await retryOnD1Reset(() => loadPerson(c)));
