@@ -4,6 +4,54 @@ Camp Planner: Cloudflare Worker + Hono, **server-rendered HTML + HTMX**, D1 (SQL
 No build step, no SPA. See `PLAN.md` for product intent. Read this before touching
 rendering, the sign-in flow, or the DB — everything here bit us at least once.
 
+## 🚪 Start here (you are a fresh copy of me — read this first)
+
+**What it is.** A private tool for a group of friends going to a music festival
+together: who's coming, what everyone's bringing, who's driving, and which sets to
+catch. Small audience, phones-first, real people who will actually use it. It is
+dressed head to toe as **Windows XP** — that is the point, not decoration.
+
+**The 60-second mental model.**
+
+1. A request hits `src/index.js` → `src/app.js`. Middleware loads the session person
+   (one query) and then routes fall through `src/routes/*.js`.
+2. A route awaits `loadFestival(c)`, builds its body as an **unawaited promise**, and
+   hands it to `renderPage()` (`src/render/layout.js`), which renders the whole XP
+   desktop shell around it — taskbar, Start menu, desktop icons, window chrome, Rover.
+3. The response is a complete HTML page. Every interaction after that is HTMX
+   swapping a **fragment** the same route module renders. There is no client state,
+   no hydration, no JSON API. `public/camp.js` is progressive enhancement only.
+4. Every mutation is a soft delete plus a `logAction()` audit row, and most are
+   undoable via the effects engine.
+
+**Where things live.** `src/routes/` = one file per XP "program" (stuff, people,
+rides, schedule, mine, log). `src/lib/` = the shared machinery (session, audit,
+effects, people/ghosts, email, budget). `src/render/` = the shell and reusable XP
+widgets. `public/retro.css` + `public/camp.js` are the *only* two frontend files.
+
+**How to run it.** `npm run dev` (Chris usually already has one running — **do not
+kill or restart his dev server**, ask him to). Local D1 is throwaway; test against it
+freely. The `/verify` skill builds and drives the app end to end. Chris tests UI in
+the browser himself — ship the code and report rather than driving a browser to
+prove it.
+
+**The three things that will bite you first**, in order: passing `body` **awaited**
+into `renderPage` (silently costs a round trip, nothing fails); calling `sqlNow()`
+twice in one mutation (undo silently skips); and writing copy that doesn't sound like
+Windows XP. All three have their own sections below.
+
+**Reading order for a cold start.** This file's "Map of the code" → "Server patterns"
+→ "Gotchas". Then open `src/routes/items.js` — it is the most worked-over route and
+the best worked example of every pattern here (batched loads, fragment rendering,
+effects, optimistic UI).
+
+**Keep this file current.** It is the accumulated memory of everyone who has worked
+here, and it is the difference between a copy of me being useful in five minutes and
+rediscovering a footgun the hard way. When something surprises you, costs you an
+hour, or you make a decision a future copy would otherwise second-guess — write it
+down here, in the section it belongs to, in the same voice: what happened, why, and
+what to do instead.
+
 ## 🎨 Design language: every feature is a fake Windows XP program
 
 This is the soul of the site. It is not "a website with an XP skin" — it's an **XP

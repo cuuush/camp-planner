@@ -9,7 +9,17 @@
      emoji get it; regular Tahoma text stays crisp. Mono only (no color). */
   @font-face {
     font-family: 'UnifontExMono';
-    src: url('https://cdn.jsdelivr.net/gh/stgiga/UnifontEX/UnifontExMono.woff2') format('woff2');
+    /* Self-hosted and SUBSET (scripts/build-unifont-pixmoji.sh). Upstream
+       UnifontExMono.woff2 covers all of Unicode and weighs 2.0 MB, and we were
+       pulling it from cdn.jsdelivr.net — 2 MB over a third-party DNS+TLS hop to
+       draw a handful of chunky emoji. Subset to exactly the codepoints in
+       PIXMOJI_COVERED_RANGES it's 52 KB, a 97% cut, and behaviour-identical:
+       camp.js only ever wraps codepoints from that list in a .pixmoji span, so a
+       glyph outside it could never have been drawn from this font anyway.
+       Same reasoning that vendored htmx — see layout.js. Don't point this back
+       at a CDN, and don't swap in the full font "just to be safe": the safety is
+       scripts/check-pixmoji-font.py, which asserts the coverage still matches. */
+    src: url('/fonts/unifontex-pixmoji1.woff2') format('woff2');
     font-display: swap;
   }
   /* Gap-filler: emoji-only subset of GNU Unifont 16 (self-hosted, ~50KB) that

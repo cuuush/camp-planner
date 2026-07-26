@@ -36,7 +36,15 @@ const deadFns = [...js.matchAll(/^function ([A-Za-z_$][\w$]*)/gm)]
     .map((m) => m[1]).filter((fn) => uses(fn, true) === 0);
 
 // Class selectors defined in CSS but never emitted anywhere.
-const classes = new Set([...css.matchAll(/\.([a-z][\w-]{3,})/g)].map((m) => m[1]));
+// Strip comments and url()s FIRST. Without this, any dotted string in the file
+// reads as a class: a `url('…cdn.jsdelivr.net/…/Font.woff2')` reported `.jsdelivr`
+// and `.woff2` as dead classes, which is noise you learn to skim past — and
+// skimming past it is how a 2 MB third-party font sat on the critical path
+// unnoticed. A checker that cries wolf is worse than no checker.
+const cssSelectors = css
+    .replace(/\/\*[\s\S]*?\*\//g, ' ')
+    .replace(/url\([^)]*\)/g, ' ');
+const classes = new Set([...cssSelectors.matchAll(/\.([a-z][\w-]{3,})/g)].map((m) => m[1]));
 const deadClasses = [...classes].filter((c) => {
     let seen = 0;
     for (const [f, text] of corpus) if (f !== 'public/retro.css') seen += (text.includes(c) ? 1 : 0);
