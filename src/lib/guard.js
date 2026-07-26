@@ -1,5 +1,5 @@
 import { html } from 'hono/html';
-import { festNameFromPath } from './festival.js';
+import { festNameFromPath, festPeopleFromPath } from './festival.js';
 import { xpDialogPopup, xpCaptionBtns } from '../render/popup.js';
 
 export function needsSignin(c) {
@@ -14,6 +14,28 @@ function hiddenFields({ next, expandId, replayPath, replayBody }) {
       <input type="hidden" name="replay_body" value="${replayBody || ''}">`;
 }
 
+// The name field, plus XP's Welcome-screen conceit: the fest's existing names as a
+// pick list under the box. The names ship WITH the page in a data attribute and are
+// filtered in campSigninSuggest() — no round trip, so the list is there on the first
+// keystroke. That matters because the overwhelmingly common sign-in is a regular who
+// lost their session, and a typo doesn't fail loudly here — it quietly opens a second
+// account (normalized_name IS the credential), which then has to be merged by hand.
+// `.name-taken-notice` is the live "that name's taken" heads-up (camp.js), kept.
+function nameField(ctx) {
+    const names = ctx.festPeople && ctx.festPeople.length ? ctx.festPeople : null;
+    return html`
+    <div class="signin-namebox">
+      <input type="text" name="name" class="signin-name-input" placeholder="Type your user name"
+        autocomplete="off" autocapitalize="words" spellcheck="false" required autofocus
+        ${names ? html`data-names="${JSON.stringify(names)}"` : ''}>
+      ${names ? html`<div class="signin-suggest" hidden></div>` : ''}
+      <div class="name-taken-notice"></div>
+    </div>
+    <p class="signin-hint">${names
+        ? html`To begin, click your user name. No password is required.`
+        : html`To begin, type your user name. No password is required.`}</p>`;
+}
+
 // The sign-in form, shown inside the modal. Submits via htmx back into the same
 // overlay slot — so a "someone's already signed in as X" reply below can replace
 // it in place instead of navigating to a separate screen.
@@ -22,18 +44,16 @@ export function modalFormMarkup(ctx) {
     <div class="modal-backdrop" onclick="campSigninBackdrop(event, this)">
       <div class="modal-box xp-dialog">
         <div class="xp-dialog-title">
-          <span class="xp-dialog-title-text">Sign In</span>
+          <span class="xp-dialog-title-text">Log On to ${ctx.festName || 'Camp Planner'}</span>
           ${xpCaptionBtns({ min: false, max: false, onClose: "document.getElementById('signin-modal-overlay').innerHTML=''" })}
         </div>
         <div class="xp-dialog-body">
-          ${ctx.festName ? html`<p class="signin-fest-note">✔ Signing in will also add you to <b>${ctx.festName}</b>.</p>` : ''}
+          ${ctx.festName ? html`<p class="signin-fest-note">✔ Logging on also adds you to <b>${ctx.festName}</b>.</p>` : ''}
           <form hx-post="/signin" hx-target="#signin-modal-overlay" hx-swap="innerHTML">
             ${hiddenFields(ctx)}
-            <input type="text" name="name" class="signin-name-input" placeholder="Type your name" required autofocus>
-            <div class="name-taken-notice"></div>
-            <p class="signin-hint">To begin, type your name. No password is required. If someone else might use this name, choose one that is more identifiable.</p>
-            <input type="email" name="email" placeholder="E-mail address (optional, for notifications)">
-            <button class="btn btn-primary" type="submit" style="width:100%; margin-top:12px;">Sign In and Continue</button>
+            ${nameField(ctx)}
+            <input type="email" name="email" placeholder="E-mail address (optional)">
+            <button class="btn btn-primary" type="submit" style="width:100%; margin-top:12px;">Log On</button>
           </form>
         </div>
       </div>
@@ -48,14 +68,13 @@ export function modalFormMarkup(ctx) {
 export function signinPageMarkup(ctx) {
     return html`
     <div class="card signin-page">
-      <h2 style="margin-top:0;">Sign In</h2>
-      ${ctx.festName ? html`<p class="signin-fest-note">✔ Signing in will also add you to <b>${ctx.festName}</b>.</p>` : ''}
+      <h2 style="margin-top:0;"><img class="signin-logon-ico" src="/xp/logon.png" alt="">Log On to ${ctx.festName || 'Camp Planner'}</h2>
+      ${ctx.festName ? html`<p class="signin-fest-note">✔ Logging on also adds you to <b>${ctx.festName}</b>.</p>` : ''}
       <form method="post" action="/signin">
         ${hiddenFields(ctx)}
-        <input type="text" name="name" class="signin-name-input" placeholder="Type your name" required autofocus>
-        <p class="signin-hint">To begin, type your name. No password is required. If someone else might use this name, choose one that is more identifiable.</p>
-        <input type="email" name="email" placeholder="E-mail address (optional, for notifications)">
-        <button class="btn btn-primary" type="submit" style="width:100%; margin-top:12px;">Sign In and Continue</button>
+        ${nameField(ctx)}
+        <input type="email" name="email" placeholder="E-mail address (optional)">
+        <button class="btn btn-primary" type="submit" style="width:100%; margin-top:12px;">Log On</button>
       </form>
     </div>`;
 }
@@ -104,8 +123,11 @@ export async function signinModalResponse(c, { expandId } = {}) {
         replayBody = await c.req.raw.clone().text();
     } catch (e) { /* no body to replay */ }
 
-    const festName = await festNameFromPath(c, next);
-    return c.html(modalFormMarkup({ next, expandId, replayPath, replayBody, festName }));
+    const [festName, festPeople] = await Promise.all([
+        festNameFromPath(c, next),
+        festPeopleFromPath(c, next),
+    ]);
+    return c.html(modalFormMarkup({ next, expandId, replayPath, replayBody, festName, festPeople }));
 }
 
 // Used by plain (non-htmx) form posts that mutate state — full navigation to a

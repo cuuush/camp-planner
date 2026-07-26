@@ -928,17 +928,135 @@ document.addEventListener('click', function (e) {
   }, 0);
 });
 
+// ——— Sign-in: pick your user name off the list, XP Welcome-screen style ————
+// The fest's roster ships embedded in data-names (guard.js), so filtering is pure
+// local string work — the list is up on the first keystroke, no fetch, no spinner.
+// The overwhelmingly common sign-in is a regular who lost their session, and a typo
+// doesn't fail loudly: it quietly opens a SECOND account. Clicking beats typing.
+function campSigninNames(input) {
+  var raw = input.getAttribute('data-names');
+  if (!raw) return [];
+  try { return JSON.parse(raw); } catch (err) { return []; }
+}
+function campSigninBox(input) { return input.parentElement.querySelector('.signin-suggest'); }
+
+// Prefix matches first, then anywhere-in-the-string; capped so the list stays a
+// list and not a directory. An empty box shows everyone, like the Welcome screen.
+function campSigninMatches(names, q) {
+  var v = q.trim().toLowerCase();
+  if (!v) return names.slice(0, 8);
+  var starts = [], contains = [];
+  for (var i = 0; i < names.length; i++) {
+    var low = names[i].toLowerCase();
+    if (low.indexOf(v) === 0) starts.push(names[i]);
+    else if (low.indexOf(v) > -1) contains.push(names[i]);
+  }
+  return starts.concat(contains).slice(0, 8);
+}
+
+function campSigninRender(input) {
+  var box = campSigninBox(input);
+  if (!box) return;
+  var matches = campSigninMatches(campSigninNames(input), input.value);
+  // Nothing to offer once they've typed the whole name — the list would just be
+  // covering the field with what's already in it.
+  var exact = matches.length === 1 && matches[0].toLowerCase() === input.value.trim().toLowerCase();
+  if (!matches.length || exact) { box.hidden = true; box.innerHTML = ''; return; }
+  var out = '';
+  for (var i = 0; i < matches.length; i++) {
+    out += '<button type="button" class="signin-suggest-row" tabindex="-1">'
+      + '<img src="/xp/cp-accounts.png" alt="" class="signin-suggest-ico">'
+      + '<span class="signin-suggest-name"></span></button>';
+  }
+  box.innerHTML = out;
+  // Names go in as text, never as markup — a display_name is user-supplied.
+  var rows = box.querySelectorAll('.signin-suggest-name');
+  for (var j = 0; j < rows.length; j++) rows[j].textContent = matches[j];
+  box.hidden = false;
+}
+
+function campSigninHide(input) {
+  var box = campSigninBox(input);
+  if (box) { box.hidden = true; box.innerHTML = ''; }
+}
+
+function campSigninPick(input, name) {
+  input.value = name;
+  campSigninHide(input);
+  var notice = (input.closest('form') || input.parentElement).querySelector('.name-taken-notice');
+  if (notice) notice.textContent = '';
+  input.focus();
+}
+
+// Open the list when the field is focused, even empty — that's the whole point.
+document.addEventListener('focusin', function (e) {
+  if (!e.target.classList || !e.target.classList.contains('signin-name-input')) return;
+  campSigninRender(e.target);
+});
+// mousedown, not click: the row is a button, so focusing it would blur the input
+// and close the list out from under the click.
+document.addEventListener('mousedown', function (e) {
+  if (!e.target.closest) return;
+  var row = e.target.closest('.signin-suggest-row');
+  if (row) {
+    e.preventDefault();
+    campSigninPick(row.closest('.signin-namebox').querySelector('.signin-name-input'),
+      row.querySelector('.signin-suggest-name').textContent);
+    return;
+  }
+  // A click anywhere else dismisses an open list.
+  var open = document.querySelectorAll('.signin-suggest:not([hidden])');
+  for (var i = 0; i < open.length; i++) {
+    if (e.target.closest('.signin-namebox') === open[i].parentElement) continue;
+    campSigninHide(open[i].parentElement.querySelector('.signin-name-input'));
+  }
+});
+// Keyboard: ↓/↑ walk the list, Enter takes the highlighted row (and must NOT submit
+// the form on that press), Escape closes it and leaves what they typed alone.
+document.addEventListener('keydown', function (e) {
+  if (!e.target.classList || !e.target.classList.contains('signin-name-input')) return;
+  var input = e.target;
+  var box = campSigninBox(input);
+  if (!box || box.hidden) {
+    if (e.key === 'ArrowDown') { campSigninRender(input); e.preventDefault(); }
+    return;
+  }
+  var rows = box.querySelectorAll('.signin-suggest-row');
+  if (!rows.length) return;
+  var cur = -1;
+  for (var i = 0; i < rows.length; i++) if (rows[i].classList.contains('active')) cur = i;
+  if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+    e.preventDefault();
+    var next = e.key === 'ArrowDown' ? cur + 1 : cur - 1;
+    if (next < 0) next = rows.length - 1;
+    if (next >= rows.length) next = 0;
+    for (var j = 0; j < rows.length; j++) rows[j].classList.toggle('active', j === next);
+  } else if (e.key === 'Enter' && cur > -1) {
+    e.preventDefault();
+    campSigninPick(input, rows[cur].querySelector('.signin-suggest-name').textContent);
+  } else if (e.key === 'Escape') {
+    campSigninHide(input);
+  }
+});
+
 // Live "hey, that name's taken" heads-up as you type — never blocks submission,
 // just a nudge in case you didn't mean to pick an existing name.
 var campNameCheckTimer;
 document.addEventListener('input', function (e) {
   if (!e.target.classList || !e.target.classList.contains('signin-name-input')) return;
   var input = e.target;
+  campSigninRender(input);
   var notice = (input.closest('form') || input.parentElement).querySelector('.name-taken-notice');
   if (!notice) return;
   clearTimeout(campNameCheckTimer);
   var val = input.value.trim();
   if (!val) { notice.textContent = ''; return; }
+  // A name that's ON the pick list is a known name by definition, and choosing it is
+  // the intended path — warning them off it would be nonsense. Saves a round trip too.
+  var known = campSigninNames(input);
+  for (var i = 0; i < known.length; i++) {
+    if (known[i].toLowerCase() === val.toLowerCase()) { notice.textContent = ''; return; }
+  }
   campNameCheckTimer = setTimeout(function () {
     fetch('/signin/check-name?name=' + encodeURIComponent(val))
       .then(function (r) { return r.json(); })

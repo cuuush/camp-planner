@@ -2,7 +2,7 @@ import { Hono } from 'hono';
 import { renderPage } from '../render/layout.js';
 import { modalFormMarkup, signinPageMarkup, nameTakenWarning } from '../lib/guard.js';
 import { normalizeName } from '../lib/names.js';
-import { ensureMembership, festIdFromPath, festNameFromPath } from '../lib/festival.js';
+import { ensureMembership, festIdFromPath, festNameFromPath, festPeopleFromPath } from '../lib/festival.js';
 import { absorbPlaceholders, resolveMergedPerson } from '../lib/people.js';
 import { createSession, destroySession } from '../lib/session.js';
 import { logAction } from '../lib/audit.js';
@@ -81,9 +81,15 @@ function isHtmx(c) {
 }
 
 // If the sign-in flow will land on a fest page, signing in also joins that fest —
-// so tell them. Resolve the name from `next` and stash it on ctx for the form copy.
+// so tell them. Resolve the name from `next` and stash it on ctx for the form copy,
+// along with that fest's roster, which the form offers as a pick list (nameField).
 async function withFestName(c, ctx) {
-    ctx.festName = await festNameFromPath(c, ctx.next);
+    const [festName, festPeople] = await Promise.all([
+        festNameFromPath(c, ctx.next),
+        festPeopleFromPath(c, ctx.next),
+    ]);
+    ctx.festName = festName;
+    ctx.festPeople = festPeople;
     return ctx;
 }
 

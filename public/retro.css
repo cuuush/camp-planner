@@ -285,8 +285,9 @@
   .dog-img {
     display: block; width: 66px; height: auto; image-rendering: auto;
     filter: drop-shadow(1px 2px 3px rgba(0,0,0,0.4));
-    /* Double hop: up 5px, down, up, down — four holds of 100–150ms, then still
-       for the rest of the cycle. */
+    /* Triple hop: up 5px, down, up, down, up, down — six holds of 100–150ms, then
+       still for the rest of the cycle. The whole burst is over by 850ms, so it
+       still clears the exclamation marks that pop at the cycle's halfway mark. */
     animation: dog-hop var(--dog-idle-cycle) steps(1, end) var(--dog-idle-delay) infinite;
   }
   @keyframes dog-hop {
@@ -295,6 +296,8 @@
     2.5% { transform: translateY(0); }
     4%   { transform: translateY(-5px); }
     5.5% { transform: translateY(0); }
+    7%   { transform: translateY(-5px); }
+    8.5% { transform: translateY(0); }
     100% { transform: translateY(0); }
   }
   /* The two exclamation marks, one either side of his head, each leaning AWAY
@@ -384,7 +387,7 @@
     display: flex; flex-direction: column; align-items: center; gap: 4px;
     width: 76px; padding: 2px 2px 3px; text-decoration: none;
   }
-  .desk-icon-img { position: relative; width: 34px; height: 34px; }
+  .desk-icon-img { position: relative; width: 39px; height: 39px; }
   .desk-icon-img img { width: 100%; height: 100%; object-fit: contain; display: block;
     filter: drop-shadow(1px 2px 2px rgba(0,0,30,0.45)); }
   .desk-icon-label {
@@ -406,12 +409,15 @@
     background: #316ac5; text-shadow: none; border-color: #9ec1f0;
   }
   /* Phones: the five cells have to stay on ONE row (a wrapped second row costs
-     more height than the tighter icons save), so the cell shrinks to fit the
-     narrowest phone — 5 × 66px + the 24px page gutters clears 360px. */
+     more height than the tighter icons save), so instead of the desktop's fixed
+     grid cell they each take an equal FIFTH of the row (flex:1 with min-width:0,
+     plus nowrap) — the row always fills the width inside the 12px page gutters,
+     whatever the phone, and can't spill onto a second line. Sharing out that
+     slack buys enough room to draw the art at the full desktop size again. */
   @media (max-width: 600px) {
-    .desktop-icons { width: calc(100% - 24px); margin: 0 auto 8px; }
-    .desk-icon { width: 66px; }
-    .desk-icon-img { width: 30px; height: 30px; }
+    .desktop-icons { width: calc(100% - 24px); margin: 0 auto 8px; flex-wrap: nowrap; }
+    .desk-icon { width: auto; flex: 1 1 0; min-width: 0; }
+    .desk-icon-img { width: 35px; height: 35px; }
     .desk-icon-label { font-size: 10px; }
   }
   /* "you're not on the list yet" prompt — an XP info bar above the tab body. */
@@ -585,6 +591,29 @@
   .signin-hint { font-size: 0.8em; color: #4a4a3c; margin: 8px 0 0; }
   .name-taken-notice { font-size: 0.8em; color: #b85c00; margin-top: 6px; }
   .name-taken-notice:empty { display: none; }
+  .signin-logon-ico { width: 24px; height: 24px; vertical-align: -5px; margin-right: 7px; }
+  /* The pick-a-name list, hanging under the name field: an XP combo drop-down (1px
+     dark blue frame, white well, Luna-blue highlight on the row under the pointer)
+     crossed with the Welcome screen's account rows (user icon + name). Absolute, so
+     opening it doesn't shove the e-mail field and button down the dialog. */
+  .signin-namebox { position: relative; }
+  .signin-suggest {
+    position: absolute; left: 0; right: 0; top: 100%; z-index: 40;
+    margin-top: 1px; max-height: 210px; overflow-y: auto;
+    background: #fff; border: 1px solid #0a246a; border-radius: 0 0 3px 3px;
+    box-shadow: 0 5px 12px rgba(0,0,0,0.3);
+  }
+  .signin-suggest-row {
+    display: flex; align-items: center; gap: 8px; width: 100%; box-sizing: border-box;
+    padding: 7px 9px; border: 0; border-radius: 0; background: none; box-shadow: none;
+    font-family: Tahoma, Verdana, sans-serif; font-size: 0.95em; color: #10233f;
+    text-align: left; cursor: pointer;
+  }
+  .signin-suggest-row:hover, .signin-suggest-row.active {
+    background: #316ac5; color: #fff; box-shadow: none;
+  }
+  .signin-suggest-ico { width: 22px; height: 22px; flex: 0 0 auto; }
+  .signin-suggest-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
   .vote-thumb {
     background: none; border: 1px solid transparent; box-shadow: none; cursor: pointer;
@@ -1231,10 +1260,26 @@
   button.xp-caption-btn:active { filter: brightness(0.85); }
   button.xp-caption-btn:focus { outline: none; }
   /* A tab whose content is wider than it is tall (TAB_THEMES `full`, i.e. the
-     Schedule grid) runs the window edge to edge instead of inside the usual
-     centered 900px frame — the gutters are pure loss for a side-scrolling poster,
-     and on a phone they cost enough width to hide the time ruler. */
-  .xp-window-full { width: 100%; max-width: none; margin: 12px 0 24px; border-radius: 0; padding: 0 0 3px; }
+     Schedule grid) runs nearly edge to edge instead of inside the usual centered
+     900px frame — the gutters are pure loss for a side-scrolling poster, and on a
+     phone they cost enough width to hide the time ruler. Just a 10px margin is
+     kept so the window still reads as a window sitting ON the wallpaper rather
+     than as the page itself (width:auto, so the margins subtract from the row). */
+  .xp-window-full { width: auto; max-width: none; margin: 12px 10px 24px; border-radius: 0; padding: 0 0 3px; }
+  /* On a real screen there's no reason to stretch: the grid is a fixed number of
+     fixed-width stage columns, so the window SHRINK-WRAPS it (fit-content) and a
+     4-stage day sits at roughly half a laptop's width instead of being padded out
+     to 900px of white. min-width keeps a one- or two-stage day from turning into a
+     sliver; the max-width caps a festival with a dozen stages back to the frame
+     every other window uses. */
+  @media (min-width: 601px) {
+    .xp-window-full {
+      width: fit-content;
+      min-width: min(560px, calc(100% - 20px));
+      max-width: min(900px, calc(100% - 20px));
+      margin: 12px auto 24px;
+    }
+  }
   .xp-window-full .xp-titlebar { margin: 0; border-radius: 0; }
   .xp-window-full .xp-window-body { padding: 4px 3px 8px; }
   .xp-window-full .xp-window-body main { padding: 6px 2px; }
@@ -1282,6 +1327,8 @@
     background: linear-gradient(180deg,#0997ff 0%,#0053ee 8%,#0050ee 40%,#0165ff 88%,#0165ff 93%,#0997ff 95%,#0165ff 100%);
     cursor: move; user-select: none; touch-action: none;
   }
+  /* Program icon in the title bar, like every real XP window has. */
+  .xp-mini-ico { width: 16px; height: 16px; flex: 0 0 auto; filter: drop-shadow(0 1px 1px rgba(0,0,0,0.4)); }
   .xp-mini-title { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .xp-mini-body { background: #ece9d8; padding: 12px 14px; }
   .xp-mini-body > h3:first-child { margin-top: 0; }
@@ -1658,39 +1705,52 @@
   .checklist-add { display: flex; gap: 6px; margin-top: 8px; padding-top: 9px; border-top: 1px solid #d6d3c3; }
   .checklist-add input[type=text] { flex: 1; min-width: 0; }
 
-  /* me-tab: "what im bringing" list — a tidy file-listing look */
+  /* me-tab: ONE row shape for both My Ride and What I'm Bringing — an Explorer
+     detail row. They're the same shape of fact ("this thing, this detail, go here"),
+     so they get the same anatomy: framed 32px icon, bold primary line, grey
+     secondary line, an optional right-hand cell. They used to be two unrelated
+     designs — a gradient panel with a 1.8em emoji above a list of white rows with
+     pills — which read as two programs in one column. */
   .mine-empty { color: #555; font-style: italic; margin: 4px 0; }
-  .bringing-list { display: flex; flex-direction: column; gap: 4px; margin-top: 4px; }
-  .bringing-row {
+  .mine-list { display: flex; flex-direction: column; gap: 4px; margin-top: 2px; }
+  .mine-row, .mine-row:visited {
     display: flex; align-items: center; gap: 10px; padding: 5px 8px;
     background: #fff; border: 1px solid #cfd8e6; border-radius: 3px;
+    text-decoration: none; color: inherit;
   }
-  .bringing-row.packed { background: #f2f8f2; border-color: #b7d7b7; }
-  .bringing-icon {
+  a.mine-row { cursor: pointer; }
+  a.mine-row:hover { border-color: #5a8fd6; box-shadow: 0 0 4px 1px rgba(90,143,214,0.35); }
+  .mine-row-ico {
     width: 32px; height: 32px; flex: 0 0 auto; font-size: 1.35em;
     display: flex; align-items: center; justify-content: center;
     border: 1px solid #c3d2ec; border-radius: 3px; background: linear-gradient(135deg,#eef5ff,#d3e3f7);
   }
-  .bringing-name { flex: 1; min-width: 0; font-weight: bold; }
+  .mine-row-ico img { width: 22px; height: 22px; object-fit: contain; display: block; }
+  .mine-row-text {
+    flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px;
+    text-decoration: none; color: inherit;
+  }
+  .mine-row-title { font-weight: bold; overflow: hidden; text-overflow: ellipsis; }
+  a.mine-row-text:hover .mine-row-title { text-decoration: underline; }
+  .mine-row-sub { font-size: 0.78em; color: #5a6a80; }
+  .mine-row-go { flex: 0 0 auto; font-size: 0.82em; font-weight: bold; color: #0a3d91; white-space: nowrap; }
+  /* "Nothing here yet" state: XP's manila note colour, not an error red. */
+  .mine-row-empty { background: linear-gradient(180deg,#fffef6,#fdf6e0); border-color: #d9c98f; }
+  .bringing-row.packed { background: #f2f8f2; border-color: #b7d7b7; }
   .bringing-qty {
     font-size: 0.85em; color: #0a246a; white-space: nowrap;
     background: linear-gradient(180deg,#fff,#e8eefb); border: 1px solid #9fbbe4;
     border-radius: 2px; padding: 1px 7px;
   }
-  .bringing-packed { font-size: 0.72em; color: #1a7a1a; text-transform: uppercase; letter-spacing: 0.3px; }
-
-  /* me-tab: "my ride" info panel */
-  .ride-panel, .ride-panel:visited {
-    display: flex; align-items: center; gap: 12px; padding: 9px 11px; margin-top: 2px;
-    background: linear-gradient(180deg,#fbfdff,#eef3fc); border: 1px solid #b9c9e6;
-    border-radius: 4px; box-shadow: inset 0 1px 0 #fff;
-    text-decoration: none; color: inherit; cursor: pointer;
+  .bringing-packed { color: #1a7a1a; text-transform: uppercase; letter-spacing: 0.3px; }
+  /* The task-pane "see also" line each of these windows ends on, so every window
+     offers the way through to the tab that owns its data. */
+  .mine-more {
+    display: inline-flex; align-items: center; gap: 6px; margin-top: 10px;
+    font-size: 0.85em; font-weight: bold; color: #0a3d91; text-decoration: none;
   }
-  .ride-panel:hover { border-color: #5a8fd6; box-shadow: inset 0 1px 0 #fff, 0 0 4px 1px rgba(90,143,214,0.45); }
-  .ride-icon { font-size: 1.8em; flex: 0 0 auto; }
-  .ride-info { flex: 1; min-width: 0; line-height: 1.35; }
-  .ride-go { flex: 0 0 auto; font-size: 0.82em; font-weight: bold; color: #0a3d91; white-space: nowrap; }
-  .ride-empty { background: linear-gradient(180deg,#fffef6,#fdf6e0); border-color: #d9c98f; }
+  .mine-more:hover { text-decoration: underline; }
+  .mine-more img { width: 16px; height: 16px; }
 
   /* XP "group box" — the etched fieldset used across Control Panel dialogs. */
   fieldset { border: 1px solid #d6d3c3; border-top-color: #b7b4a5; border-radius: 3px; margin: 10px 0; padding: 10px 12px; background: rgba(255,255,255,0.35); }
@@ -1817,9 +1877,15 @@
     font-size: 0.66em; color: #5a739a; white-space: nowrap; text-align: right;
   }
 
-  /* Trailing room so a card expanded in the rightmost column has space to float
-     into instead of being clipped by the scroll container's edge. */
-  .sched-stages { display: flex; align-items: flex-start; padding-right: 150px; }
+  /* No trailing pad. There used to be 150px of it, so a card expanded in the
+     rightmost column had somewhere to float instead of being clipped — but it read
+     as a blank extra stage column, and it widened the (max-content) grid, so the
+     shrink-wrapped window below carried the blank space too. The cards flip
+     direction in the last column instead (see .sched-tile.expanded), which costs no
+     width at all. The one case with nothing to flip over is a single-stage day,
+     which gets the room back as an actual pad. */
+  .sched-stages { display: flex; align-items: flex-start; }
+  .sched-stages:has(> .sched-col:only-child) { padding-right: 88px; }
   .sched-col { flex: 0 0 auto; width: 152px; border-right: 1px solid #e0e7f1; }
   .sched-col-head {
     position: sticky; top: 0; z-index: 2; height: 30px;
@@ -1900,6 +1966,10 @@
     width: min(232px, 80vw); right: auto;
     box-shadow: 0 7px 20px rgba(0,0,0,0.34);
   }
+  /* In the LAST column the card is anchored right and grows leftward instead, over
+     the neighbour it has. That's what lets the grid end at the last real column: an
+     80px overhang to the right would otherwise need 80px of blank grid to land in. */
+  .sched-col:last-child:not(:first-child) .sched-tile.expanded { left: auto; right: 4px; }
   .sched-tile.expanded .sched-tile-head { height: auto; }
   .sched-tile-body { display: none; padding: 0 6px 7px; flex-direction: column; gap: 6px; }
   .sched-tile.expanded .sched-tile-body { display: flex; }

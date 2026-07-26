@@ -60,6 +60,13 @@ the joke — lean into it.
   `lib/schedule.js` (time math; minutes-from-midnight, after-midnight = 1440+),
   `lib/scheduleParse.js` (vision-parse a poster via OpenRouter),
   `lib/scheduleShare.js` (publish/adopt), `lib/spotify.js` (artist links).
+  Its window is the one `TAB_THEMES` entry with `full: true`: on desktop it
+  **shrink-wraps** the grid (`width: fit-content` on `.xp-window-full`), so a
+  4-stage day is half a screen, not 900px of white. That only works while the grid's
+  intrinsic width is *real columns* — an expanded card in the last column flips to
+  open leftward rather than buying blank grid to overhang into. Don't re-add a
+  trailing pad on `.sched-stages`: `.sched-grid` is `width: max-content`, so it lands
+  in the window as a blank extra stage column.
 
 ## ☠️ Gotchas that WILL waste your time
 
@@ -257,6 +264,15 @@ bigger size. The Streets & Trips status bar drops its stop-count and coordinate 
   real account on first login. **Person delete = soft-hide manifest**
   (`deletePersonFootprint`) — never hard-DELETE people (FKs everywhere, and undo
   restores the whole footprint from the manifest).
+- **Sign-in is a pick list, not just a text box** (`nameField` in `guard.js`): the
+  fest's roster ships embedded in `data-names` and is filtered locally by
+  `campSigninSuggest*` in camp.js — no fetch, so the list is up on the first
+  keystroke. This is a correctness feature, not a nicety: `normalized_name` IS the
+  credential, so a typo doesn't fail loudly, it silently opens a SECOND account that
+  then needs a hand-merge. A name already on that list also skips the
+  `/signin/check-name` "that name's taken" warning — picking it is the intended path.
+  Signed out, the About Me desktop icon renders as **Log In** (`desktopIcons`) with
+  `next` back to `/mine`, so logging on lands where they were headed.
 - **Signed-out guards**: window-opening GET routes get
   `if (needsSignin(c)) return signinModalResponse(c)` — the button pops the sign-in
   modal via HX-Retarget instead of a form that fails on POST. Also guard any endpoint

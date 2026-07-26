@@ -302,15 +302,26 @@ const TAB_THEMES = {
 // current section renders "selected": label highlighted in Luna blue and the icon
 // tinted, exactly like a clicked desktop icon. --ico feeds the CSS mask that
 // paints the selection tint over just the icon's own pixels.
-function desktopIcons(festival, activeTab) {
+function desktopIcons(festival, activeTab, person) {
+    const next = `/f/${festival.id}/mine`;
     return html`
     <nav class="desktop-icons" aria-label="sections">
-      ${Object.entries(TAB_THEMES).filter(([, t]) => !t.hidden).map(([key, t]) => html`
-        <a href="/f/${festival.id}/${t.path}" class="desk-icon ${key === activeTab ? 'active' : ''}"
-          style="--ico:url('${t.ico}')" ${key === activeTab ? html`aria-current="page"` : ''}>
-          <span class="desk-icon-img"><img src="${t.ico}" alt=""></span>
-          <span class="desk-icon-label">${t.label}</span>
-        </a>`)}
+      ${Object.entries(TAB_THEMES).filter(([, t]) => !t.hidden).map(([key, t]) => {
+        // Signed out, "About Me" has nothing to be about — so the icon becomes the
+        // way IN instead of a tab that can only tell you to log on. Same slot, same
+        // art size, and `next` points back here, so logging on lands you on About Me
+        // with your stuff on it. The href is the no-JS path; htmx pops the box.
+        const logon = key === 'mine' && !person;
+        const ico = logon ? '/xp/logon.png' : t.ico;
+        return html`
+        <a href="${logon ? `/signin?next=${encodeURIComponent(next)}` : `/f/${festival.id}/${t.path}`}"
+          class="desk-icon ${key === activeTab ? 'active' : ''}"
+          style="--ico:url('${ico}')" ${key === activeTab ? html`aria-current="page"` : ''}
+          ${logon ? html`hx-get="/signin/modal?next=${encodeURIComponent(next)}" hx-target="#signin-modal-overlay" hx-swap="innerHTML"` : ''}>
+          <span class="desk-icon-img"><img src="${ico}" alt=""></span>
+          <span class="desk-icon-label">${logon ? 'Log In' : t.label}</span>
+        </a>`;
+    })}
     </nav>`;
 }
 
@@ -379,7 +390,7 @@ export async function renderPage(c, { title, activeTab = '', body, festival = nu
   <!-- Icons first: they're the way into everything, so they sit directly under
        the taskbar with the program window right below. Rover is position:fixed
        bottom-right and renders last so he's out of the flow entirely. -->
-  ${festival ? desktopIcons(festival, activeTab) : ''}
+  ${festival ? desktopIcons(festival, activeTab, person) : ''}
   <div id="signin-modal-overlay"></div>
   <div id="popup-layer"></div>
   <div id="toast"></div>

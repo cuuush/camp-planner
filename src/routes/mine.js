@@ -15,15 +15,39 @@ export const mine = new Hono();
 // (see .mine-floating in retro.css: checklist+ride stack on the left, bringing
 // takes the right column). These live outside the main app window (see
 // #mine-floating in layout.js) so they never render on top of it.
-function miniWindow(title, slug, offset, inner) {
+function miniWindow(title, slug, offset, ico, inner) {
     return html`
     <div class="xp-mini xp-mini-${slug}" style="--mini-offset:${offset}px">
       <div class="xp-mini-titlebar">
+        <img class="xp-mini-ico" src="${ico}" alt="">
         <span class="xp-mini-title">${title}</span>
         ${xpCaptionBtns()}
       </div>
       <div class="xp-mini-body">${inner}</div>
     </div>`;
+}
+
+// One row shape for everything in these windows — an Explorer detail row: framed
+// icon, bold primary line, grey secondary line, optional right-hand cell. My Ride
+// and What I'm Bringing used to be two different-looking lists (a gradient panel
+// with a giant emoji vs. white rows with a pill) sitting one above the other; same
+// data shape, so they get the same anatomy.
+function mineRow({ href, ico, icoImg, title, sub, right, cls }) {
+    const inner = html`
+      <span class="mine-row-ico">${icoImg ? html`<img src="${icoImg}" alt="">` : ico}</span>
+      <span class="mine-row-text">
+        <span class="mine-row-title">${title}</span>
+        ${sub ? html`<span class="mine-row-sub">${sub}</span>` : ''}
+      </span>
+      ${right || ''}`;
+    return href
+        ? html`<a class="mine-row ${cls || ''}" href="${href}">${inner}</a>`
+        : html`<span class="mine-row ${cls || ''}">${inner}</span>`;
+}
+
+// XP task-pane footer link — the "see also" line real Explorer windows end on.
+function mineMoreLink(href, ico, label) {
+    return html`<a class="mine-more" href="${href}"><img src="${ico}" alt="">${label}</a>`;
 }
 
 // htmx fragment for partial updates: swaps the primary target (#main) as usual,
@@ -38,9 +62,9 @@ async function renderMineBody(c, festival) {
     const person = c.get('person');
     if (!person) {
         return { main: html`<div class="card">
-          <p>sign in to see your packing list, your ride, and your checklist.</p>
+          <p>Log on to see your checklist, your ride, and what you're bringing.</p>
           <button class="btn btn-primary" type="button"
-            hx-get="/signin/modal?next=/f/${festival.id}/mine" hx-target="#signin-modal-overlay" hx-swap="innerHTML">sign in</button>
+            hx-get="/signin/modal?next=/f/${festival.id}/mine" hx-target="#signin-modal-overlay" hx-swap="innerHTML">Log On</button>
         </div>`, floating: '' };
     }
 
@@ -78,8 +102,8 @@ async function renderMineBody(c, festival) {
 
     const floating = html`
     <div class="mine-col mine-col-left">
-    ${miniWindow('Festival Checklist', 'checklist', -12, html`
-      ${near ? html`<p class="rainbow" style="margin-top:0;">it's almost time — here's your 7am packing checklist!</p>` : ''}
+    ${miniWindow('Festival Checklist', 'checklist', -12, '/xp/desk-me.png', html`
+      ${near ? html`<p class="rainbow" style="margin-top:0;">almost time — start packing!</p>` : ''}
       <div class="checklist-rows">
         ${tasks.map((t) => {
             // A car pass only matters if you're driving — if not, just don't show it.
@@ -100,35 +124,53 @@ async function renderMineBody(c, festival) {
       </div>
       <form class="checklist-add" hx-post="/f/${festival.id}/mine/checklist/tasks" hx-target="#main" hx-swap="innerHTML"
         hx-on::after-request="if(event.detail.successful) this.reset();">
-        <input type="text" name="label" placeholder="add a checklist item…" required>
+        <input type="text" name="label" placeholder="Add an item…" required>
         <button class="btn" type="submit">Add</button>
       </form>
     `)}
 
-    ${miniWindow('My Ride', 'ride', -6, html`
-      ${drivingCar ? html`<a class="ride-panel" href="/f/${festival.id}/rides"><span class="ride-icon">🚗</span><div class="ride-info"><b>you're driving!</b><br>${drivingCar.seats_total} seats · leaving from ${drivingCar.leaving_from || '?'}</div><span class="ride-go">Cars ›</span></a>` : ''}
-      ${ridingSeat ? html`<a class="ride-panel" href="/f/${festival.id}/rides"><span class="ride-icon">🚗</span><div class="ride-info"><b>riding with ${ridingSeat.driver_name}</b></div><span class="ride-go">Cars ›</span></a>` : ''}
-      ${!drivingCar && !ridingSeat ? html`<a class="ride-panel ride-empty" href="/f/${festival.id}/rides"><span class="ride-icon">🚗</span><div class="ride-info">no ride yet — open Cars!</div><span class="ride-go">Cars ›</span></a>` : ''}
+    ${miniWindow('My Ride', 'ride', -6, '/xp/desk-cars.png', html`
+      <div class="mine-list">
+      ${drivingCar ? mineRow({
+        href: `/f/${festival.id}/rides`, icoImg: '/xp/desk-cars.png', title: 'Driving',
+        sub: `${drivingCar.seats_total} seats · from ${drivingCar.leaving_from || '?'}`,
+        right: html`<span class="mine-row-go">Cars ›</span>`,
+    }) : ''}
+      ${ridingSeat ? mineRow({
+        href: `/f/${festival.id}/rides`, icoImg: '/xp/desk-cars.png',
+        title: `Riding with ${ridingSeat.driver_name}`,
+        right: html`<span class="mine-row-go">Cars ›</span>`,
+    }) : ''}
+      ${!drivingCar && !ridingSeat ? mineRow({
+        href: `/f/${festival.id}/rides`, icoImg: '/xp/desk-cars.png', cls: 'mine-row-empty',
+        title: 'No ride yet', sub: 'Find a seat, or post your car',
+        right: html`<span class="mine-row-go">Cars ›</span>`,
+    }) : ''}
+      </div>
+      ${mineMoreLink(`/f/${festival.id}/rides`, '/xp/desk-cars.png', 'Open Cars')}
     `)}
     </div>
 
     <div class="mine-col mine-col-right">
-    ${miniWindow("What I'm Bringing", 'bringing', 14, html`
+    ${miniWindow("What I'm Bringing", 'bringing', 14, '/xp/desk-stuff.png', html`
       ${pledges.length === 0
-            ? html`<p class="mine-empty">nothing pledged yet — go grab something in Stuff!</p>`
-            : html`<div class="bringing-list">
+            ? html`<p class="mine-empty">Nothing yet — claim something in Stuff.</p>`
+            : html`<div class="mine-list">
           ${pledges.map((p) => html`
-            <div class="bringing-row ${p.packed_at ? 'packed' : ''}">
+            <div class="mine-row bringing-row ${p.packed_at ? 'packed' : ''}">
               ${near ? html`
                 <form hx-post="/pledges/${p.id}/packed" hx-target="#main" hx-swap="innerHTML" class="checklist-check">
                   <button class="check-toggle" type="submit" aria-label="toggle packed"><span class="xp-checkbox ${p.packed_at ? 'checked' : ''}"></span></button>
                 </form>` : ''}
-              <span class="bringing-icon">${p.emoji}</span>
-              <a class="bringing-name" href="/f/${festival.id}/stuff#item-${p.item_id}">${p.item_name}</a>
+              <span class="mine-row-ico">${p.emoji}</span>
+              <a class="mine-row-text" href="/f/${festival.id}/stuff#item-${p.item_id}">
+                <span class="mine-row-title">${p.item_name}</span>
+                ${p.packed_at ? html`<span class="mine-row-sub bringing-packed">✓ packed</span>` : ''}
+              </a>
               <span class="bringing-qty">${p.qty} ${p.unit || ''}</span>
-              ${p.packed_at ? html`<span class="bringing-packed">✓ packed</span>` : ''}
             </div>`)}
         </div>`}
+      ${mineMoreLink(`/f/${festival.id}/stuff`, '/xp/desk-stuff.png', 'Open Stuff')}
     `)}
     </div>
   `;

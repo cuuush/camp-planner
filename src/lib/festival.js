@@ -44,3 +44,22 @@ export async function festNameFromPath(c, path) {
     const f = await c.env.DB.prepare('SELECT name FROM festivals WHERE id = ? AND deleted_at IS NULL').bind(id).first();
     return f ? f.name : null;
 }
+
+// The names already on this fest's roster, for the sign-in box's pick-a-name list —
+// the common case for a sign-in is someone who lost their session, not a newcomer,
+// and this saves them retyping (and mistyping, which silently makes a 2nd account).
+// Reveals nothing new: the People tab on a fest is already public to anyone with
+// the link. Real accounts only — a ghost's normalized_name is synthetic and can't be
+// signed in as; they get absorbed on the owner's first real login instead.
+export async function festPeopleFromPath(c, path) {
+    const id = festIdFromPath(path);
+    if (!id) return [];
+    const { results } = await c.env.DB.prepare(`
+        SELECT p.display_name FROM people p
+        JOIN memberships m ON m.person_id = p.id
+        WHERE m.festival_id = ? AND m.bailed_at IS NULL
+          AND p.is_placeholder = 0 AND p.deleted_at IS NULL AND p.merged_into IS NULL
+        ORDER BY p.display_name COLLATE NOCASE
+    `).bind(id).all();
+    return (results || []).map((r) => r.display_name);
+}
