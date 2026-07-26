@@ -24,6 +24,17 @@ function parseQtyText(text) {
     return { qty: 1, unit: trimmed || null };
 }
 
+// An item's name dropped into the middle of a sentence ("How many tapestries…").
+// Names are typed sentence-case, so the leading capital has to come off — but only
+// when it's an ordinary word: "LED strips" and "EZ-Ups" are spelled that way on
+// purpose, and a first word that's shouting is left alone.
+function midSentence(name) {
+    const s = (name || '').toString().trim();
+    const first = s.split(/\s+/)[0] || '';
+    if (first.length > 1 && first === first.toUpperCase()) return s;
+    return s.charAt(0).toLowerCase() + s.slice(1);
+}
+
 async function itemStats(db, item) {
     // Four independent lookups — fire them together, one round trip of wall time.
     const [pledges, votes, comments, adder] = await Promise.all([
@@ -99,12 +110,61 @@ async function loadItemsWithStats(db, festivalId) {
 
 function itemRow(festival, item, stats, person, expanded = false, chatOpen = false) {
     const { pledges, pledgedQty, voteCount, voterIds, comments, adderName } = stats;
-    const pct = item.needed_qty > 0 ? Math.min(100, Math.round((pledgedQty / item.needed_qty) * 100)) : 0;
+    const pctOf = (q) => (item.needed_qty > 0 ? Math.min(100, Math.round((q / item.needed_qty) * 100)) : 0);
+    const pct = pctOf(pledgedQty);
     const unclaimed = pledgedQty === 0;
     const iVoted = person && voterIds.includes(person.id);
     const myPledge = person && pledges.find((p) => p.person_id === person.id);
     const remaining = Math.max(1, item.needed_qty - pledgedQty);
     const requestedBy = item.is_seed ? (item.seed_label || '') : `requested by ${adderName || 'someone'}`;
+
+    // The header check box is a promise, not a vote: ticked only when YOU are down
+    // for some of this. Once an item is fully covered there's nothing left to tick,
+    // so the empty box disappears — unless you're one of the people bringing it, in
+    // which case the ticked box stays as the way to back out again.
+    const covered = pledgedQty >= item.needed_qty;
+    const showCheck = !covered || !!myPledge;
+    // The dialog only earns its interruption when there's a real question to ask,
+    // and the question depends on which way the tick is going:
+    //   ticking   → how many of the OUTSTANDING amount are you taking? One left to
+    //               cover and the answer can only be "one", so don't ask.
+    //   unticking → you're down for several; dropping all of them is rarely what
+    //               you meant, so ask and let the number come down (0 withdraws).
+    //               A pledge of exactly one has nothing to reduce — straight off.
+    // Note it's REMAINING, not needed_qty: an item wanting six with five spoken for
+    // behaves exactly like a one-of item.
+    // Also gates whether the modal is rendered at all: every card used to carry a
+    // hidden dialog it had no way to raise, ~19% of the page's HTML for nothing.
+    // Needs a signed-in person and a visible check box, or there's no way to open
+    // the dialog on this page at all: signed out, the box goes to the sign-in
+    // window instead, and the sign-in round trip re-renders the card anyway.
+    const askQty = !!person && showCheck && (myPledge ? myPledge.qty > 1 : remaining > 1);
+    // The dialog's own notes, kept here rather than as HTML comments inside it:
+    // min=0 on the qty field is deliberate (0 is how you take your name back off,
+    // there being no separate "withdraw" button); it carries no autofocus attribute
+    // because that does nothing on a dialog that starts hidden — campOpenPledge
+    // focuses it on the way in; and the bar can't move while the box is merely
+    // opening a dialog, so the optimistic update runs on OK instead, off
+    // data-others (everyone else's pledged qty, which plus what you type is the
+    // new total).
+    const openPledgeDialog = `campOpenPledge(${item.id})`;
+    // What the dialog counts in. Most items get a unit from the LLM ("cases", "bags"),
+    // but plenty don't — and "How many are you bringing?" beside a bare number box is
+    // a worse question than the item's own name answers: for Tapestries, tapestries.
+    const pledgeUnit = item.unit || midSentence(item.name);
+    // Every control in the card swaps the WHOLE card out, so each one has to hand
+    // back the two bits of open/closed state the server can't know: whether the card
+    // is expanded and whether its comments window is open. Miss either and liking
+    // something slams the comments shut under you.
+    const expandedVal = `document.getElementById("item-${item.id}").querySelector(".item-details").open ? "1" : "0"`;
+    const chatOpenVal = `document.getElementById("chat-item-${item.id}")?.open ? "1" : "0"`;
+    // The "(n)" after a name in the tally is only worth printing when there's a
+    // number to disambiguate: on a one-of item "1/1 chris (1)" says "one" three
+    // times. Kept if someone somehow pledged more than the single one asked for.
+    const pledgeLabel = (p) => (item.needed_qty === 1 && p.qty === 1 ? p.display_name : `${p.display_name} (${p.qty})`);
+    // NB: keep prose OUT of the html`` templates below — an HTML comment inside a
+    // per-card template ships to the browser once per card (72× on this page). Every
+    // note here is a JS comment for exactly that reason. See AGENTS.md gotcha 21.
 
     return html`
     <div class="card item-card ${unclaimed ? 'unclaimed' : ''}" id="item-${item.id}" data-complete="${pledgedQty >= item.needed_qty ? '1' : '0'}">
@@ -118,29 +178,50 @@ function itemRow(festival, item, stats, person, expanded = false, chatOpen = fal
               <div class="progress-bar"><div class="progress-fill" style="width:${pct}%"></div></div>
               <div class="item-tally">
                 ${pledgedQty}/${item.needed_qty} ${item.unit || ''}
-                ${pledges.length ? html` — ${pledges.map((p) => `${p.display_name} (${p.qty})`).join(', ')}` : ''}
+                ${pledges.length ? html` - ${pledges.map(pledgeLabel).join(', ')}` : ''}
               </div>
             </div>
-            <button type="button" class="vote-thumb ${iVoted ? 'voted' : ''}"
-              hx-post="/items/${item.id}/vote" hx-target="#item-${item.id}" hx-swap="outerHTML"
-              hx-vals='js:{expanded: document.getElementById("item-${item.id}").querySelector(".item-details").open ? "1" : "0"}'
-              onclick="event.stopPropagation(); if (!this.classList.contains('voted')) campConfetti(this); campVoteOptimistic(this);">
-              👍<span class="vote-count">${voteCount}</span>
-            </button>
+            ${!showCheck ? '' : !person
+                ? html`<button type="button" class="pledge-check" role="checkbox" aria-checked="false" aria-label="i'll bring this"
+                    hx-get="/signin/modal?next=${encodeURIComponent(`/f/${festival.id}/stuff?expand=item-${item.id}&pledge=${item.id}`)}"
+                    hx-target="#signin-modal-overlay" hx-swap="innerHTML"
+                    onclick="event.stopPropagation();">
+                    <span class="xp-checkbox"></span>
+                  </button>`
+                : askQty
+                    // There's a number to settle — hand it to the dialog. The tick
+                    // itself waits for OK (campPledgeDialogOptimistic), so cancelling
+                    // leaves the box exactly as it was.
+                    ? html`<button type="button" class="pledge-check" role="checkbox" aria-checked="${myPledge ? 'true' : 'false'}" aria-label="i'll bring this"
+                        onclick="event.stopPropagation(); ${openPledgeDialog}">
+                        <span class="xp-checkbox ${myPledge ? 'checked' : ''}"></span>
+                      </button>`
+                    // Nothing to ask: one left to cover, or you're unticking. Straight
+                    // through — ticking puts you down for whatever's outstanding.
+                    // The two bar widths this tick moves between, handed over so the
+                    // client can run the bar the instant it's tapped instead of
+                    // waiting on the round trip. Off = what everyone else has
+                    // pledged. On = full when ticking covers the last of it, and
+                    // simply where the bar already is for a box that's ticked now
+                    // (only reachable by double-tapping ahead of the swap).
+                    : html`<button type="button" class="pledge-check" role="checkbox" aria-checked="${myPledge ? 'true' : 'false'}" aria-label="i'll bring this"
+                        data-pct-on="${myPledge ? pct : 100}" data-pct-off="${pctOf(pledgedQty - (myPledge ? myPledge.qty : 0))}"
+                        hx-post="/items/${item.id}/pledge" hx-target="#item-${item.id}" hx-swap="outerHTML"
+                        hx-vals='js:{qty: ${myPledge ? 0 : remaining}, expanded: ${expandedVal}, chat_open: ${chatOpenVal}}'
+                        onclick="event.stopPropagation(); if (!this.querySelector('.xp-checkbox').classList.contains('checked')) campConfetti(this); campPledgeOptimistic(this);">
+                        <span class="xp-checkbox ${myPledge ? 'checked' : ''}"></span>
+                      </button>`}
           </div>
         </summary>
 
         <div class="item-actions">
           <div class="action-buttons">
-            ${person
-                ? html`<button type="button" class="btn btn-primary pledge-btn" onclick="document.getElementById('pledge-modal-${item.id}').style.display='flex'">
-                    ${myPledge ? `bringing ${myPledge.qty} ${item.unit || ''}`.trim() : "i'll bring this"}
-                  </button>`
-                : html`<button type="button" class="btn btn-primary pledge-btn"
-                    hx-get="/signin/modal?next=${encodeURIComponent(`/f/${festival.id}/stuff?expand=item-${item.id}&pledge=${item.id}`)}"
-                    hx-target="#signin-modal-overlay" hx-swap="innerHTML">
-                    i'll bring this
-                  </button>`}
+            <button type="button" class="btn btn-primary like-btn ${iVoted ? 'voted' : ''}"
+              hx-post="/items/${item.id}/vote" hx-target="#item-${item.id}" hx-swap="outerHTML"
+              hx-vals='js:{expanded: ${expandedVal}, chat_open: ${chatOpenVal}}'
+              onclick="if (!this.classList.contains('voted')) campConfetti(this); campVoteOptimistic(this);">
+              like (<span class="vote-count">${voteCount}</span>)
+            </button>
 
             <input type="checkbox" class="edit-toggle-checkbox" id="edit-toggle-item-${item.id}">
             <label class="btn edit-open-btn" for="edit-toggle-item-${item.id}">edit</label>
@@ -173,7 +254,7 @@ function itemRow(festival, item, stats, person, expanded = false, chatOpen = fal
               </form>
 
             ${msnChat({
-                title: `Chat (${comments.length} message${comments.length === 1 ? '' : 's'})`,
+                title: `Comments (${comments.length})`,
                 dpEmoji: item.emoji,
                 toLabel: `To: <b>${escapeHtml(item.name)}</b> &lt;everyone@camp&gt;`,
                 comments,
@@ -183,40 +264,39 @@ function itemRow(festival, item, stats, person, expanded = false, chatOpen = fal
                 id: `chat-item-${item.id}`,
             })}
           </div>
-
-          ${myPledge ? html`
-            <form class="withdraw-form" hx-post="/pledges/${myPledge.id}/withdraw" hx-target="#item-${item.id}" hx-swap="outerHTML">
-              <button class="btn" type="submit">withdraw my pledge</button>
-            </form>` : ''}
         </div>
       </details>
 
-      <div class="modal-backdrop" id="pledge-modal-${item.id}" style="display:none;" onclick="if(event.target===this) this.style.display='none'">
+      ${!askQty ? '' : html`
+      <div class="modal-backdrop pledge-modal" id="pledge-modal-${item.id}" style="display:none;" onclick="if(event.target===this) this.style.display='none'">
         <div class="modal-box xp-dialog">
           <div class="xp-dialog-title">
-            <span class="xp-dialog-title-text">${item.emoji} ${item.name}</span>
+            <span class="xp-dialog-title-text">Confirm Quantity</span>
             ${xpCaptionBtns({ min: false, max: false, onClose: `document.getElementById('pledge-modal-${item.id}').style.display='none'` })}
           </div>
           <div class="xp-dialog-body">
-            <form hx-post="/items/${item.id}/pledge" hx-target="#item-${item.id}" hx-swap="outerHTML">
+            <form hx-post="/items/${item.id}/pledge" hx-target="#item-${item.id}" hx-swap="outerHTML"
+              hx-vals='js:{expanded: ${expandedVal}, chat_open: ${chatOpenVal}}'
+              onsubmit="campPledgeDialogOptimistic(this)"
+              data-item-id="${item.id}" data-needed="${item.needed_qty}"
+              data-others="${pledgedQty - (myPledge ? myPledge.qty : 0)}">
               <div class="pledge-prompt">
                 <img class="xp-dialog-icon" src="/xp/dlg-question.png" alt="" aria-hidden="true">
                 <div class="pledge-field-col">
-                  <label class="pledge-label">How many are you bringing?</label>
+                  <label class="pledge-label">How many ${pledgeUnit} are you bringing?</label>
                   <div class="pledge-input-row">
-                    <input type="number" name="qty" value="${myPledge ? myPledge.qty : remaining}" min="1" class="pledge-modal-input" autofocus>
-                    ${item.unit ? html`<span class="pledge-unit">${item.unit}</span>` : ''}
+                    <input type="number" name="qty" value="${myPledge ? myPledge.qty : remaining}" min="0" class="pledge-modal-input">
                   </div>
                 </div>
               </div>
               <div class="dialog-buttons">
-                <button class="btn btn-primary" type="submit">OK</button>
                 <button class="btn" type="button" onclick="document.getElementById('pledge-modal-${item.id}').style.display='none'">Cancel</button>
+                <button class="btn btn-primary" type="submit">OK</button>
               </div>
             </form>
           </div>
         </div>
-      </div>
+      </div>`}
     </div>`;
 }
 
@@ -234,8 +314,26 @@ async function itemListFragment(c, festival) {
     const bySort = (a, b) => (sort === 'name'
         ? a.item.name.localeCompare(b.item.name)
         : b.stats.voteCount - a.stats.voteCount);
-    const incomplete = withStats.filter((x) => x.stats.pledgedQty < x.item.needed_qty).sort(bySort);
+    // Half-done beats not-started: an item someone has already put their name to is
+    // the one closest to being finished, so it ranks above everything else in the
+    // list regardless of the chosen sort — which only breaks ties within a band.
+    const started = (x) => (x.stats.pledgedQty > 0 ? 0 : 1);
+    const byProgress = (a, b) => (started(a) - started(b)) || bySort(a, b);
+
+    // Anything covered drops to the bottom no matter how new it is — "just added"
+    // is for things still needing a name against them.
     const complete = withStats.filter((x) => x.stats.pledgedQty >= x.item.needed_qty).sort(bySort);
+    const outstanding = withStats.filter((x) => x.stats.pledgedQty < x.item.needed_qty);
+
+    // items.created_at is SQLite's datetime('now'): UTC, space-separated, and with
+    // no zone marker — which Date.parse would read as LOCAL time and put an hour or
+    // more out. Hand it a real ISO string instead. A row with an unparseable date
+    // gives NaN, every comparison against it is false, and it lands in "still need
+    // these" — the right way to fail.
+    const addedMs = (x) => Date.parse(`${(x.item.created_at || '').replace(' ', 'T')}Z`);
+    const cutoff = Date.now() - 60 * 60 * 1000;
+    const justAdded = outstanding.filter((x) => addedMs(x) > cutoff).sort((a, b) => addedMs(b) - addedMs(a));
+    const incomplete = outstanding.filter((x) => !(addedMs(x) > cutoff)).sort(byProgress);
 
     // "expand" carries the id of an item that should open (e.g. after a sign-in
     // redirect replays a comment that was blocked mid-action) — and opens its chat.
@@ -243,11 +341,12 @@ async function itemListFragment(c, festival) {
 
     if (!withStats.length) return html`<p class="stuff-empty">There are no items in this view — add the first thing!</p>`;
 
-    // XP Explorer "show in groups" style: two grouped sections with a header rule.
-    // BOTH sections are always emitted (empty ones hidden via .is-empty) and carry
-    // stable ids, so the client can relocate a card between them — e.g. bumping an
-    // item's needed_qty flips it from "all covered" back into "still need these"
-    // without a full re-render (see campReflowItems in camp.js).
+    // XP Explorer "show in groups" style: three grouped sections with a header rule.
+    // The split is decided HERE and then left alone — a card that fills up mid-session
+    // stays put (bar full, ticked) and only lands in "all covered" on the next load,
+    // because relocating cards under a tapping finger made the list jump around. Same
+    // for an item ageing out of "just added": it moves on the next render, and adding
+    // an item re-renders the whole list, so a fresh one shows up in place immediately.
     const section = (id, headerClass, label, group) => html`
       <div class="stuff-section ${group.length ? '' : 'is-empty'}" id="${id}">
         <div class="stuff-section-header ${headerClass}">${label} <span class="section-count">${group.length}</span></div>
@@ -255,6 +354,7 @@ async function itemListFragment(c, festival) {
       </div>`;
 
     return html`
+      ${section('stuff-new', 'fresh', 'just added', justAdded)}
       ${section('stuff-incomplete', '', 'still need these', incomplete)}
       ${section('stuff-complete', 'done', 'all covered', complete)}
     `;
@@ -265,6 +365,14 @@ async function renderStuffBody(c, festival) {
     const sort = c.req.query('sort') || 'votes';
 
     return html`
+    <div class="meet-task-head task-head-inline">
+      <img src="/xp/desk-stuff.png" alt="" width="30" height="30">
+      <div class="meet-task-text">
+        <b>What are you bringing?</b>
+        <span>Select the check box at the right of an item to put your name down for it, or click the item's name for more options.</span>
+      </div>
+    </div>
+
     <div class="stuff-controls">
       <div class="sort-toggle">
         <span class="sort-label">sort by:</span>
@@ -473,10 +581,12 @@ items.post('/items/:itemId/vote', async (c) => {
     if (needsSignin(c)) return signinModalResponse(c, { expandId: `item-${item.id}` });
     const db = c.env.DB;
     const person = c.get('person');
-    // The vote button sends the card's current open state so voting doesn't
-    // collapse a card you'd expanded (or expand one you'd left collapsed).
+    // The like button sends the card's current open state so liking doesn't
+    // collapse a card you'd expanded (or expand one you'd left collapsed), nor
+    // shut the comments window you were reading.
     const voteBody = await c.req.parseBody().catch(() => ({}));
     const expanded = voteBody.expanded === '1';
+    const chatOpen = voteBody.chat_open === '1';
 
     const existing = await db.prepare('SELECT * FROM votes WHERE item_id = ? AND person_id = ?').bind(item.id, person.id).first();
 
@@ -491,7 +601,7 @@ items.post('/items/:itemId/vote', async (c) => {
         await logAction(c, { festivalId: festival.id, action: 'create', entityType: 'votes', entityId: result.meta.last_row_id, summary: `${person.display_name} voted for ${item.name}` });
     }
 
-    return itemRowResponse(c, festival, item.id, expanded);
+    return itemRowResponse(c, festival, item.id, expanded, chatOpen);
 });
 
 items.post('/items/:itemId/pledge', async (c) => {
@@ -502,10 +612,33 @@ items.post('/items/:itemId/pledge', async (c) => {
     const db = c.env.DB;
     const person = c.get('person');
     const body = await c.req.parseBody();
-    const qty = Math.max(1, Number(body.qty) || 1);
+    const qty = Math.max(0, Math.floor(Number(body.qty) || 0));
+    // Both the header check box and the dialog form report the card's current state,
+    // so a pledge never changes what's open. Default OFF, not on: this used to
+    // default to expanded on the theory that the dialog could only be opened from an
+    // already-open card, which stopped being true the moment the check box (up in
+    // the summary) started raising it — every quantity confirm sprang the card open.
+    const expanded = body.expanded === '1';
+    const chatOpen = body.chat_open === '1';
 
     // Re-pledging changes the amount on your existing pledge instead of stacking a second row.
     const existing = await db.prepare('SELECT * FROM pledges WHERE item_id = ? AND person_id = ? AND deleted_at IS NULL').bind(item.id, person.id).first();
+
+    // 0 means "take my name off it" — unticking the check box, or typing 0 in the
+    // dialog. This is the only way to withdraw now that the button is gone.
+    if (existing && qty === 0) {
+        const stamp = sqlNow();
+        await db.prepare('UPDATE pledges SET deleted_at = ? WHERE id = ?').bind(stamp, existing.id).run();
+        await logAction(c, {
+            festivalId: festival.id, action: 'delete', entityType: 'pledges', entityId: existing.id,
+            reversible: true, effects: [deleteEffect('pledges', existing.id, stamp)],
+            summary: `${person.display_name} withdrew their pledge on ${item.name}`,
+        });
+        return itemRowResponse(c, festival, item.id, expanded, chatOpen);
+    }
+
+    // Not down for it and asking for 0 — nothing to do, just re-render.
+    if (!existing && qty === 0) return itemRowResponse(c, festival, item.id, expanded, chatOpen);
 
     if (existing) {
         const newQty = qty;
@@ -533,29 +666,7 @@ items.post('/items/:itemId/pledge', async (c) => {
         body: `${person.display_name} pledged ${qty} of ${item.name} on ${festival.name}.`,
     }));
 
-    return itemRowResponse(c, festival, item.id, true);
-});
-
-items.post('/pledges/:pledgeId/withdraw', async (c) => {
-    const id = Number(c.req.param('pledgeId'));
-    const db = c.env.DB;
-    const pledge = await db.prepare('SELECT * FROM pledges WHERE id = ?').bind(id).first();
-    if (!pledge) return c.notFound();
-    if (needsSignin(c)) return signinModalResponse(c, { expandId: `item-${pledge.item_id}` });
-    const person = c.get('person');
-    const item = await db.prepare('SELECT * FROM items WHERE id = ?').bind(pledge.item_id).first();
-    const festival = await db.prepare('SELECT * FROM festivals WHERE id = ?').bind(item.festival_id).first();
-
-    const stamp = sqlNow();
-    await db.prepare('UPDATE pledges SET deleted_at = ? WHERE id = ?').bind(stamp, id).run();
-
-    await logAction(c, {
-        festivalId: festival.id, action: 'delete', entityType: 'pledges', entityId: id,
-        reversible: true, effects: [deleteEffect('pledges', id, stamp)],
-        summary: `${person ? person.display_name : 'someone'} withdrew their pledge on ${item.name}`,
-    });
-
-    return itemRowResponse(c, festival, item.id, true);
+    return itemRowResponse(c, festival, item.id, expanded, chatOpen);
 });
 
 items.post('/items/:itemId/comments', async (c) => {

@@ -83,6 +83,19 @@ export async function loadDays(db, festivalId) {
     return rows.map((r) => r.day);
 }
 
+// Has this person starred ANYTHING on this fest's schedule — any day, not just the
+// one on screen? Drives the "tap to open" hint on the tiles: it's a first-run
+// nudge, so one star anywhere means they've worked the cards out and it's done.
+export async function hasAnyInterest(db, festivalId, person) {
+    if (!person) return false;
+    const row = await db.prepare(`
+        SELECT 1 FROM set_interests si JOIN schedule_sets ss ON ss.id = si.set_id
+        WHERE ss.festival_id = ? AND si.person_id = ? AND si.deleted_at IS NULL AND ss.deleted_at IS NULL
+        LIMIT 1
+    `).bind(festivalId, person.id).first();
+    return !!row;
+}
+
 // All non-deleted sets for a fest+day, each decorated with interest_count, the
 // interested people's names (in the order they starred), and whether `person` is
 // among them. One extra query for interests avoids an N+1 across tiles.

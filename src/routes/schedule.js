@@ -12,7 +12,7 @@ import { xpPopup, xpDialogPopup } from '../render/popup.js';
 import { takeApiBudget, SCHEDULE_VISION_MONTHLY_LIMIT } from '../lib/budget.js';
 import {
     fmtSetRange, fmtHourLabel, clockToMin, minToClockFields,
-    loadDays, loadDaySets, loadSet, applyInterestRows, buildGrid, stageColor,
+    loadDays, loadDaySets, loadSet, applyInterestRows, buildGrid, stageColor, hasAnyInterest,
 } from '../lib/schedule.js';
 import { parseScheduleImage, normalizeParsedSets } from '../lib/scheduleParse.js';
 import { resolveSpotifyLink, parseSpotifyUrl, setSpotifyLink, splitArtists, attachSpotifyLinks } from '../lib/spotify.js';
@@ -30,6 +30,10 @@ const MIN_TILE_H = 30;
 // just under a 25-minute slot, so it catches the 15/20-minute oddities — an opening
 // ceremony, a B2B changeover — without touching a normal half-hour set.
 const TIGHT_TILE_H = 36;
+// Shortest tile that still has a spare line under the artist + time for the "click
+// to open" hint. 44px is a half-hour slot; anything below that would have the hint
+// clipped by the tile, which reads as a rendering fault rather than a nudge.
+const HINT_MIN_H = 44;
 
 // ——— classic-XP "operation complete" notice, ridden along OOB into #popup-layer ———
 function successDialog({ title = 'Windows Media Player', icon = 'success', message }) {
@@ -45,7 +49,13 @@ function successDialog({ title = 'Windows Media Player', icon = 'success', messa
 // Tapping the head expands the card IN PLACE (raised, floating over its neighbours)
 // to reveal its buttons; no pop-out window. `edit` mode is the exception: there a
 // tap opens the buried edit popup instead.
-function scheduleTile(festival, set, minMin, { edit = false } = {}) {
+//
+// `hint` prints "tap to open" on the card face. Nothing about a dense tile says
+// it's a button, so someone who has never opened one can read the whole poster and
+// never find the star. It's first-run only: scheduleBody decides who gets it, the
+// CSS tucks it away while a card is open (it's back when the card closes), and
+// campClearSetHints wipes the lot the moment you star anything.
+function scheduleTile(festival, set, minMin, { edit = false, hint = false } = {}) {
     const top = Math.round((set.start_min - minMin) * PX_PER_MIN);
     const height = Math.max(MIN_TILE_H, Math.round((set.end_min - set.start_min) * PX_PER_MIN));
     const color = stageColor(set.stage, set.stage_order || 0);
@@ -76,6 +86,7 @@ function scheduleTile(festival, set, minMin, { edit = false } = {}) {
         <span class="sched-tile-artist">${set.artist}</span>
         <span class="sched-tile-time" data-start-min="${set.start_min}" data-end-min="${set.end_min}">${fmtSetRange(set.start_min, set.end_min)}</span>
         <span class="sched-tile-who-inline" id="set-who-${set.id}">${whoInline(set)}</span>
+        ${hint && height >= HINT_MIN_H ? html`<span class="sched-tile-hint">tap to open</span>` : ''}
       </button>
       <div class="sched-tile-body">
         <div class="sched-tile-actions" id="set-actions-${set.id}">${setActions(festival, set)}</div>
@@ -99,10 +110,15 @@ function whoInline(set) {
 // and gives you nothing to click back. The checkbox is the part doing that work —
 // a ticked box means "click to untick" to everyone, with no hover needed (this card
 // spends most of its life under a thumb).
+//
+// Marking interest is also the moment the "tap to open" hints have done their job,
+// so they all go at once — on submit, not after the round trip, because the card is
+// dismissing under your finger and a hint that fades a beat later looks like a bug.
 function setActions(festival, set) {
     return html`
       <form hx-post="/f/${festival.id}/schedule/set/${set.id}/interest" hx-target="#set-actions-${set.id}" hx-swap="outerHTML"
         hx-disabled-elt="find button"
+        ${set.i_interested ? '' : html`onsubmit="campClearSetHints()"`}
         hx-on::after-request="if(event.detail.successful) campCollapseSetTiles(null)">
         <button class="btn sched-act-btn ${set.i_interested ? 'sched-going' : 'btn-primary'}" type="submit"
           aria-pressed="${set.i_interested ? 'true' : 'false'}"
@@ -188,7 +204,7 @@ function spotifyMissing() {
 
 // The poster-style grid: a sticky time ruler on the left, then a horizontally
 // scrollable row of stage columns whose tiles are positioned against the ruler.
-function scheduleGrid(festival, sets, edit = false) {
+function scheduleGrid(festival, sets, edit = false, hint = false) {
     const { stages, minMin, maxMin } = buildGrid(sets);
     const totalH = Math.round((maxMin - minMin) * PX_PER_MIN);
     const hours = [];
@@ -219,7 +235,7 @@ function scheduleGrid(festival, sets, edit = false) {
             <div class="sched-col" style="--stage:${stageColor(col.name, col.order)}">
               <div class="sched-col-head">${col.name || 'Set Times'}</div>
               <div class="sched-col-body" style="height:${totalH}px">
-                ${col.sets.map((s) => scheduleTile(festival, s, minMin, { edit }))}
+                ${col.sets.map((s) => scheduleTile(festival, s, minMin, { edit, hint }))}
               </div>
             </div>`)}
         </div>
@@ -304,6 +320,10 @@ async function scheduleBody(c, festival, dayParam, { edit = false } = {}) {
     // each other, so they overlap. Only a bare visit needs days first, to know
     // which day is "first".
     let days, day, sets;
+    // Whether to print "tap to open" on the cards. Asked across the WHOLE fest,
+    // not this day, so starring one Friday act stops the hint on Saturday too. It
+    // doesn't depend on which day we land on, so it rides along with the loads.
+    const hintP = hasAnyInterest(db, festival.id, person).then((any) => !any);
     if (dayParam != null && dayParam !== '') {
         day = dayParam;
         [days, sets] = await Promise.all([loadDays(db, festival.id), loadDaySets(db, festival.id, day, person)]);
@@ -312,6 +332,7 @@ async function scheduleBody(c, festival, dayParam, { edit = false } = {}) {
         day = days[0] ?? '';
         sets = await loadDaySets(db, festival.id, day, person);
     }
+    const hint = await hintP;
     const hasSets = sets.length > 0;
     return html`
     <div id="sched-body" class="sched-body ${edit ? 'is-editing' : ''}">
@@ -319,7 +340,7 @@ async function scheduleBody(c, festival, dayParam, { edit = false } = {}) {
         ${dayButtons(festival, days, day, edit)}
       </div>` : ''}
       ${hasSets && edit ? editBanner(festival, day) : ''}
-      ${hasSets ? scheduleGrid(festival, sets, edit) : scheduleEmpty(festival)}
+      ${hasSets ? scheduleGrid(festival, sets, edit, hint && !edit) : scheduleEmpty(festival)}
       <!-- Below the grid, not above it. Up top it pushed the poster down and sat
            between you and the thing you opened the tab to read; it's a once-in-a-
            while action, so it belongs after the content, where XP put a window's

@@ -1,7 +1,10 @@
-/* All of camp planner's client-side JS. Loaded from <head> WITHOUT defer, so it
-   runs before <body> exists: top-level code must bind listeners to `document`
-   (never document.body — that's null here and the throw silently kills every
-   listener declared after it). document.body inside callbacks is fine. */
+/* All of camp planner's client-side JS. Loaded from <head> with defer, so it no
+   longer blocks the HTML parse — which matters, because the stuff page is a lot of
+   HTML. It still runs before DOMContentLoaded, so the listener below fires as
+   normal. Keep binding top-level listeners to `document` rather than document.body:
+   it costs nothing, and it's what kept this file working back when it ran before
+   <body> existed (a throw on a null body silently killed every listener declared
+   after it). Anything that needs the DOM belongs in a callback. */
 // Optimistic vote count. htmx CANNOT do this on its own — it only paints what the
 // server sends back, so on a phone the number sat still for a whole round trip and
 // the tap felt broken. So: flip the button's own state the instant it's pressed,
@@ -17,6 +20,122 @@ function campVoteOptimistic(btn) {
   if (isNaN(n)) return;
   out.textContent = Math.max(0, n + (voted ? -1 : 1));
   btn.classList.toggle('voted', !voted);
+}
+// Same trick for the item header's "i'm bringing this" check box: flip the drawn
+// tick the instant it's tapped so the box doesn't sit there looking dead for a
+// round trip. The swap that follows carries the real state and always wins.
+function campPledgeOptimistic(btn) {
+  var box = btn.querySelector('.xp-checkbox');
+  if (!box) return;
+  var checked = box.classList.toggle('checked');
+  btn.setAttribute('aria-checked', checked ? 'true' : 'false');
+  // Run the progress bar at the same time. Both widths come from the server on the
+  // button itself (data-pct-on/off) because the client can't work out the untick
+  // width on its own — it'd have to know which name in the tally is yours.
+  var card = btn.closest('.item-card');
+  var fill = card && card.querySelector('.progress-fill');
+  var pct = btn.getAttribute(checked ? 'data-pct-on' : 'data-pct-off');
+  if (!fill || pct === null) return;
+  campStepProgress(fill, parseFloat(pct));
+}
+// Move a progress bar to `pct`, advancing one green block at a time like the XP
+// file-copy dialog instead of gliding smoothly. The bar's block pitch comes from
+// --progress-block (set beside the gradient that draws them, so the two can't drift
+// apart); the number of blocks between here and there becomes the step count, and
+// the duration follows it so a long fill takes longer than a short one without
+// dragging. Leaving the timing alone under prefers-reduced-motion lets the
+// stylesheet's `transition: none` win and the bar simply snaps.
+// The dialog branch of the same idea. Tapping a check box that only opens the "how
+// many" dialog mustn't move anything — nothing is decided yet — so the optimistic
+// tick and bar run here, on OK, once there's an amount to show. Hides the dialog
+// first: the animation is pointless behind a modal backdrop. Runs before htmx's own
+// submit handler (inline attributes are bound at parse time, htmx binds later) and
+// deliberately doesn't preventDefault, so the POST goes out as normal — a hidden
+// form still serializes fine, only disabled fields are dropped.
+function campPledgeDialogOptimistic(form) {
+  var input = form.querySelector('input[name=qty]');
+  var qty = input ? parseInt(input.value, 10) : NaN;
+  if (input) input.blur(); // drop the phone keyboard with the dialog
+  var modal = form.closest('.modal-backdrop');
+  if (modal) modal.style.display = 'none';
+  var card = document.getElementById('item-' + form.getAttribute('data-item-id'));
+  if (!card || isNaN(qty) || qty < 0) return;
+
+  var check = card.querySelector('.pledge-check');
+  var box = check && check.querySelector('.xp-checkbox');
+  if (box) box.classList.toggle('checked', qty > 0);
+  if (check) check.setAttribute('aria-checked', qty > 0 ? 'true' : 'false');
+
+  var needed = parseFloat(form.getAttribute('data-needed')) || 0;
+  var others = parseFloat(form.getAttribute('data-others')) || 0;
+  var fill = card.querySelector('.progress-fill');
+  // Same rounding as the server's pctOf(), so the optimistic width and the one that
+  // lands with the swap agree to the pixel.
+  if (fill && needed > 0) campStepProgress(fill, Math.min(100, Math.round(((others + qty) / needed) * 100)));
+}
+
+// htmx swaps the WHOLE card out, and the replacement bar paints at its final width
+// the instant it lands — so whenever the response beat the animation (i.e. almost
+// always) the block-by-block fill was cut off part-way and jumped to the end. Fix:
+// note where the outgoing bar had actually got to, then start the incoming one from
+// there and let it walk the rest of the way. The server's width is still what it
+// animates TO, so this only restores the motion, never the value.
+var campBarResume = {};
+document.addEventListener('htmx:beforeSwap', function (e) {
+  var t = (e.detail && e.detail.target) || e.target;
+  if (!t || !t.querySelectorAll) return;
+  // Only bars actually mid-walk are marked, so this measures one element in
+  // practice — reading every card's geometry here would force a full layout on
+  // list-wide swaps for nothing.
+  var fills = t.querySelectorAll('.progress-fill[data-stepping]');
+  for (var i = 0; i < fills.length; i++) {
+    var fill = fills[i];
+    var card = fill.closest('.item-card');
+    var bar = fill.parentNode;
+    var track = bar ? bar.clientWidth - 4 : 0;
+    if (!card || !card.id || track <= 0) continue;
+    campBarResume[card.id] = (fill.getBoundingClientRect().width / track) * 100;
+  }
+});
+// A bar that has arrived is no longer mid-walk.
+document.addEventListener('transitionend', function (e) {
+  var el = e.target;
+  if (el && el.classList && el.classList.contains('progress-fill')) el.removeAttribute('data-stepping');
+});
+// Every swap flushes the whole map, so nothing lingers if a card was deleted or a
+// request failed between the two events.
+function campResumeBars() {
+  for (var id in campBarResume) {
+    var from = campBarResume[id];
+    delete campBarResume[id];
+    var card = document.getElementById(id);
+    var fill = card && card.querySelector('.progress-fill');
+    if (!fill) continue;
+    var to = parseFloat(fill.style.width) || 0;
+    if (Math.abs(to - from) < 0.5) continue; // wasn't mid-animation — leave it alone
+    fill.style.transition = 'none';
+    fill.style.width = from + '%';
+    void fill.offsetWidth;      // commit that start position before re-enabling motion
+    fill.style.transition = ''; // back to the stylesheet's transition
+    campStepProgress(fill, to);
+  }
+}
+function campStepProgress(fill, pct) {
+  if (!campReducedMotion()) {
+    var bar = fill.parentNode;
+    var block = parseFloat(getComputedStyle(fill).getPropertyValue('--progress-block')) || 8;
+    // clientWidth includes the trough's 2px padding on each side; the fill only
+    // ever spans the content box, so take that off before converting % to px.
+    var track = bar ? Math.max(0, bar.clientWidth - 4) : 0;
+    var fromPx = fill.getBoundingClientRect().width;
+    var blocks = Math.max(1, Math.round(Math.abs(track * (pct / 100) - fromPx) / block));
+    fill.style.transitionTimingFunction = 'steps(' + blocks + ', end)';
+    fill.style.transitionDuration = Math.min(700, blocks * 55) + 'ms';
+    // Marks this bar as mid-walk so a swap landing on top of it knows to resume
+    // rather than let the replacement snap to the end (see campBarResume).
+    fill.setAttribute('data-stepping', '1');
+  }
+  fill.style.width = pct + '%';
 }
 function campConfetti(el) {
   if (!campConfettiOn()) return; // "visual effects" switched off in the control panel
@@ -119,14 +238,84 @@ function suppressPwManagers(root) {
     if (!el.getAttribute('autocomplete')) el.setAttribute('autocomplete', 'off');
   }
 }
-// After signing in via the "i'll bring this" prompt we come back with ?pledge=<id>
-// — open that item's pledge dialog automatically so the flow just continues.
+// Open an item's "how many are you bringing" dialog with the field already live,
+// so the iOS keyboard comes straight up instead of costing a second tap. The
+// focus() MUST happen synchronously inside the tap handler — iOS only raises the
+// keyboard for a focus that's part of a real user gesture, so deferring it (a
+// setTimeout, a rAF, an animation callback) leaves the caret blinking with the
+// keyboard still down. focus() alone is what raises it; no selection required.
+//
+// Then park the caret AFTER the number rather than selecting it — a highlighted
+// value is hard to read, and this way typing extends the suggested number instead
+// of replacing it. setSelectionRange() is the obvious tool and it throws on
+// type=number, so instead we lean on the spec'd behaviour of the value setter:
+// assigning a DIFFERENT value moves the text entry cursor to the end. Assigning
+// the same string back is allowed to be a no-op, hence the round trip through ''.
+function campOpenPledge(id) {
+  var modal = document.getElementById('pledge-modal-' + id);
+  if (!modal) return;
+  modal.style.display = 'flex';
+  var input = modal.querySelector('input[name=qty]');
+  if (!input) return;
+  input.focus();
+  try {
+    var v = input.value;
+    input.value = '';
+    input.value = v;
+  } catch (e) {}
+}
+// After signing in via the "i'll bring this" check box we come back with
+// ?pledge=<id> — pick that item's tick back up where it left off. Which means
+// doing whatever the check box itself would have done: for an item they want
+// several of, open the "how many" dialog; for a one-of item, just tick it, since
+// the box never asks there and landing on a dialog would be a surprise.
+// Put a card on screen without yanking the page around if it's already there.
+// Called on the way back from sign-in: the #item-N anchor is meant to do this, but
+// the browser's fragment scroll happens as the element is parsed and then late
+// layout (fonts, images, a long list) shifts everything under it, so you end up
+// back at the top with a dialog floating over a list you can't place yourself in.
+function campScrollItemIntoView(el) {
+  if (!el || !el.getBoundingClientRect) return;
+  var vh = window.innerHeight || 0;
+  var r = el.getBoundingClientRect();
+  if (r.top >= 0 && r.bottom <= vh) return; // already fully visible — leave it alone
+  window.scrollTo(0, Math.max(0, window.scrollY + r.top - Math.max(12, (vh - r.height) / 2)));
+}
 function campAutoOpenPledge() {
   try {
     var id = new URLSearchParams(window.location.search).get('pledge');
     if (!id) return;
-    var modal = document.getElementById('pledge-modal-' + id);
-    if (modal) { modal.style.display = 'flex'; var inp = modal.querySelector('input[name=qty]'); if (inp) inp.focus(); }
+    var card = document.getElementById('item-' + id);
+    campScrollItemIntoView(card);
+    // Once more when the page has actually settled: `load` (unlike DOMContentLoaded)
+    // has waited for stylesheets and images, so the card has stopped moving. The
+    // in-view check above makes this a no-op if the first pass held, so it can't
+    // steal the scroll from someone who has already started moving around.
+    window.addEventListener('load', function () { campScrollItemIntoView(card); }, { once: true });
+    var check = document.querySelector('#item-' + id + ' .pledge-check');
+    if (check && check.getAttribute('hx-post')) { check.click(); return; }
+    campOpenPledge(id);
+  } catch (e) {}
+}
+// Sign-in is a full-page redirect (it has to work without JS), so it comes back to
+// ?expand=item-5&pledge=5 to reopen whatever you were in the middle of. Those are
+// plumbing: by the time this runs the server has already rendered the card open and
+// campAutoOpenPledge has resumed the tick, so wipe them out of the address bar
+// rather than leave them to be looked at, bookmarked or shared. replaceState adds no
+// history entry, and the #item-5 anchor stays — that one is a real anchor and
+// :target styling reads it. MUST run after campAutoOpenPledge, which needs ?pledge.
+function campTidyUrl() {
+  try {
+    if (!window.history || !history.replaceState) return;
+    var url = new URL(window.location.href);
+    var plumbing = ['expand', 'pledge'];
+    var dirty = false;
+    for (var i = 0; i < plumbing.length; i++) {
+      if (url.searchParams.has(plumbing[i])) { url.searchParams.delete(plumbing[i]); dirty = true; }
+    }
+    if (!dirty) return; // don't touch ?sort= and friends — those are the user's own
+    var qs = url.searchParams.toString();
+    history.replaceState(history.state, '', url.pathname + (qs ? '?' + qs : '') + url.hash);
   } catch (e) {}
 }
 // ——— Local time + control-panel prefs (stored in localStorage, per device) ———
@@ -278,44 +467,17 @@ function campInitSettings(root) {
   if (fx) fx.checked = campConfettiOn();
 }
 
-// After a swap, an item card carries data-complete="1|0" but may still be sitting
-// in the wrong grouped section — e.g. editing needed_qty up flips a covered item
-// back to incomplete. Move any such card to the section it belongs in, fix both
-// section counts, then flash + scroll it into view so you SEE where it landed.
-function campSectionCards(sec) { return sec ? sec.querySelectorAll(':scope > .item-card') : []; }
-function campSyncSection(sec) {
-  if (!sec) return;
-  var n = campSectionCards(sec).length;
-  var badge = sec.querySelector('.section-count');
-  if (badge) badge.textContent = n;
-  sec.classList.toggle('is-empty', n === 0);
-}
 function campReducedMotion() {
   return !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
 }
 function campEaseInOutQuad(p) {
   return p < 0.5 ? 2 * p * p : 1 - Math.pow(-2 * p + 2, 2) / 2;
 }
-// A hand-rolled smooth scroll to an absolute Y. We don't use scrollIntoView
-// ({behavior:'smooth'}) because it's a silent no-op inside htmx's afterSwap (and
-// in some automation contexts) — this rAF tween runs the same everywhere. Honors
+// A hand-rolled smooth scroll for a scroll CONTAINER (both axes at once) — the
+// schedule grid scrolls sideways inside .sched-scroll. We don't use scrollIntoView
+// ({behavior:'smooth'}) because it's a silent no-op inside htmx's afterSwap (and in
+// some automation contexts) — this rAF tween runs the same everywhere. Honors
 // prefers-reduced-motion by jumping straight there.
-function campSmoothScrollTo(targetY) {
-  var max = Math.max(0, document.documentElement.scrollHeight - window.innerHeight);
-  var to = Math.max(0, Math.min(targetY, max));
-  if (campReducedMotion()) { window.scrollTo(0, to); return; }
-  var from = window.scrollY, dist = to - from, start = null, dur = 500;
-  function step(ts) {
-    if (start === null) start = ts;
-    var p = Math.min(1, (ts - start) / dur);
-    window.scrollTo(0, from + dist * campEaseInOutQuad(p));
-    if (p < 1) requestAnimationFrame(step);
-  }
-  requestAnimationFrame(step);
-}
-// The same tween, but for a scroll CONTAINER (both axes at once) rather than the
-// page — the schedule grid scrolls sideways inside .sched-scroll. Same reason for
-// hand-rolling it as campSmoothScrollTo.
 function campSmoothScrollEl(el, targetLeft, targetTop) {
   var toL = Math.max(0, Math.min(targetLeft, Math.max(0, el.scrollWidth - el.clientWidth)));
   var toT = Math.max(0, Math.min(targetTop, Math.max(0, el.scrollHeight - el.clientHeight)));
@@ -335,44 +497,19 @@ function campSmoothScrollEl(el, targetLeft, targetTop) {
   requestAnimationFrame(step);
 }
 
-function campFlashMove(card) {
-  card.classList.remove('item-moved');
-  void card.offsetWidth; // force reflow so the animation restarts every move
-  card.classList.add('item-moved');
-  setTimeout(function () { card.classList.remove('item-moved'); }, 1600);
-  // Defer a frame so layout has settled after the move, then glide the card to
-  // the vertical center of the viewport so you see where it landed.
-  requestAnimationFrame(function () {
-    var rect = card.getBoundingClientRect();
-    var targetY = window.scrollY + rect.top - (window.innerHeight - rect.height) / 2;
-    campSmoothScrollTo(targetY);
-  });
-}
-function campReflowItems() {
-  var list = document.getElementById('stuff-list');
-  if (!list) return;
-  var want = { '1': document.getElementById('stuff-complete'), '0': document.getElementById('stuff-incomplete') };
-  var cards = list.querySelectorAll('.item-card');
-  for (var i = 0; i < cards.length; i++) {
-    var card = cards[i];
-    var target = want[card.getAttribute('data-complete') === '1' ? '1' : '0'];
-    if (!target || card.parentElement === target) continue; // already in the right group
-    var from = card.closest('.stuff-section');
-    var header = target.querySelector('.stuff-section-header');
-    if (header && header.nextSibling) target.insertBefore(card, header.nextSibling); // land at the top
-    else target.appendChild(card);
-    campSyncSection(from);
-    campSyncSection(target);
-    campFlashMove(card);
-  }
-}
+// NOTE: cards deliberately do NOT move between the "still need these" and "all
+// covered" sections while you're on the page. Ticking something used to relocate
+// its card (and scroll after it), so a few taps sent the list jumping around under
+// your finger. A completed item now just sits where it is, filled bar and all, and
+// lands in "all covered" on the next load. The grouping is a snapshot of when the
+// page rendered — hence the two sections keep their server-rendered counts too.
 
-document.addEventListener('DOMContentLoaded', function () { pixmojify(document.body); suppressPwManagers(document.body); campAutoOpenPledge(); campLocalizeTimes(document.body); campInitSettings(document.body); });
-document.addEventListener('htmx:afterSwap', function (e) { pixmojify(e.target); suppressPwManagers(e.target); campLocalizeTimes(e.target); campInitSettings(e.target); campReflowItems(); });
+document.addEventListener('DOMContentLoaded', function () { pixmojify(document.body); suppressPwManagers(document.body); campAutoOpenPledge(); campTidyUrl(); campLocalizeTimes(document.body); campInitSettings(document.body); campFillMsnToolbars(document); });
+document.addEventListener('htmx:afterSwap', function (e) { pixmojify(e.target); suppressPwManagers(e.target); campLocalizeTimes(e.target); campInitSettings(e.target); campFillMsnToolbars(e.target); campResumeBars(); });
 // Out-of-band swaps (hx-swap-oob — the mine tab's #mine-floating, oob toasts,
 // dialogs riding along into #popup-layer) fire oobAfterSwap, NOT afterSwap; without
 // this hook their emoji silently lose the pixel font on every oob update.
-document.addEventListener('htmx:oobAfterSwap', function (e) { pixmojify(e.target); suppressPwManagers(e.target); campLocalizeTimes(e.target); });
+document.addEventListener('htmx:oobAfterSwap', function (e) { pixmojify(e.target); suppressPwManagers(e.target); campLocalizeTimes(e.target); campFillMsnToolbars(e.target); });
 
 // Make the floating XP popups draggable by their title bar. Position is tracked as
 // an accumulated translate on each window (dataset.dx/dy) so repeated drags stack.
@@ -443,7 +580,6 @@ function popupTop() {
   return max + 1;
 }
 function closePopup(el) { var w = el.closest('.xp-popup'); if (w) w.remove(); }
-function closeAllPopups() { var l = document.getElementById('popup-layer'); if (l) l.innerHTML = ''; }
 
 // Backdrop click-to-dismiss for the sign-in modal — but NOT when a second window
 // is open on top of it, and NOT when the user has typed something into the name or
@@ -487,6 +623,11 @@ function campToggleSetTile(head) {
   tile.classList.toggle('expanded', !open);
   campTileDragged = false;
   if (!open) campCenterSetTile(tile);
+}
+
+function campClearSetHints() {
+  var hints = document.querySelectorAll('.sched-tile-hint');
+  for (var i = 0; i < hints.length; i++) hints[i].remove();
 }
 // Gently bring a just-opened card to the middle of the grid — it grows sideways
 // and downwards as it expands, so near an edge it would otherwise open half
@@ -910,6 +1051,32 @@ document.addEventListener('click', function (e) {
 });
 
 // MSN emoticon toolbar: append the typed emoticon into the chat's compose box.
+// Fill in the emoticon palettes of any chat that's actually visible, cloning from
+// the single #msn-toolbar-tpl in the page shell (see msnToolbarTemplate). Chats
+// ship with an empty .msn-toolbar because a stuff page carries ~70 of them and
+// building every palette up front cost thousands of nodes nobody looked at.
+// Called on load, after every swap, and when a chat is opened.
+function campFillMsnToolbars(root) {
+  var tpl = document.getElementById('msn-toolbar-tpl');
+  if (!tpl) return;
+  var scope = root && root.querySelectorAll ? root : document;
+  var sel = '.msn-chat.windowed, details.msn-chat[open]';
+  var chats = [].slice.call(scope.querySelectorAll(sel));
+  // An outerHTML swap can hand us the chat itself as the root, and querySelectorAll
+  // never matches its own root — so check it directly too.
+  if (scope.matches && scope.matches(sel)) chats.push(scope);
+  for (var i = 0; i < chats.length; i++) {
+    var bar = chats[i].querySelector('.msn-toolbar');
+    if (bar && !bar.children.length) bar.appendChild(tpl.content.cloneNode(true));
+  }
+}
+// <details> fires `toggle` and it does NOT bubble, so this listens in the capture
+// phase — which still sees events on descendants — rather than missing them all.
+document.addEventListener('toggle', function (e) {
+  var t = e.target;
+  if (t && t.classList && t.classList.contains('msn-chat') && t.open) campFillMsnToolbars(t.parentNode || document);
+}, true);
+
 function msnEmote(el, txt) {
   var chat = el.closest('.msn-chat');
   var input = chat && chat.querySelector('input[name=body]');

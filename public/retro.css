@@ -344,11 +344,11 @@
   .dog-links { list-style: none; margin: 9px 0 1px; padding: 0; }
   .dog-links li { margin: 6px 0; }
   .dog-links a { display: flex; align-items: flex-start; gap: 9px; color: #0a3d91; font-weight: normal; text-decoration: none; }
-  /* Mirrored (flipped about its vertical axis) now that Rover and his balloon tail
-     live on the right-hand side — the arrow leans back toward the dog instead of
-     away off the screen edge. */
+  /* Points right, into the text it introduces — the way every green arrow bullet in
+     XP's Search Companion does. It was mirrored to lean back toward Rover on the
+     right, but a bullet aiming away from its own label just reads as broken. */
   .dog-links a::before { content: ''; flex: 0 0 auto; width: 18px; height: 18px; margin-top: 1px;
-    background: url(/arrow.png) center/contain no-repeat; transform: scaleX(-1); }
+    background: url(/arrow.png) center/contain no-repeat; }
   .dog-links a:hover { color: #1a52c8; text-decoration: underline; }
   @media (max-width: 600px) { .dog-img { width: 52px; } .dog-bubble { font-size: 0.85em; } }
   /* Tapping him toggles the balloon and nothing else. There WAS a wiggle on every
@@ -492,24 +492,38 @@
     100% { box-shadow: 2px 2px 5px rgba(0,0,0,0.25); }
   }
   .mine-row { padding: 3px 0; }
-  .mine-link { font-weight: bold; }
   /* Classic Luna progress control: white sunken trough with a padded interior... */
-  .progress-bar { background: #fff; border: 1px solid #7f9db9; height: 15px; width: 100%; border-radius: 0; overflow: hidden; padding: 2px; box-shadow: inset 1px 1px 1px rgba(0,0,0,0.12); }
+  /* --progress-block is the pitch of one green block plus its gap. It drives the
+     gradient below AND the step size of the fill animation (camp.js reads it), so
+     the bar can only ever advance a whole block at a time — change it here and both
+     stay in step. */
+  .progress-bar { --progress-block: 8px; background: #fff; border: 1px solid #7f9db9; height: 15px; width: 100%; border-radius: 0; overflow: hidden; padding: 2px; box-shadow: inset 1px 1px 1px rgba(0,0,0,0.12); }
   /* ...filled by glossy green blocks separated by thin gaps, like the XP file-copy bar. */
   .progress-fill {
     height: 100%;
+    /* Animated so an optimistic tick (campPledgeOptimistic) visibly runs the bar up
+       the moment you tap, rather than snapping when the server's re-render lands. It
+       fills one green block at a time, like an XP file-copy bar: camp.js sets the
+       step count from the distance travelled, and the duration with it, so each step
+       lands on a block boundary. The ease here is only the fallback for anything
+       that changes the width without going through that. A freshly swapped-in bar
+       has no old width to animate from, so it just paints at its final value — the
+       motion only ever shows on the live update. */
+    transition: width 0.35s ease;
     background-color: #45d13d;
     background-image:
       linear-gradient(180deg, rgba(255,255,255,0.85) 0%, rgba(255,255,255,0.15) 45%, rgba(0,0,0,0.12) 55%, rgba(255,255,255,0.30) 100%),
-      repeating-linear-gradient(90deg, rgba(255,255,255,0) 0 6px, rgba(255,255,255,0.9) 6px 8px);
+      repeating-linear-gradient(90deg,
+        rgba(255,255,255,0) 0 calc(var(--progress-block) - 2px),
+        rgba(255,255,255,0.9) calc(var(--progress-block) - 2px) var(--progress-block));
   }
+  @media (prefers-reduced-motion: reduce) { .progress-fill { transition: none; } }
   .divider { text-align: center; color: #0a246a; margin: 14px 0; font-weight: bold; font-family: var(--fun-font); }
   /* The old GeoCities webring footer is gone (off-theme for XP); all we need at the
      bottom is a little breathing room below the last card. */
   /* Breathing room under the last window — plus the home-indicator inset, which
      viewport-fit=cover now makes ours to account for. */
   .site-foot-space { height: calc(40px + env(safe-area-inset-bottom, 0px)); }
-  .hitcounter { font-family: 'Courier New', monospace; background: #000; color: #00ff2a; padding: 2px 8px; border: 2px inset #888; letter-spacing: 2px; }
   input[type=text], input[type=number], input[type=email], select, textarea {
     background: #fff; border: 1px solid #7f9db9; padding: 5px 8px; font-family: inherit; border-radius: 0; color: #000;
     box-shadow: inset 1px 1px 1px rgba(0,0,0,0.12);
@@ -544,7 +558,6 @@
   .modal-backdrop {
     position: fixed; inset: 0; z-index: 1000; background: rgba(40,90,110,0.45);
     display: flex; align-items: center; justify-content: center; padding: 16px;
-    backdrop-filter: blur(2px);
   }
   /* Modals AND the sign-in page share one look: an authentic XP dialog window —
      blue Luna caption bar + red close button, thin blue frame, gray dialog face. */
@@ -556,7 +569,6 @@
     max-width: 420px; width: 100%;
     box-shadow: 0 12px 44px rgba(0,0,0,0.55);
   }
-  .xp-dialog.signin-dialog { margin: 18px auto; }
   .xp-dialog-title {
     height: 28px; display: flex; align-items: center; gap: 6px;
     padding: 0 4px 0 9px; border-radius: 6px 6px 0 0;
@@ -616,25 +628,40 @@
   .signin-suggest-ico { width: 22px; height: 22px; flex: 0 0 auto; }
   .signin-suggest-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
-  .vote-thumb {
+  /* The item header's control is a promise, not a vote: a real XP checkbox blown up
+     to a finger-sized target. Ticked = you're bringing this. The button itself is
+     invisible chrome — all the padding exists purely to make the tap area big. */
+  .pledge-check {
     background: none; border: 1px solid transparent; box-shadow: none; cursor: pointer;
-    display: flex; flex-direction: column; align-items: center; line-height: 1;
-    padding: 4px 6px; font-size: 1.8em; flex-shrink: 0; color: inherit; border-radius: 4px;
+    flex-shrink: 0; border-radius: 4px; padding: 0; margin: 0;
+    width: 48px; height: 48px;
+    display: flex; align-items: center; justify-content: center;
   }
-  .vote-thumb:hover { background: rgba(49,106,197,0.08); border-color: #a9c3ea; box-shadow: none; }
-  .vote-thumb .vote-count { font-size: 0.4em; color: #0a246a; font-weight: bold; margin-top: 2px; }
-  /* Voted = an XP toolbar toggle in its "pressed/on" state: sunken light-blue face,
-     and the thumb glyph filled blue (color tints the mono pixel glyph). */
-  .vote-thumb.voted {
-    color: #1c5fbf;
+  .pledge-check:hover { background: rgba(49,106,197,0.08); border-color: #a9c3ea; box-shadow: none; }
+  .pledge-check:hover .xp-checkbox { border-color: #5a8fd6; }
+  .pledge-check:active { background: rgba(49,106,197,0.16); box-shadow: none; }
+  /* Scale the shared .xp-checkbox (14px in lists) up to header size — the tick is
+     drawn with fixed pixel offsets, so it has to be re-struck at the larger size. */
+  .pledge-check .xp-checkbox { width: 22px; height: 22px; }
+  .pledge-check .xp-checkbox.checked::after {
+    left: 6px; top: 1px; width: 6px; height: 13px; border-width: 0 3px 3px 0;
+  }
+
+  /* "like" is a normal Luna button in the action row; liked = the same pressed/on
+     toggle face an XP toolbar button gets. */
+  .like-btn .vote-count { color: #0a246a; }
+  .like-btn.voted {
+    color: #0a246a;
     background: linear-gradient(180deg,#cfe0f7,#aecbec);
-    border: 1px solid #5a8fd6;
+    border-color: #5a8fd6;
     box-shadow: inset 1px 1px 2px rgba(0,0,60,0.28);
   }
-  .vote-thumb.voted:hover { background: linear-gradient(180deg,#d9e8fb,#bcd4f0); border-color: #5a8fd6; }
-  .vote-thumb.voted .vote-count { color: #0a246a; }
+  .like-btn.voted:hover {
+    background: linear-gradient(180deg,#d9e8fb,#bcd4f0); border-color: #5a8fd6;
+    box-shadow: inset 1px 1px 2px rgba(0,0,60,0.28);
+  }
   @keyframes vote-pop { 0% { transform: scale(1); } 45% { transform: scale(1.5); } 100% { transform: scale(1); } }
-  .vote-thumb.pop { animation: vote-pop 0.35s ease; }
+  .like-btn.pop, .pledge-check.pop { animation: vote-pop 0.35s ease; }
   @keyframes confetti-burst {
     0% { transform: translate(0,0) rotate(0deg); opacity: 1; }
     100% { transform: var(--confetti-end) rotate(var(--confetti-spin)); opacity: 0; }
@@ -680,7 +707,6 @@
   .item-name { font-size: 1.25em; font-weight: bold; }
   .item-description { font-size: 0.85em; color: #444; margin: 2px 0 4px; }
   .item-tally { font-size: 0.85em; color: #4a8697; }
-  .tally-covered { color: #1a7a1a; font-weight: bold; }
 
   /* Revealed action area, separated from the header by an XP etched rule. */
   .item-actions {
@@ -688,8 +714,8 @@
     border-top: 1px solid #d5d2c4; box-shadow: inset 0 1px 0 #ffffff;
     display: flex; flex-direction: column; gap: 10px;
   }
-  /* Desktop: pledge + edit + chat button all share one row (pledge widest).
-     Mobile: pledge+edit on row 1, chat button full-width on row 2. */
+  /* Desktop: like + edit + comments button all share one row (like widest).
+     Mobile: like+edit on row 1, comments button full-width on row 2. */
   .action-buttons { display: flex; flex-wrap: wrap; align-items: stretch; gap: 8px; }
   .action-buttons > .btn-primary:not(.edit-save-btn) { flex: 2 1 0; min-width: 0; margin: 0; }
   /* Edit toggle = a hidden checkbox with TWO sibling controls that share the same
@@ -725,31 +751,26 @@
   .action-buttons > .msn-chat:not([open]) > summary.msn-titlebar { flex: 1; }
   .action-buttons > .msn-chat[open] { flex: 0 0 100%; order: 10; }
   @media (max-width: 600px) {
-    /* Chat button drops to its own full-width row BELOW pledge+edit. pledge/edit
+    /* Comments button drops to its own full-width row BELOW like+edit. like/edit
        need a non-zero basis here, otherwise 0 + 0 + 100% all fit on one line and
-       the chat gets squished onto the row instead of wrapping under it. */
+       the comments window gets squished onto the row instead of wrapping under it. */
     .action-buttons > .btn-primary:not(.edit-save-btn) { flex: 2 1 auto; }
     .action-buttons > .edit-open-btn,
     .action-buttons > .edit-save-btn { flex: 1 1 auto; }
     .action-buttons > .msn-chat:not([open]) { flex: 1 0 100%; }
   }
-  .withdraw-form { margin: 0; }
-  .withdraw-form > .btn { width: 100%; justify-content: center; text-align: center; }
-
   /* Car action row — four equal buttons: [join/leave][add] / [remove][edit].
      Mobile default: each takes calc(50% - 4px) so exactly two sit per row and it
      wraps into a 2×2 grid (a 0-basis wouldn't force the wrap — gotcha #2; the -4px
      accounts for half the 8px gap). Desktop (≥601px): all four collapse onto one
      row (1/4 each). The edit slot's label⇄save pair counts as the one 4th button
      since only one shows at a time. The chat window drops to its own full-width
-     row underneath (order:10). Classes .car-seat-form/.btn-add-person/
-     .btn-remove-person are car-only, so `.action-buttons >` is already car-scoped;
-     .edit-*-btn is shared with items, hence the `.car-details` qualifier there. */
+     row underneath (order:10). .car-seat-form is car-only, so `.action-buttons >`
+     is already car-scoped; .edit-*-btn is shared with items, hence the
+     `.car-details` qualifier there. */
   .action-buttons > .car-seat-form { min-width: 0; margin: 0; display: flex; }
   .action-buttons > .car-seat-form > .btn { width: 100%; justify-content: center; text-align: center; }
   .car-details .action-buttons > .car-seat-form,
-  .car-details .action-buttons > .btn-add-person,
-  .car-details .action-buttons > .btn-remove-person,
   .car-details .action-buttons > .edit-open-btn,
   .car-details .action-buttons > .edit-save-btn {
     flex: 1 1 calc(50% - 4px); min-width: 0; margin: 0;
@@ -757,8 +778,6 @@
   .car-details .action-buttons > .msn-chat:not([open]) { flex: 0 0 100%; }
   @media (min-width: 601px) {
     .car-details .action-buttons > .car-seat-form,
-    .car-details .action-buttons > .btn-add-person,
-    .car-details .action-buttons > .btn-remove-person,
     .car-details .action-buttons > .edit-open-btn,
     .car-details .action-buttons > .edit-save-btn {
       flex: 1 1 0;
@@ -972,7 +991,26 @@
     font-size: 16px !important; text-align: left; font-weight: normal;
     padding: 5px 8px !important;
   }
-  .pledge-unit { flex-shrink: 0; color: #333; }
+  /* Phones only: pin the "how many" dialog to the top of the screen. Focusing the
+     field raises the keyboard over the bottom half, and Safari's usual rescue —
+     scrolling the focused field into view — can't help a position:fixed backdrop,
+     so a vertically-centred dialog ends up sitting behind the keyboard with its OK
+     button out of reach. Up top it stays clear of the keyboard entirely. The safe-
+     area pad keeps it out from under the notch (viewport-fit=cover means the
+     viewport really does start at the top of the screen). Desktop keeps the
+     classic centred XP dialog — there's no keyboard to dodge. */
+  @media (max-width: 600px) {
+    .pledge-modal {
+      align-items: flex-start;
+      /* Roughly halfway between pinned-to-the-top and centred: hard against the top
+         read as too high, dead centre sits behind the keyboard. A ~180px dialog on a
+         tall phone centres at about 39vh, so 20vh splits the difference and still
+         leaves it well clear of the keyboard's top edge (~55vh). Deliberately vh and
+         not dvh — dvh shrinks when the keyboard opens, which would make the dialog
+         jump upward the instant you focus the field. */
+      padding-top: max(20vh, env(safe-area-inset-top, 0px));
+    }
+  }
   /* XP message-box buttons: always centered along the bottom (even a lone OK, or a
      Yes/No pair — both sit centered, never hugging the right edge). The default
      button gets XP's understated treatment: a slightly darker border only — no bold
@@ -1141,24 +1179,19 @@
      rule running out to the right and a little count chip. */
   .stuff-section { margin-top: 16px; }
   .stuff-section:first-child { margin-top: 8px; }
-  /* Both sections are always in the DOM (so cards can move between them); an empty
-     one hides itself. Keep the first VISIBLE section snug to the controls above. */
+  /* An empty section hides itself. Keep the first VISIBLE section snug to the
+     controls above. Cards never move between the two while you're on the page —
+     the grouping is a snapshot of when it rendered (see camp.js). */
   .stuff-section.is-empty { display: none; }
   .stuff-section.is-empty + .stuff-section { margin-top: 8px; }
-  /* A card that just jumped to the other section: slide down into place and flash
-     the same yellow as :target so the eye follows it (paired with a smooth scroll). */
-  .item-card.item-moved { animation: item-move-land 1.5s ease; }
-  @keyframes item-move-land {
-    0% { transform: translateY(-16px) scale(0.97); box-shadow: 0 0 0 3px #ffd54a, 0 0 16px 4px rgba(255,183,0,0.9); }
-    18% { transform: translateY(0) scale(1); }
-    70% { box-shadow: 0 0 0 3px #ffd54a, 0 0 16px 4px rgba(255,183,0,0.9); }
-    100% { box-shadow: 2px 2px 5px rgba(0,0,0,0.25); }
-  }
   .stuff-section-header {
     display: flex; align-items: center; gap: 8px;
     color: #2360cc; font-weight: bold; font-size: 0.95em; margin: 0 2px 4px;
   }
   .stuff-section-header.done { color: #2f8f3a; }
+  /* "just added" — the same header, amber, so the three groups read at a glance
+     (new / outstanding / covered) without anything shouting. */
+  .stuff-section-header.fresh { color: #b06c00; }
   .stuff-section-header::after {
     content: ''; flex: 1; height: 0; border-top: 1px solid currentColor; opacity: 0.4;
   }
@@ -1443,6 +1476,13 @@
     margin: -12px -14px 8px; padding: 10px 14px;
   }
   .meet-task-head img { flex: 0 0 auto; }
+  /* The same wizard band, but heading a list on a page instead of a form inside a
+     popup: it has no dialog edges to bleed into, so drop the negative margins that
+     let it span a popup's padding and give it its own hairline frame. */
+  .meet-task-head.task-head-inline {
+    margin: 0 0 12px; padding: 10px 14px;
+    border: 1px solid #d8d8c8; border-radius: 3px;
+  }
   .meet-task-text b { display: block; color: #0a246a; margin-bottom: 2px; }
   .meet-task-text span { font-size: 0.78em; color: #4a4a3c; line-height: 1.35; }
   .meet-form fieldset { margin: 8px 0; }
@@ -1966,6 +2006,29 @@
      by the card's height, so a short set shows as many as fit. */
   .sched-tile-who-inline { font-size: 0.64em; line-height: 1.2; color: #a06400; margin-top: 1px; overflow: hidden; word-break: break-word; }
   .sched-tile-who-inline:empty { display: none; }
+  /* First-run "tap to open", pinned to the bottom of the card by margin-top:auto
+     (the head is a full-height flex column). Quiet and lower-case — it's a caption
+     telling you the box is a button, not a label competing with the artist's name.
+     Rendered only until you've starred anything; see scheduleTile.
+
+     Phones only. On a desktop the cursor already turns into a hand over the card and
+     the whole grid is in front of you at once, so the hint is noise repeated across
+     forty tiles; on a phone there's no hover to give the game away. */
+  .sched-tile-hint { display: none; }
+  @media (max-width: 600px) {
+    .sched-tile-hint {
+      display: block; margin-top: auto; font-size: 0.58em; line-height: 1.1;
+      color: #6f88a8; font-style: italic; white-space: nowrap; overflow: hidden;
+    }
+  }
+  /* Not while the card is open — it's plainly open, and the hint would sit above the
+     buttons still telling you to open it. It comes back when the card closes: the
+     nudge is spent only once you've actually starred something, and until then a
+     card you opened and dismissed is a card you might still need to be told about. */
+  .sched-tile.expanded .sched-tile-hint { display: none; }
+  /* A tight tile is already dropping the time to fit the name — no room, and the
+     hint on its neighbours makes the point for the whole grid anyway. */
+  .sched-tile.tight .sched-tile-hint { display: none; }
   /* Edit-mode tile is a plain button (opens the buried editor). */
   .sched-tile.editing {
     appearance: none; -webkit-appearance: none; text-align: left; cursor: pointer;

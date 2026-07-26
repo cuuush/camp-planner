@@ -42,8 +42,17 @@ the joke — lean into it.
 ## 🗺️ Map of the code
 
 - **`public/retro.css`** — ALL the CSS (Luna theme). **`public/camp.js`** — ALL the
-  client JS. Both static, loaded in `<head>`; camp.js deliberately has **no `defer`**.
-  Freshness is `public/_headers` (`no-cache` + ETag), NOT a URL stamp — see Caching.
+  client JS. Both static, loaded in `<head>` in that order: **stylesheet first, then
+  both scripts `defer`red**, so the render-blocking resource is discovered first and
+  a long page doesn't hold its parse open for JS. Freshness is `public/_headers`
+  (`no-cache` + ETag), NOT a URL stamp — see Caching.
+- **`scripts/`** — besides the build/seed tooling, four checks worth re-running after
+  touching the stuff tab or the shell: `check-stuff-controls.mjs` (asserts every item
+  card's check box/like button against the rules, signed in AND out — pass a cookie
+  as argv[2]), `check-stuff-order.mjs` (the three groups are consistent and
+  partly-pledged items rank first),
+  `page-weight.mjs` (ranks what's actually filling a page), `find-dead-frontend.mjs`
+  (unreferenced `camp.js` functions + CSS classes nothing emits).
 - **`src/render/layout.js`** — page shell (`renderPage`), taskbar, Start menu,
   desktop icons, Rover, tab themes. `renderPage` takes `pre:` for windows that render
   OUTSIDE the main app window (Streets & Trips sits above Car Pool — two programs on
@@ -56,6 +65,14 @@ the joke — lean into it.
   file per tab/feature.
 - **`src/lib/`** — audit/undo (`audit.js`, `effects.js`), people/ghosts (`people.js`),
   sign-in guard (`guard.js`), comments, notify, **API budgets (`budget.js`)**.
+  Sign-in is a **full-page redirect** (it must work without JS), so it resumes what
+  you were doing via query params on the destination — `?expand=item-5` (server
+  reopens that card; `rides.js` does the same with `car-N`) and `?pledge=5` (client
+  resumes the tick). They are plumbing, **not** for humans: `campTidyUrl()` strips
+  both with `replaceState` right after `campAutoOpenPledge` has read them, so they
+  never linger in the address bar. Keep that ordering, leave the `#item-5` anchor
+  alone (`:target` styling reads it), and don't strip anything else — `?sort=` is
+  the user's own. Covered by `scripts/test-tidy-url.mjs`.
 - **Schedule tab** — `routes/schedule.js` (grid, day buttons, import, edit) +
   `lib/schedule.js` (time math; minutes-from-midnight, after-midnight = 1440+),
   `lib/scheduleParse.js` (vision-parse a poster via OpenRouter),
@@ -70,10 +87,11 @@ the joke — lean into it.
 
 ## ☠️ Gotchas that WILL waste your time
 
-1. **`document.body` is `null` at the top level of `camp.js`** (script runs in
-   `<head>`). A top-level `document.body.*` throws and silently kills every listener
-   declared after it. Bind global listeners to `document`; `document.body` inside
-   functions that run later is fine.
+1. **Bind global listeners to `document`, never `document.body`.** `camp.js` is
+   `defer`red now, so `document.body` does exist at the top level — but the rule
+   stands, because a single top-level throw silently kills every listener declared
+   after it, and that is exactly how this bit for a whole day when the script was
+   parser-blocking. `document.body` inside functions that run later is fine.
 
 2. **Hono `html\`\`` escapes interpolated quotes.** Building a whole attribute as a
    string — `` ${id ? `id="${id}"` : ''} `` — renders `id=&quot;…&quot;`: a dead
@@ -155,10 +173,13 @@ the joke — lean into it.
    ship under a new filename + updated `@font-face` URL (see
    `scripts/build-unifont-emoji.sh`).
 
-13. **`DOMContentLoaded` fires BEFORE `retro.css` applies.** Every `<script>` in
-    `<head>` comes before the stylesheet `<link>` and nothing follows it, so
-    nothing blocks on it. Any load-time JS that **measures layout** is therefore
-    reading an unstyled page: `.sched-scroll` has no overflow cap yet, so
+13. **`DOMContentLoaded` can fire BEFORE `retro.css` applies.** This bit when every
+    `<script>` in `<head>` came *before* the stylesheet `<link>`, so nothing blocked
+    on it. The head order is now stylesheet-first + `defer` on both scripts (which
+    also stops 400 KB of stuff-page HTML waiting on JS), and deferred scripts do
+    wait on pending stylesheets — but do not lean on that. Any load-time JS that
+    **measures layout** may still be reading an unstyled page: `.sched-scroll` has
+    no overflow cap yet, so
     `scrollHeight === clientHeight` and `el.scrollTop = el.scrollHeight` silently
     clamps to 0. This cost a day: the schedule opened at the headliners about half
     the time on prod (CSS usually cached) and **never** on dev (`no-cache`
@@ -178,6 +199,73 @@ the joke — lean into it.
     (0,1,0), so the ring came back the instant the pointer touched it. Spell out
     `:hover, :active, :focus` on any button you strip — same specificity trap as
     gotcha 11.
+
+15. **A backtick inside an `html\`\`` template ends the template.** An HTML *comment*
+    that quoted an identifier in backticks — inside `renderPage`'s page-long literal
+    — closed it mid-page. The module then failed to parse and **every route hung with
+    no error anywhere**: no stack in the response, no 500, just timeouts, which reads
+    exactly like a dead dev server or the D1 lock in gotcha 8. When the whole worker
+    goes unresponsive right after an edit, run `node --check <file>` on what you
+    touched BEFORE investigating the server. It points at the line in a second.
+
+16. **An htmx swap kills an in-flight CSS transition.** The replacement element
+    paints at its final value, so any optimistic animation is cut off the moment the
+    response lands — i.e. nearly always, and the faster the server the worse it
+    looks. The animation has to be handed across the swap: record the live geometry
+    on `htmx:beforeSwap`, restore it onto the replacement with `transition:none` +
+    a forced reflow, then re-run the animation to the server's value
+    (`campBarResume` / `campStepProgress`). Mark only the element that's actually
+    animating (`data-stepping`), or the capture forces a layout read on every card
+    in the list for nothing.
+
+17. **A control that swaps its whole container must hand back every bit of state
+    only the client knows.** The like button re-rendered the item card without
+    `chat_open`, so liking something slammed the open comments window shut; the
+    check box had the same hole. The server cannot know which `<details>` you have
+    open. Enumerate them in `hx-vals` (`expanded`, `chat_open`) on *every* control
+    in the card, not just the one you're adding — this bug arrived because the edit
+    form already did it and the new controls didn't. And **default such a flag to
+    OFF**: the pledge route defaulted `expanded` to true on the reasoning that its
+    dialog could only be opened from an already-open card, which quietly stopped
+    being true when the check box in the *summary* started raising it — so every
+    quantity confirm sprang the card open. A missing flag should change nothing,
+    not do something.
+
+18. **Optimistic UI needs numbers only the server has — ship them as data
+    attributes.** Un-ticking a pledge drops the progress bar to *everyone else's*
+    total, which the DOM can't derive: it would have to know which name in the
+    rendered tally is yours. So the check box carries `data-pct-on/off` and the
+    dialog form carries `data-others`/`data-needed`. Compute them with the same
+    rounding the server renders with (`pctOf`), so the optimistic value and the one
+    arriving with the swap agree to the pixel and nothing visibly re-snaps.
+
+19. **iOS raises the keyboard only for a `focus()` inside a real user gesture.**
+    Deferring it by one `setTimeout`/`rAF`/animation callback leaves the caret
+    blinking with the keyboard down. Related: `setSelectionRange()` **throws** on
+    `input[type=number]`, so to park the caret at the end without selecting the
+    text, round-trip the value (`v = el.value; el.value = ''; el.value = v`) — the
+    value setter moves the cursor to the end, but only when the value actually
+    changes, hence the trip through `''`.
+
+20. **`toggle` (from `<details>`) does not bubble.** A document-level listener sees
+    it only in the **capture** phase: `addEventListener('toggle', fn, true)`.
+
+21. **Page weight here is DOM nodes, not bytes.** The stuff page was 645 KB of HTML
+    — and 10 KB brotli'd, so transfer was never the problem; ~8100 elements on a
+    phone was. The cost is identical markup repeated per card: ~70 chats × a
+    15-button emoticon palette = 165 KB and ~2000 nodes for palettes nobody had
+    opened, all inside *closed* `<details>`. Two fixes that worked and are worth
+    copying: emit repeated STATIC markup once in a `<template>` and clone it in on
+    first use (`msnToolbarTemplate` + `campFillMsnToolbars`), and don't render a
+    dialog a card has no way to open (the pledge modal is rendered only when the
+    check box will actually raise it). Net: −36% bytes, −42% elements, −95% images.
+    Measure with `scripts/page-weight.mjs` before optimising — it ranks the blocks,
+    and it's what showed transfer was already fine.
+    **This includes your comments.** An `<!-- … -->` inside a per-card template is
+    markup: three explanatory comments in `itemRow`/`msnLogAndCompose` shipped 72×
+    each and put **72 KB** back onto the page they were describing. Explain the
+    template from a `//` comment above it (or from inside a `${}`), never from an
+    HTML comment inside it. Page-level markup rendered once is fine.
 
 ## 🧱 Shared XP components — use these, don't hand-roll
 
@@ -199,10 +287,17 @@ All in `src/render/popup.js` unless noted:
   actions + zebra rows). **`.pick-list` / `.pick-row`** — click-to-pick result rows.
 - **`.dialog-buttons` in `.meet-form`** is position:sticky at the popup bottom
   (property-sheet style, always reachable) — copy for any long form in a popup.
+  Button order is **Cancel left, OK/default right**, and the backdrop has **no blur**
+  — XP didn't blur or dim what was behind a dialog.
+- **`msnToolbarTemplate()`** (`msn.js`) — the emoticon palette, emitted ONCE per page
+  by `renderPage`. Chats ship an empty `.msn-toolbar`; `campFillMsnToolbars` clones
+  the template in when a chat is first shown (on load, after a swap, and on the
+  capture-phase `toggle`). Don't inline the palette back into `msnChat` — see
+  gotcha 21.
 
 **Popup mechanics** (`camp.js`): placement/cascade runs on `htmx:afterSwap`; a popup
 stuck at the viewport top-left means that handler didn't run (see gotcha 1).
-`closePopup(el)` / `closeAllPopups()` / `popupTop()`. **Never `confirm()`/`alert()`**
+`closePopup(el)` / `popupTop()`. **Never `confirm()`/`alert()`**
 — an "are you sure?" is a GET route returning an `xpDialogPopup` into `#popup-layer`
 (`hx-target="#popup-layer" hx-swap="beforeend"`) whose Yes button carries the real
 `hx-post` and closes itself on success. `/cars/:carId/leave-window` and

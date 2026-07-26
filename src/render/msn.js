@@ -65,6 +65,14 @@ for (const [file, code, emoji] of MSN_EMOTICONS) {
 const MSN_TOKENS = Object.keys(MSN_TOKEN_TO_FILE).sort((a, b) => b.length - a.length);
 const MSN_RE = new RegExp(MSN_TOKENS.map((t) => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|'), 'g');
 
+// The one and only copy of the emoticon palette, parked in a <template> in the page
+// shell. Template content is parsed but never rendered and its images are never
+// fetched, so this costs ~2 KB once instead of 15 buttons + 15 images per chat.
+// camp.js clones it into a chat the first time that chat is opened.
+export function msnToolbarTemplate() {
+    return html`<template id="msn-toolbar-tpl">${MSN_TOOLBAR.map(([file, code]) => html`<button type="button" class="msn-tool" title="${code}" onclick="msnEmote(this,'${code}')"><img class="msn-emoticon" src="/msn/${file}.png" alt="${code}"></button>`)}</template>`;
+}
+
 export function escapeHtml(s) {
     return (s || '').toString().replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
@@ -88,6 +96,12 @@ export function msnify(text) {
 
 // The message log, emoticon toolbar, and compose box — the parts every MSN chat
 // shares regardless of chrome.
+// `.msn-toolbar` ships EMPTY on purpose: the palette is 15 buttons + 15 images of
+// identical markup and a stuff page carries ~70 chats, so inlining it cost ~2000 DOM
+// nodes for palettes nobody had opened. It lives once in #msn-toolbar-tpl and is
+// cloned in the first time a chat is shown (campFillMsnToolbars in camp.js).
+// Note none of this is an HTML comment: prose inside the template below would ship
+// once per chat. See AGENTS.md gotcha 21.
 function msnLogAndCompose({ comments, postUrl, target }) {
     return html`
         <div class="msn-log">
@@ -95,9 +109,7 @@ function msnLogAndCompose({ comments, postUrl, target }) {
               ? comments.map((cm) => html`<div class="msn-msg"><span class="msn-name" style="color:${nameColor(cm.display_name)}">${cm.display_name} says:</span><span class="msn-time local-time" data-utc="${cm.created_at}">${fmtTime(cm.created_at)}</span><span class="msn-body">${raw(msnify(cm.body))}</span></div>`)
               : html`<div class="msn-empty">no messages yet — say something!</div>`}
         </div>
-        <div class="msn-toolbar">
-          ${MSN_TOOLBAR.map(([file, code]) => html`<button type="button" class="msn-tool" title="${code}" onclick="msnEmote(this,'${code}')"><img class="msn-emoticon" src="/msn/${file}.png" alt="${code}"></button>`)}
-        </div>
+        <div class="msn-toolbar"></div>
         <form class="msn-compose" hx-post="${postUrl}" hx-target="${target}" hx-swap="outerHTML">
           <input type="text" name="body" placeholder="type a message..." autocomplete="off">
           <button class="btn btn-primary" type="submit">Send</button>

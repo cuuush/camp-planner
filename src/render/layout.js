@@ -1,6 +1,7 @@
 import { html, raw } from 'hono/html';
 import { PIXMOJI_COVERED_RANGES } from './pixmoji-coverage.js';
 import { xpCaptionBtns } from './popup.js';
+import { msnToolbarTemplate } from './msn.js';
 
 // The scrolling news marquee that used to sit at the top of every window body is
 // gone (along with tickerHtml() and its `SELECT … FROM audit_log ORDER BY
@@ -372,17 +373,25 @@ export async function renderPage(c, { title, activeTab = '', body, festival = nu
        bar strip a flat colour, which is exactly the band we're getting rid of. -->
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <title>${title} :: camp planner</title>
-  <!-- Self-hosted (was unpkg): first paint shouldn't wait on a third-party CDN's
-       DNS + TLS + fetch. Version in the filename + immutable cache (public/_headers);
-       bump the name when upgrading htmx. -->
-  <script src="/htmx-1.9.12.min.js"></script>
-  <script>window.PIXMOJI_RANGES=${raw(JSON.stringify(PIXMOJI_COVERED_RANGES))};</script>
-  <!-- No defer: camp.js binds its listeners to document at top level and must
-       run before the body parses, same as when it was an inline script.
-       Freshness comes from Cache-Control: no-cache + ETag (public/_headers):
-       the browser revalidates each load and gets a 304 unless the file changed. -->
-  <script src="/camp.js"></script>
+  <!-- Stylesheet FIRST: it's the only render-blocking resource that actually
+       gates first paint, and behind the two scripts the browser didn't even start
+       fetching it until they'd been downloaded and run. -->
   <link rel="stylesheet" href="/retro.css">
+  <script>window.PIXMOJI_RANGES=${raw(JSON.stringify(PIXMOJI_COVERED_RANGES))};</script>
+  <!-- Both deferred: neither is needed while the HTML parses, and the stuff page
+       is a lot of HTML to hold up. Deferred scripts still run in order and still
+       run BEFORE DOMContentLoaded, which is all either one needs — camp.js binds
+       to the document object (never document.body) and does its DOM work from
+       DOMContentLoaded/htmx events, htmx wires itself up on DOMContentLoaded, and
+       the inline onclick= handlers in the body only fire on a real tap. There are
+       no inline <script> blocks in the body to trip over this.
+       Self-hosted htmx (was unpkg): first paint shouldn't wait on a third-party
+       CDN's DNS + TLS + fetch. Version in the filename + immutable cache
+       (public/_headers); bump the name when upgrading htmx. camp.js's freshness
+       comes from Cache-Control: no-cache + ETag — revalidated each load, 304
+       unless it changed. -->
+  <script src="/htmx-1.9.12.min.js" defer></script>
+  <script src="/camp.js" defer></script>
 </head>
 <body>
   ${taskbar(c, festival, festivals)}
@@ -428,6 +437,7 @@ export async function renderPage(c, { title, activeTab = '', body, festival = nu
   <div id="mine-floating" class="mine-floating">${floatingHtml}</div>
   ${dogSlot(dogHtml)}
   <div class="site-foot-space" aria-hidden="true"></div>
+  ${msnToolbarTemplate()}
 </body>
 </html>`;
 }
