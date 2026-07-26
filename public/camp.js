@@ -980,21 +980,35 @@ function campSigninMatches(names, q) {
 function campSigninRender(input) {
   var box = campSigninBox(input);
   if (!box) return;
+  var typed = input.value.trim();
   var matches = campSigninMatches(campSigninNames(input), input.value);
   // Nothing to offer once they've typed the whole name — the list would just be
   // covering the field with what's already in it.
-  var exact = matches.length === 1 && matches[0].toLowerCase() === input.value.trim().toLowerCase();
+  var exact = matches.length === 1 && matches[0].toLowerCase() === typed.toLowerCase();
   if (!matches.length || exact) { box.hidden = true; box.innerHTML = ''; return; }
+  // Last row is what they've actually typed, with a trailing "…" — otherwise a list
+  // of other people's names reads as a closed menu you have to pick from, and a
+  // newcomer whose name happens to share letters with a regular's can't tell that
+  // just carrying on typing is allowed. Picking it keeps exactly what's in the box.
+  var picks = matches.slice();
+  var labels = matches.slice();
+  picks.push(typed);
+  labels.push(typed + '…');
   var out = '';
-  for (var i = 0; i < matches.length; i++) {
-    out += '<button type="button" class="signin-suggest-row" tabindex="-1">'
+  for (var i = 0; i < picks.length; i++) {
+    out += '<button type="button" class="signin-suggest-row' + (i === matches.length ? ' signin-suggest-new' : '') + '" tabindex="-1">'
       + '<img src="/xp/cp-accounts.png" alt="" class="signin-suggest-ico">'
       + '<span class="signin-suggest-name"></span></button>';
   }
   box.innerHTML = out;
-  // Names go in as text, never as markup — a display_name is user-supplied.
-  var rows = box.querySelectorAll('.signin-suggest-name');
-  for (var j = 0; j < rows.length; j++) rows[j].textContent = matches[j];
+  // Names go in as TEXT, never as markup — a display_name is user-supplied, and so
+  // is the typed row. The value a row applies is carried separately from its label,
+  // since the "…" is decoration and must not end up in the field.
+  var rows = box.querySelectorAll('.signin-suggest-row');
+  for (var j = 0; j < rows.length; j++) {
+    rows[j].setAttribute('data-value', picks[j]);
+    rows[j].querySelector('.signin-suggest-name').textContent = labels[j];
+  }
   box.hidden = false;
 }
 
@@ -1022,7 +1036,7 @@ document.addEventListener('mousedown', function (e) {
   if (row) {
     e.preventDefault();
     campSigninPick(row.closest('.signin-namebox').querySelector('.signin-name-input'),
-      row.querySelector('.signin-suggest-name').textContent);
+      row.getAttribute('data-value'));
     return;
   }
   // A click anywhere else dismisses an open list.
@@ -1054,7 +1068,7 @@ document.addEventListener('keydown', function (e) {
     for (var j = 0; j < rows.length; j++) rows[j].classList.toggle('active', j === next);
   } else if (e.key === 'Enter' && cur > -1) {
     e.preventDefault();
-    campSigninPick(input, rows[cur].querySelector('.signin-suggest-name').textContent);
+    campSigninPick(input, rows[cur].getAttribute('data-value'));
   } else if (e.key === 'Escape') {
     campSigninHide(input);
   }

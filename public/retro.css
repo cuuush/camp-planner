@@ -609,6 +609,10 @@
   .signin-suggest-row:hover, .signin-suggest-row.active {
     background: #316ac5; color: #fff; box-shadow: none;
   }
+  /* The last row is what you've typed, not an account — ruled off from the real
+     names above it and set in italic so it reads as "or just keep what you have". */
+  .signin-suggest-new { border-top: 1px solid #dfe6f2; font-style: italic; color: #4a5b72; }
+  .signin-suggest-new:hover, .signin-suggest-new.active { color: #fff; }
   .signin-suggest-ico { width: 22px; height: 22px; flex: 0 0 auto; }
   .signin-suggest-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
