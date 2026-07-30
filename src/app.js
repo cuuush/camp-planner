@@ -36,7 +36,7 @@ export const app = new Hono();
 const PROD_HOST = 'camp.cuuush.com';
 app.use('*', async (c, next) => {
     const url = new URL(c.req.url);
-    if (url.protocol === 'http:' && url.hostname === PROD_HOST) {
+    if (!c.env.DEV && url.protocol === 'http:' && url.hostname === PROD_HOST) {
         url.protocol = 'https:';
         // 301: this is permanent, and letting browsers remember it means the
         // insecure hop happens once per client instead of on every navigation.
