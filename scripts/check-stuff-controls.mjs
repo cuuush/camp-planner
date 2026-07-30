@@ -1,8 +1,8 @@
 // Checks the Stuff tab's per-card controls against the rules they're supposed to
 // follow, for every card on the page at once:
-//   • check box shown unless the item is fully covered by other people
+//   • a covered item keeps an empty overage check box hidden until its card opens
 //   • ticked only when YOU are down for some of it
-//   • tapping asks "how many" ONLY when ticking with more than one left to cover
+//   • tapping asks "how many" when more than one is left, or when adding an overage
 //   • a dialog-opening check box always has its modal, and no unreachable modals ship
 //   • like/check controls hand back expanded + chat_open so a tap can't collapse the card
 // Usage: node scripts/check-stuff-controls.mjs [festivalId] [cookie]
@@ -23,7 +23,11 @@ for (const [, id, seg] of cards) {
     const hasModal = seg.includes(`id="pledge-modal-${id}"`);
     const ticked = !!btn && btn.includes('xp-checkbox checked');
     const opensDialog = !!btn && btn.includes('campOpenPledge');
+    const overage = !!btn && btn.includes('pledge-check-overage');
     if (ticked) tally.ticked++;
+    if (overage && pledged < needed) bad.push(`item ${id}: overage box shown before the item is covered`);
+    if (overage && ticked) bad.push(`item ${id}: overage box is unexpectedly ticked`);
+    if (pledged >= needed && !ticked && !overage) bad.push(`item ${id}: covered item has no overage box`);
 
     if (!btn) {
         tally.none++;
@@ -38,13 +42,14 @@ for (const [, id, seg] of cards) {
     } else if (opensDialog) {
         tally.dialog++;
         if (!hasModal) bad.push(`item ${id}: check box opens a dialog that isn't in the DOM`);
+        if (overage && !seg.includes('Specify Additional Quantity')) bad.push(`item ${id}: overage dialog has the wrong prompt`);
         // Ticked means the dialog is there to let you bring your own pledge down, so
         // it's only warranted when that pledge is worth more than one. Your share is
         // the tally's total minus what the dialog says everyone else has pledged.
         const others = +(seg.match(/data-others="(-?\d+)"/) || [])[1];
         const mine = pledged - others;
         if (ticked && !(mine > 1)) bad.push(`item ${id}: asks when unticking a pledge of ${mine}`);
-        if (!ticked && remaining <= 1) bad.push(`item ${id}: asks "how many" with only ${remaining} left to cover`);
+        if (!ticked && !overage && remaining <= 1) bad.push(`item ${id}: asks "how many" with only ${remaining} left to cover`);
     } else {
         tally.post++;
         if (hasModal) bad.push(`item ${id}: unreachable modal shipped (check box posts directly)`);

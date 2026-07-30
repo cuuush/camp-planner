@@ -729,6 +729,9 @@
   .pledge-check:hover { background: rgba(49,106,197,0.08); border-color: #a9c3ea; box-shadow: none; }
   .pledge-check:hover .xp-checkbox { border-color: #5a8fd6; }
   .pledge-check:active { background: rgba(49,106,197,0.16); box-shadow: none; }
+  /* A covered item offers an overage pledge only after someone opens the card to
+     inspect it. It occupies the usual right-hand header position once revealed. */
+  .item-details:not([open]) .pledge-check-overage { display: none; }
   /* Scale the shared .xp-checkbox (14px in lists) up to header size — the tick is
      drawn with fixed pixel offsets, so it has to be re-struck at the larger size. */
   .pledge-check .xp-checkbox { width: 22px; height: 22px; }
@@ -1076,16 +1079,23 @@
 
   /* An XP dialog: a normal-sized field inline with its unit, then a button bar
      pinned bottom-right with fixed-width buttons — not a full-width mega input. */
-  /* Pledge dialog laid out like a real XP question box: the blue "?" icon on the
-     left, and to its right the prompt sitting just above a full-width field, with
-     the label nudged in ~2 characters (like XP dialog labels). */
-  /* Icon bottom-aligns with the field so the "?" sits level with the input row,
-     not floated up by the label above it. */
-  .pledge-prompt { display: flex; align-items: flex-end; gap: 12px; margin-top: 2px; }
-  .xp-dialog-icon { width: 40px; height: 40px; flex-shrink: 0; margin-bottom: 2px; }
-  .pledge-field-col { flex: 1; min-width: 0; }
-  .pledge-label { display: block; margin: 2px 0 5px 2ch; font-size: 0.85em; color: #1a1a1a; }
-  .pledge-input-row { display: flex; align-items: center; gap: 8px; }
+  /* Pledge dialog laid out like a real XP property prompt: icon/message on row one,
+     then Quantity/field on row two. The message and field share one crisp left
+     edge; each item in the label column centers against its own row. The body gets
+     a little more room below its buttons than the generic dialog so the controls
+     do not crowd the bottom frame. */
+  .pledge-modal .xp-dialog-body { padding-bottom: 26px; }
+  .pledge-prompt {
+    display: grid; grid-template-columns: max-content minmax(0, 1fr);
+    align-items: center; column-gap: 12px; row-gap: 14px; margin-top: 2px;
+  }
+  .xp-dialog-icon { width: 40px; height: 40px; flex-shrink: 0; }
+  .pledge-prompt > .xp-dialog-icon {
+    margin: 0; justify-self: center; align-self: center;
+  }
+  .pledge-label { display: block; margin: 0; font-size: 0.85em; color: #1a1a1a; }
+  .pledge-quantity-label { justify-self: center; font-size: 0.85em; align-self: center; color: #1a1a1a; }
+  .pledge-input-row { display: flex; align-items: center; gap: 8px; min-width: 0; }
   /* A normal XP text field — not a giant bold display input. 16px keeps iOS from
      zooming on focus; that's as small as we go. */
   .pledge-modal-input {

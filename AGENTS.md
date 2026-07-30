@@ -93,6 +93,10 @@ Luna push button — and put it where fingers go, not where a mouse-era toolbar 
 tick box in What I'm Bringing is your own packing, the one on an item in Stuff is
 the promise to bring it. When that happens, one of them has to say so in prose; XP
 would have put a line of Help and Support text under the list, so we do too.
+On a fully covered Stuff item, a person who has not pledged sees no empty box in the
+collapsed list; opening the card reveals one in the usual right-hand header position.
+That box means "bring more" and always opens the shared quantity dialog — there is
+no remaining amount for a one-click pledge to infer.
 
 Real data beats fake data *inside* the fake chrome: the Streets & Trips map pane is
 a live OpenStreetMap embed; the status bar shows the real lat/lon parsed from the

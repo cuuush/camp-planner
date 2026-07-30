@@ -135,16 +135,17 @@ function itemRow(festival, item, stats, person, expanded = false, chatOpen = fal
     const requestedBy = item.is_seed ? (item.seed_label || '') : `requested by ${adderName || 'someone'}`;
 
     // The header check box is a promise, not a vote: ticked only when YOU are down
-    // for some of this. Once an item is fully covered there's nothing left to tick,
-    // so the empty box disappears — unless you're one of the people bringing it, in
-    // which case the ticked box stays as the way to back out again.
+    // for some of this. A covered item keeps an empty "bring more" box in its header,
+    // but CSS reveals it only after you open the card; the collapsed list stays
+    // visually finished while anyone who inspects the item can still volunteer an
+    // overage. Your ticked box always stays visible as the way to back out again.
     const covered = pledgedQty >= item.needed_qty;
-    const showCheck = !covered || !!myPledge;
-    // The dialog only earns its interruption when there's a real question to ask, and
-    // that's only ever on the way IN: how many of the OUTSTANDING amount are you
-    // taking? One left to cover and the answer can only be "one", so don't ask.
-    // Note it's REMAINING, not needed_qty: an item wanting six with five spoken for
-    // behaves exactly like a one-of item.
+    const offeringMore = covered && !myPledge;
+    // The dialog only earns its interruption when there's a real question to ask.
+    // On an item that is still short, that's only ever on the way IN: how many of
+    // the OUTSTANDING amount are you taking? One left to cover can go straight
+    // through. A covered item is the exception: its reopened empty box explicitly
+    // means "bring more", so it always needs an additional quantity.
     //
     // Unticking never asks. A ticked box means "I'm bringing some of this", so the
     // only thing clicking it can mean is "no I'm not" — it drops your pledge whole,
@@ -154,10 +155,9 @@ function itemRow(festival, item, stats, person, expanded = false, chatOpen = fal
     // untick → tick, and the second tick asks you the number again.
     // Also gates whether the modal is rendered at all: every card used to carry a
     // hidden dialog it had no way to raise, ~19% of the page's HTML for nothing.
-    // Needs a signed-in person and a visible check box, or there's no way to open
-    // the dialog on this page at all: signed out, the box goes to the sign-in
-    // window instead, and the sign-in round trip re-renders the card anyway.
-    const askQty = !!person && showCheck && !myPledge && remaining > 1;
+    // It needs a signed-in person; signed out, the box goes to the sign-in window
+    // and the return trip re-renders the card with the dialog.
+    const askQty = !!person && !myPledge && (offeringMore || remaining > 1);
     // The dialog's own notes, kept here rather than as HTML comments inside it:
     // min=0 on the qty field is deliberate — it's the same as Cancel, and posting a 0
     // is harmless (you weren't down for any). It carries no autofocus attribute
@@ -200,8 +200,8 @@ function itemRow(festival, item, stats, person, expanded = false, chatOpen = fal
                 ${pledges.length ? html` - ${pledges.map(pledgeLabel).join(', ')}` : ''}
               </div>
             </div>
-            ${!showCheck ? '' : !person
-                ? html`<button type="button" class="pledge-check" role="checkbox" aria-checked="false" aria-label="i'll bring this"
+            ${!person
+                ? html`<button type="button" class="pledge-check ${offeringMore ? 'pledge-check-overage' : ''}" role="checkbox" aria-checked="false" aria-label="${offeringMore ? 'bring more of this' : "i'll bring this"}"
                     hx-get="/signin/modal?next=${encodeURIComponent(`/f/${festival.id}/stuff?expand=item-${item.id}&pledge=${item.id}`)}"
                     hx-target="#signin-modal-overlay" hx-swap="innerHTML"
                     onclick="event.stopPropagation();">
@@ -212,7 +212,7 @@ function itemRow(festival, item, stats, person, expanded = false, chatOpen = fal
                     // itself waits for OK (campPledgeDialogOptimistic), so cancelling
                     // leaves the box exactly as it was. Always an EMPTY box: askQty is
                     // the ticking direction only, so you can't be pledged here.
-                    ? html`<button type="button" class="pledge-check" role="checkbox" aria-checked="false" aria-label="i'll bring this"
+                    ? html`<button type="button" class="pledge-check ${offeringMore ? 'pledge-check-overage' : ''}" role="checkbox" aria-checked="false" aria-label="${offeringMore ? 'bring more of this' : "i'll bring this"}"
                         onclick="event.stopPropagation(); ${openPledgeDialog}">
                         <span class="xp-checkbox"></span>
                       </button>`
@@ -293,7 +293,7 @@ function itemRow(festival, item, stats, person, expanded = false, chatOpen = fal
       <div class="modal-backdrop pledge-modal" id="pledge-modal-${item.id}" style="display:none;" onclick="if(event.target===this) this.style.display='none'">
         <div class="modal-box xp-dialog">
           <div class="xp-dialog-title">
-            <span class="xp-dialog-title-text">Confirm Quantity</span>
+            <span class="xp-dialog-title-text">${offeringMore ? 'Specify Additional Quantity' : 'Confirm Quantity'}</span>
             ${xpCaptionBtns({ min: false, max: false, onClose: `document.getElementById('pledge-modal-${item.id}').style.display='none'` })}
           </div>
           <div class="xp-dialog-body">
@@ -304,11 +304,12 @@ function itemRow(festival, item, stats, person, expanded = false, chatOpen = fal
               data-others="${pledgedQty}">
               <div class="pledge-prompt">
                 <img class="xp-dialog-icon" src="/xp/dlg-question.png" alt="" aria-hidden="true">
-                <div class="pledge-field-col">
-                  <label class="pledge-label">How many ${pledgeUnit} are you bringing?</label>
-                  <div class="pledge-input-row">
-                    <input type="number" name="qty" value="${remaining}" min="0" class="pledge-modal-input">
-                  </div>
+                <label class="pledge-label" for="pledge-qty-${item.id}">${offeringMore
+                    ? `How many more ${pledgeUnit} do you want to bring?`
+                    : `How many ${pledgeUnit} are you bringing?`}</label>
+                <label class="pledge-quantity-label" for="pledge-qty-${item.id}">Quantity:</label>
+                <div class="pledge-input-row">
+                  <input id="pledge-qty-${item.id}" type="number" name="qty" value="${remaining}" min="0" class="pledge-modal-input">
                 </div>
               </div>
               <div class="dialog-buttons">
