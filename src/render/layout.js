@@ -231,9 +231,13 @@ function taskbar(c, festival, festivals) {
           <a class="xp-startmenu-item" href="/feedback" onclick="campCloseStart()"
             hx-get="/feedback/window" hx-target="#popup-layer" hx-swap="beforeend">
             <img class="xp-startmenu-ico" src="/xp/feedback.png" alt=""> Send Feedback</a>
-          <a class="xp-startmenu-item" href="/settings" onclick="campCloseStart()"
-            hx-get="/settings/window" hx-target="#popup-layer" hx-swap="beforeend">
-            <img class="xp-startmenu-ico" src="/xp/control-panel.png" alt=""> Control Panel</a>
+          ${person
+            ? html`<a class="xp-startmenu-item" href="/settings" onclick="campCloseStart()"
+                hx-get="/settings/window" hx-target="#popup-layer" hx-swap="beforeend">
+                <img class="xp-startmenu-ico" src="/xp/control-panel.png" alt=""> Control Panel</a>`
+            : html`<a class="xp-startmenu-item" href="/signin?next=%2Fsettings" onclick="campCloseStart()"
+                hx-get="/signin/modal?next=%2Fsettings" hx-target="#signin-modal-overlay" hx-swap="innerHTML">
+                <img class="xp-startmenu-ico" src="/xp/control-panel.png" alt=""> Control Panel</a>`}
           <a class="xp-startmenu-item" href="/admin" onclick="campCloseStart()">
             <img class="xp-startmenu-ico" src="/xp/admin.png" alt=""> Administrative Tools</a>
           ${festival ? html`
