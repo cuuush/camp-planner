@@ -47,6 +47,8 @@ async function renderPplBody(c, festival) {
     <div class="ppl-add-bar">
       <button class="btn" type="button"
         hx-get="/f/${festival.id}/people/add-window" hx-target="#popup-layer" hx-swap="beforeend">Add Person…</button>
+      <button class="btn" type="button"
+        hx-get="/f/${festival.id}/people/report-window" hx-target="#popup-layer" hx-swap="beforeend">Item Report</button>
       ${person
           ? html`<button class="btn" type="button" onclick="campEnterSelect(this,'rename')">Rename</button>
                  <button class="btn" type="button" onclick="campEnterSelect(this,'merge')">Merge</button>
@@ -72,7 +74,19 @@ async function renderPplBody(c, festival) {
               if (isCarPassTask(t) && !drivers.has(m.person_id)) return html`<span class="ppl-task blank"></span>`;
 
               const done = isChecked(t.id, m.person_id);
-              return html`<span class="ppl-task ${done ? 'done' : ''}">${done ? '✅' : '⬜'} ${t.label}</span>`;
+              return person
+                  ? html`<button type="button" class="ppl-task ppl-task-btn ${done ? 'done' : ''}"
+                      aria-label="${done ? 'Uncheck' : 'Check off'} ${t.label} for ${m.display_name}"
+                      hx-get="/f/${festival.id}/checklist/${t.id}/person/${m.person_id}/confirm"
+                      hx-target="#popup-layer" hx-swap="beforeend">
+                      <span class="xp-checkbox ${done ? 'checked' : ''}"></span><span class="ppl-task-label">${t.label}</span>
+                    </button>`
+                  : html`<button type="button" class="ppl-task ppl-task-btn ${done ? 'done' : ''}"
+                      aria-label="Sign in to ${done ? 'uncheck' : 'check off'} ${t.label} for ${m.display_name}"
+                      hx-get="/signin/modal?next=/f/${festival.id}/ppl"
+                      hx-target="#signin-modal-overlay" hx-swap="innerHTML">
+                      <span class="xp-checkbox ${done ? 'checked' : ''}"></span><span class="ppl-task-label">${t.label}</span>
+                    </button>`;
           })}</span>` : ''}
         </div>`)}
     </div>
@@ -122,6 +136,84 @@ people.get('/f/:id/people/add-window', async (c) => {
             <input type="text" name="name" placeholder="Type their name" required data-1p-ignore data-lpignore="true">
             <button class="btn btn-primary" type="submit">Add to List</button>
           </form>`,
+    }));
+});
+
+// A Windows Explorer-style report window. "Things" means distinct item pledges,
+// not the sum of their quantities: adding a case of water to three tents would
+// otherwise compare unlike units and produce a confidently meaningless ranking.
+people.get('/f/:id/people/report-window', async (c) => {
+    const festival = await loadFestival(c);
+    if (!festival) return c.notFound();
+    const rows = (await c.env.DB.prepare(`
+        SELECT pe.id, pe.display_name,
+               COUNT(DISTINCT p.item_id) AS item_count
+        FROM memberships m
+        JOIN people pe ON pe.id = m.person_id
+        LEFT JOIN pledges p ON p.person_id = pe.id
+          AND p.deleted_at IS NULL
+          AND p.item_id IN (
+            SELECT id FROM items WHERE festival_id = ? AND deleted_at IS NULL
+          )
+        WHERE m.festival_id = ? AND m.bailed_at IS NULL
+        GROUP BY pe.id, pe.display_name
+        ORDER BY item_count DESC, pe.display_name COLLATE NOCASE
+    `).bind(festival.id, festival.id).all()).results;
+    const bringing = rows.filter((r) => Number(r.item_count) > 0);
+    const maxCount = rows.length ? Number(rows[0].item_count) : 0;
+    let shownRank = 0;
+    let previousCount = null;
+
+    return c.html(xpPopup({
+        title: `Camp Packing Report - ${festival.name}`,
+        id: `people-report-${festival.id}`,
+        wide: true,
+        cls: 'ppl-report-window',
+        body: html`
+          <div class="xp-menubar" aria-hidden="true">
+            ${['File', 'Edit', 'View', 'Favorites', 'Tools', 'Help'].map((label) => html`<span class="xp-menu">${label}</span>`)}
+          </div>
+          <div class="ppl-report-toolbar" aria-hidden="true">
+            <span class="st-tbtn"><img class="st-ticon" src="/xp/back.png" alt="">Back</span>
+            <span class="st-tbtn"><img class="st-ticon" src="/xp/forward.png" alt=""></span>
+            <span class="st-tsep"></span>
+            <span class="st-tbtn"><img class="st-ticon" src="/xp/search.png" alt="">Search</span>
+          </div>
+          <div class="xp-addressbar" aria-hidden="true">
+            <span class="xp-address-label">Address</span>
+            <span class="xp-address-field"><img src="/xp/desk-people.png" alt="">Camp Planner Reports &#92; Who Is Bringing What</span>
+          </div>
+          <div class="ppl-report-content">
+            <div class="ppl-report-head">
+              <img src="/xp/desk-stuff.png" alt="">
+              <span><b>Who’s Bringing the Most Items?</b><small>Ranked by the number of different items each person has agreed to bring.</small></span>
+            </div>
+            <div class="xp-listview ppl-report-list">
+              <div class="xp-listview-head">
+                <span class="ppl-report-rank">Rank</span>
+                <span class="lv-head-title">Name</span>
+                <span class="ppl-report-count">Items</span>
+              </div>
+              ${rows.length
+                  ? rows.map((r, index) => {
+                      const count = Number(r.item_count);
+                      if (count !== previousCount) shownRank = index + 1;
+                      previousCount = count;
+                      return html`
+                        <div class="roster-row ppl-report-row ${maxCount > 0 && count === maxCount ? 'leader' : ''}">
+                          <span class="ppl-report-rank">${shownRank}</span>
+                          <img class="ppl-report-person-icon" src="/xp/desk-people.png" alt="">
+                          <span class="lv-head-title">${r.display_name}</span>
+                          <span class="ppl-report-count">${count}</span>
+                        </div>`;
+                  })
+                  : html`<div class="roster-empty">There are no pledges in this report.</div>`}
+            </div>
+            <div class="st-statusbar" aria-hidden="true">
+              <span class="st-status-cell st-status-main">${bringing.length} ${bringing.length === 1 ? 'person' : 'people'} bringing items</span>
+              <span class="st-status-cell">${rows.length} attendees</span>
+            </div>
+          </div>`,
     }));
 });
 
@@ -392,6 +484,50 @@ people.post('/f/:id/people/:personId/arrival', async (c) => {
     return c.html(await renderPplBody(c, festival));
 });
 
+people.get('/f/:id/checklist/:taskId/person/:personId/confirm', async (c) => {
+    const festival = await loadFestival(c);
+    if (!festival) return c.notFound();
+    if (needsSignin(c)) return signinModalResponse(c);
+    const taskId = Number(c.req.param('taskId'));
+    const personId = Number(c.req.param('personId'));
+    const db = c.env.DB;
+    const target = await db.prepare(`
+        SELECT t.*, pe.display_name AS target_name,
+               EXISTS (
+                 SELECT 1 FROM cars
+                 WHERE festival_id = t.festival_id
+                   AND driver_person_id = pe.id
+                   AND deleted_at IS NULL
+               ) AS is_driver
+        FROM checklist_tasks t
+        JOIN memberships m ON m.festival_id = t.festival_id
+        JOIN people pe ON pe.id = m.person_id
+        WHERE t.id = ? AND t.festival_id = ? AND t.deleted_at IS NULL
+          AND pe.id = ? AND m.bailed_at IS NULL
+    `).bind(taskId, festival.id, personId).first();
+    if (!target || (isCarPassTask(target) && !target.is_driver)) return c.html('');
+
+    const existing = await db.prepare(`
+        SELECT unchecked_at FROM checklist_checks WHERE task_id = ? AND person_id = ?
+    `).bind(taskId, personId).first();
+    const checked = !!existing && !existing.unchecked_at;
+    return c.html(xpDialogPopup({
+        title: checked ? 'Clear Check Mark' : 'Confirm Check Off',
+        id: `check-person-${personId}-task-${taskId}`,
+        icon: 'question',
+        centerMobile: true,
+        message: checked
+            ? html`Clear <b>${target.label}</b> for <b>${target.target_name}</b>? It will show as not completed in the People list.`
+            : html`Check off <b>${target.label}</b> for <b>${target.target_name}</b>? This marks the task as completed on their behalf.`,
+        buttons: html`
+          <button class="btn" type="button" onclick="closePopup(this)">Cancel</button>
+          <button class="btn btn-primary" type="button"
+            hx-post="/checklist/${taskId}/toggle/${personId}"
+            hx-target="#main" hx-swap="innerHTML"
+            hx-on::after-request="if(event.detail.successful) closePopup(this)">${checked ? 'Yes, Clear It' : 'Yes, Check It Off'}</button>`,
+    }));
+});
+
 people.post('/checklist/:taskId/toggle/:personId', async (c) => {
     if (needsSignin(c)) return signinModalResponse(c);
     const taskId = Number(c.req.param('taskId'));
@@ -399,10 +535,17 @@ people.post('/checklist/:taskId/toggle/:personId', async (c) => {
     const db = c.env.DB;
     const actor = c.get('person');
 
-    const task = await db.prepare('SELECT * FROM checklist_tasks WHERE id = ?').bind(taskId).first();
+    const task = await db.prepare('SELECT * FROM checklist_tasks WHERE id = ? AND deleted_at IS NULL').bind(taskId).first();
     if (!task) return c.notFound();
     const festival = await db.prepare('SELECT * FROM festivals WHERE id = ?').bind(task.festival_id).first();
-    const target = await db.prepare('SELECT display_name FROM people WHERE id = ?').bind(personId).first();
+    if (!festival) return c.notFound();
+    const target = await db.prepare(`
+        SELECT pe.display_name
+        FROM memberships m
+        JOIN people pe ON pe.id = m.person_id
+        WHERE m.festival_id = ? AND m.person_id = ? AND m.bailed_at IS NULL
+    `).bind(festival.id, personId).first();
+    if (!target) return c.html(await renderPplBody(c, festival));
 
     // A car pass is only checkable by someone who's posted a car.
     if (isCarPassTask(task)) {
