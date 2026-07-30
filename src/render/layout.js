@@ -91,6 +91,7 @@ async function loadChrome(db, festival, person) {
 // deciding whether to show him costs no queries of its own.
 function dogAssistant(c, festival, person, passes) {
     let bubble;
+    let nag = '';
     if (!person) {
         // Only nudge on a festival page, where signing in has an obvious point (and
         // also joins you). On the main fest-selection page (root) Rover stays quiet.
@@ -142,6 +143,7 @@ function dogAssistant(c, festival, person, passes) {
               </ul>`;
         } else if (needSchedulePick) {
             // Set times are up but this person hasn't starred anyone.
+            nag = 'schedule';
             bubble = html`
               <span class="dog-title">Who do you want to see?</span>
               You haven't picked any sets yet.
@@ -161,7 +163,7 @@ function dogAssistant(c, festival, person, passes) {
     // balloon pops out above his head. `aria-expanded` on the button is the real
     // state; camp.js keeps it in sync with the .open class.
     return html`
-    <div class="dog-assistant" id="dog-assistant">
+    <div class="dog-assistant" id="dog-assistant"${nag ? html` data-dog-nag="${nag}"` : ''}>
       <div class="dog-bubble" id="dog-bubble" role="status">${bubble}</div>
       <button type="button" class="dog-btn" aria-expanded="false" aria-controls="dog-bubble"
         title="Rover has something to tell you">

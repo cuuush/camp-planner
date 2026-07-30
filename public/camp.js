@@ -1592,6 +1592,21 @@ function campDogDepart(el) {
   }, DOG_SHRINK_MS);
 }
 
+// A desktop tab response starts swapping #desktop before htmx processes its OOB
+// #dog-slot. Start the schedule nag's trip at that first, authoritative swap event
+// so clicking the Schedule desktop icon cannot let the later empty-slot swap blink
+// Rover out first. This is deliberately keyed to both the response path and the
+// nag: a pass reminder remains on Schedule, and a failed request never gets here.
+document.addEventListener('htmx:beforeSwap', function (e) {
+  var d = e.detail;
+  if (!d || !d.shouldSwap || !d.target || d.target.id !== 'desktop') return;
+  var path = d.pathInfo && (d.pathInfo.finalRequestPath || d.pathInfo.requestPath || d.pathInfo.responsePath);
+  if (!/^\/f\/\d+\/schedule(?:[/?#]|$)/.test(path || '')) return;
+  var parked = document.querySelector('#dog-slot .dog-assistant[data-dog-nag="schedule"]');
+  if (!parked || dogFly || campReducedMotion() || typeof parked.animate !== 'function') return;
+  campDogDepart(parked);
+});
+
 // Every #dog-slot swap boils down to "he should be here" or "he shouldn't"; this
 // turns that into a direction of travel. Tab switches count: they swap #desktop and
 // re-send the slot with it, and the "you haven't picked any sets" nag is silenced ON
