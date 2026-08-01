@@ -59,8 +59,8 @@ CREATE TABLE IF NOT EXISTS memberships (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     festival_id INTEGER NOT NULL REFERENCES festivals(id),
     person_id INTEGER NOT NULL REFERENCES people(id),
-    -- Who manually placed this placeholder on this festival's People roster.
-    -- Null for sign-ins, other add flows, and placeholders after absorption.
+    -- Who manually placed this placeholder on this festival's roster by name.
+    -- Null for sign-ins, selections of existing people, and after absorption.
     added_by INTEGER REFERENCES people(id),
     arrival_day TEXT,
     joined_at TEXT NOT NULL DEFAULT (datetime('now')),

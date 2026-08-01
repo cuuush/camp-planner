@@ -8,7 +8,7 @@ import { sqlNow } from './effects.js';
 // FK to them) with is_placeholder=1, a synthetic unique normalized_name (unusable
 // for sign-in, never collides), and placeholder_key = normalized display name,
 // which a real login later matches on to absorb them. Also joins the fest.
-export async function createPlaceholder(c, festivalId, rawName, rosterAddedBy = null) {
+export async function createPlaceholder(c, festivalId, rawName, addedBy = null) {
     const db = c.env.DB;
     const name = (rawName || '').toString().trim();
     if (!name) return null;
@@ -18,7 +18,7 @@ export async function createPlaceholder(c, festivalId, rawName, rosterAddedBy = 
         'INSERT INTO people (normalized_name, display_name, is_placeholder, placeholder_key) VALUES (?, ?, 1, ?)'
     ).bind(synthetic, name, key).run();
     const id = result.meta.last_row_id;
-    if (festivalId) await ensureMembershipForPerson(db, festivalId, id, rosterAddedBy);
+    if (festivalId) await ensureMembershipForPerson(db, festivalId, id, addedBy);
     return { id, display_name: name, placeholder_key: key };
 }
 
@@ -88,7 +88,7 @@ export async function mergePeople(db, fromId, toId, { absorption = false } = {})
             ? [{ col: 'bailed_at', from: tgt.bailed_at, to: null }] : [],
     }, stmts, effects);
 
-    // Manual People-roster provenance belongs to a membership, not a person. A
+    // Manual festival-roster provenance belongs to a membership, not a person. A
     // placeholder absorption consumes it: the real account is now simply going to
     // that festival. An ordinary merge keeps provenance on membership rows, while
     // attributions made BY the merged identity follow the survivor. Clear any case

@@ -677,7 +677,7 @@ rides.post('/f/:id/cars', async (c) => {
     if (body.driver_person_id === '__new__') {
         const name = (body.new_driver_name || '').toString().trim();
         if (name) {
-            newDriver = await createPlaceholder(c, festival.id, name); // creates + joins fest
+            newDriver = await createPlaceholder(c, festival.id, name, person.id); // creates + joins fest
             driverId = newDriver.id;
         }
     } else {
@@ -932,7 +932,7 @@ rides.post('/cars/:carId/seats/add-new', async (c) => {
     const name = ((await c.req.parseBody()).name || '').toString().trim();
     if (!name) return carResponse(c, festival, car.id, true);
 
-    const ghost = await createPlaceholder(c, festival.id, name); // creates + joins fest
+    const ghost = await createPlaceholder(c, festival.id, name, actor.id); // creates + joins fest
     await db.prepare('INSERT INTO seats (car_id, person_id) VALUES (?, ?)').bind(car.id, ghost.id).run();
     await logAction(c, {
         festivalId: festival.id, action: 'create', entityType: 'people', entityId: ghost.id,

@@ -31,7 +31,7 @@ ok()   { echo "  PASS: $1"; pass=$((pass+1)); }
 bad()  { echo "  FAIL: $1"; fail=$((fail+1)); }
 
 # --- locate the miniflare sqlite file wrangler dev is using -----------------------
-DB_FILE="$(ls -t .wrangler/state/v3/d1/miniflare-D1DatabaseObject/*.sqlite 2>/dev/null | head -1)"
+DB_FILE="${DB_FILE:-$(ls -t .wrangler/state/v3/d1/miniflare-D1DatabaseObject/*.sqlite 2>/dev/null | head -1)}"
 if [ -z "${DB_FILE:-}" ] || [ ! -f "$DB_FILE" ]; then
     echo "Could not find local D1 sqlite under .wrangler/state — is the dev server running with a migrated+seeded DB?"
     exit 2
@@ -160,9 +160,46 @@ echo
 # ── Scenario 9 — Absorb is logged; dead ghosts don't absorb (G8) ─────────────────
 echo "9. Absorb (G8): ghost absorbed+logged; a removed ghost does NOT absorb"
 signin adder "Adder" "/f/1/stuff"
+ADDER_ID=$(sql "SELECT id FROM people WHERE display_name='Adder'")
+
+# Both Cars paths that accept a brand-new name create festival-roster placeholders.
+# They carry the same temporary attribution as a People-tab add, while the actor's
+# ordinary self-service membership stays unattributed.
+post adder "/f/1/cars" --data "driver_person_id=__new__" --data "new_driver_name=DriverGhost" --data "seats_total=4"
+DRIVER_GID=$(sql "SELECT id FROM people WHERE display_name='DriverGhost' AND is_placeholder=1")
+DRIVER_CAR=$(sql "SELECT id FROM cars WHERE driver_person_id=$DRIVER_GID ORDER BY id DESC LIMIT 1")
+post adder "/cars/$DRIVER_CAR/seats/add-new" --data "name=PassengerGhost"
+PASSENGER_GID=$(sql "SELECT id FROM people WHERE display_name='PassengerGhost' AND is_placeholder=1")
+DRIVER_ADDER=$(sql "SELECT added_by FROM memberships WHERE festival_id=1 AND person_id=$DRIVER_GID")
+PASSENGER_ADDER=$(sql "SELECT added_by FROM memberships WHERE festival_id=1 AND person_id=$PASSENGER_GID")
+SELF_ADDER=$(sql "SELECT added_by FROM memberships WHERE festival_id=1 AND person_id=$ADDER_ID")
+PPL_HTML=$(curl -s "$BASE/f/1/ppl")
+[ "$DRIVER_ADDER" = "$ADDER_ID" ] && ok "new car driver recorded festival roster provenance" || bad "new car driver did not record the actor (adder=$DRIVER_ADDER)"
+[ "$PASSENGER_ADDER" = "$ADDER_ID" ] && ok "new car passenger recorded festival roster provenance" || bad "new car passenger did not record the actor (adder=$PASSENGER_ADDER)"
+[ -z "$SELF_ADDER" ] && ok "self-service membership stayed unattributed" || bad "self-service membership was attributed (adder=$SELF_ADDER)"
+printf '%s' "$PPL_HTML" | grep -q 'DriverGhost.*ppl-added-by.*(Adder)' \
+    && ok "People page rendered car-driver attribution" || bad "People page omitted car-driver attribution"
+printf '%s' "$PPL_HTML" | grep -q 'PassengerGhost.*ppl-added-by.*(Adder)' \
+    && ok "People page rendered car-passenger attribution" || bad "People page omitted car-passenger attribution"
+printf '%s' "$PPL_HTML" | grep -q 'who manually added that person to this festival' \
+    && ok "People page explained the shared manual-add label" || bad "People page omitted the attribution helper note"
+
+# The attribution is temporary for a car-created placeholder too, with the same
+# reversible absorption behavior as a placeholder created from the People tab.
+signin driverghost "DriverGhost" "/f/1/stuff"
+DRIVER_REAL_ID=$(sql "SELECT id FROM people WHERE display_name='DriverGhost' AND is_placeholder=0")
+DRIVER_ABSORB=$(sql "SELECT id FROM audit_log WHERE action='merge' AND entity_id=$DRIVER_REAL_ID ORDER BY id DESC LIMIT 1")
+DRIVER_ATTR_AFTER=$(sql "SELECT count(*) FROM memberships WHERE festival_id=1 AND person_id IN ($DRIVER_GID,$DRIVER_REAL_ID) AND added_by IS NOT NULL")
+[ "$DRIVER_ATTR_AFTER" = "0" ] && ok "car-placeholder sign-in consumed temporary attribution" || bad "car-placeholder attribution survived sign-in ($DRIVER_ATTR_AFTER rows)"
+post adder "/f/1/log/$DRIVER_ABSORB/undo"
+DRIVER_ATTR_UNDONE=$(sql "SELECT added_by FROM memberships WHERE festival_id=1 AND person_id=$DRIVER_GID AND bailed_at IS NULL")
+[ "$DRIVER_ATTR_UNDONE" = "$ADDER_ID" ] && ok "un-merge restored car-placeholder attribution" || bad "un-merge did not restore car attribution (adder=$DRIVER_ATTR_UNDONE)"
+post adder "/f/1/log/$DRIVER_ABSORB/undo"
+DRIVER_ATTR_REDONE=$(sql "SELECT count(*) FROM memberships WHERE festival_id=1 AND person_id IN ($DRIVER_GID,$DRIVER_REAL_ID) AND added_by IS NOT NULL")
+[ "$DRIVER_ATTR_REDONE" = "0" ] && ok "redo consumed car-placeholder attribution again" || bad "redo restored stale car attribution ($DRIVER_ATTR_REDONE rows)"
+
 post adder "/f/1/people/add" --data "name=Casper"
 GID=$(sql "SELECT id FROM people WHERE display_name='Casper' AND is_placeholder=1")
-ADDER_ID=$(sql "SELECT id FROM people WHERE display_name='Adder'")
 MANUAL_BEFORE=$(sql "SELECT added_by FROM memberships WHERE festival_id=1 AND person_id=$GID")
 signin casper "Casper" "/f/1/stuff"    # real Casper signs in → should absorb the ghost
 CASPER_ID=$(sql "SELECT id FROM people WHERE display_name='Casper' AND is_placeholder=0")

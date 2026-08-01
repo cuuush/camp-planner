@@ -470,7 +470,11 @@ bigger size. The Streets & Trips status bar drops its stop-count and coordinate 
   the `logAction` entirely (no audit spam, no Log noise) — see `POST /f/:id/meet`.
 - **Ghost people** (`src/lib/people.js`): `is_placeholder=1`, synthetic unique
   `normalized_name`, `placeholder_key` = normalized display name; absorbed into the
-  real account on first login. **Person delete = soft-hide manifest**
+  real account on first login. Every signed-in flow that creates one by entering
+  someone else's name (People roster, new car driver, or new car passenger) passes
+  the actor to `createPlaceholder`, which stores festival-scoped provenance on
+  `memberships.added_by`. Selecting an existing person and self-service sign-in do
+  not add provenance; absorption clears it reversibly. **Person delete = soft-hide manifest**
   (`deletePersonFootprint`) — never hard-DELETE people (FKs everywhere, and undo
   restores the whole footprint from the manifest).
 - **Sign-in is a pick list, not just a text box** (`nameField` in `guard.js`): the
