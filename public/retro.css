@@ -595,7 +595,7 @@
   /* Fixed-width cells so each pass lines up in its own column down every row —
      a non-driver renders a blank cell where the car pass would be, keeping the
      festival-pass column (and any custom columns) vertically aligned. */
-  .ppl-task { font-size: 0.8em; color: #8a8a7a; white-space: nowrap; width: 116px; overflow: hidden; text-overflow: ellipsis; }
+  .ppl-task { font-size: 0.8em; color: #8a8a7a; white-space: nowrap; width: 140px; overflow: hidden; text-overflow: ellipsis; }
   .ppl-task.blank { visibility: hidden; }
   .ppl-task.done { color: #1a7a1a; }
   /* Checklist cells are full-width, thumb-sized checkbox labels. They raise an XP
