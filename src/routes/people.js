@@ -512,19 +512,19 @@ people.get('/f/:id/checklist/:taskId/person/:personId/confirm', async (c) => {
     `).bind(taskId, personId).first();
     const checked = !!existing && !existing.unchecked_at;
     return c.html(xpDialogPopup({
-        title: checked ? 'Clear Check Mark' : 'Confirm Check Off',
+        title: 'Confirm Checklist Change',
         id: `check-person-${personId}-task-${taskId}`,
         icon: 'question',
         centerMobile: true,
         message: checked
-            ? html`Clear <b>${target.label}</b> for <b>${target.target_name}</b>? It will show as not completed in the People list.`
-            : html`Check off <b>${target.label}</b> for <b>${target.target_name}</b>? This marks the task as completed on their behalf.`,
+            ? html`Are you sure you want to clear the check mark for <b>${target.label}</b> for <b>${target.target_name}</b>?`
+            : html`Are you sure you want to mark <b>${target.label}</b> as completed for <b>${target.target_name}</b>?`,
         buttons: html`
-          <button class="btn" type="button" onclick="closePopup(this)">Cancel</button>
+          <button class="btn" type="button" onclick="closePopup(this)">No</button>
           <button class="btn btn-primary" type="button"
             hx-post="/checklist/${taskId}/toggle/${personId}"
             hx-target="#main" hx-swap="innerHTML"
-            hx-on::after-request="if(event.detail.successful) closePopup(this)">${checked ? 'Yes, Clear It' : 'Yes, Check It Off'}</button>`,
+            hx-on::after-request="if(event.detail.successful) closePopup(this)">Yes</button>`,
     }));
 });
 
