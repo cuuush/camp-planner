@@ -22,8 +22,12 @@ async function renderPplBody(c, festival) {
     const person = c.get('person');
 
     const members = (await db.prepare(`
-        SELECT m.*, pe.display_name, pe.id as person_id, pe.is_placeholder FROM memberships m
+        SELECT m.*, pe.display_name, pe.id as person_id, pe.is_placeholder,
+               adder.display_name AS added_by_name
+        FROM memberships m
         JOIN people pe ON pe.id = m.person_id
+        LEFT JOIN people adder ON adder.id = m.added_by
+          AND pe.is_placeholder = 1 AND adder.id != pe.id AND adder.deleted_at IS NULL
         WHERE m.festival_id = ? AND m.bailed_at IS NULL
         ORDER BY pe.is_placeholder, pe.display_name
     `).bind(festival.id).all()).results;
@@ -41,6 +45,8 @@ async function renderPplBody(c, festival) {
     // Only people who posted a car can hold a car pass — everyone else gets N/A.
     const driverRows = (await db.prepare('SELECT DISTINCT driver_person_id FROM cars WHERE festival_id = ? AND deleted_at IS NULL').bind(festival.id).all()).results;
     const drivers = new Set(driverRows.map((r) => r.driver_person_id));
+
+    const hasAttribution = members.some((m) => m.added_by_name);
 
     return html`
     <p class="ppl-count">${members.length} ${members.length === 1 ? 'person' : 'people'} going</p>
@@ -67,7 +73,8 @@ async function renderPplBody(c, festival) {
         <div class="ppl-row">
           <label class="ppl-select-box"><input type="checkbox" class="ppl-select-check" value="${m.person_id}"
             data-name="${m.display_name}" data-real="${m.is_placeholder ? 0 : 1}"></label>
-          <span class="ppl-name">${m.display_name}</span>
+          <span class="ppl-name">${m.display_name}${m.added_by_name
+              ? html` <span class="ppl-added-by">(${m.added_by_name})</span>` : ''}</span>
           ${tasks.length ? html`<span class="ppl-tasks">${tasks.map((t) => {
               // Non-drivers don't need a car pass — render a blank placeholder cell
               // (not nothing) so the other columns stay vertically aligned across rows.
@@ -90,6 +97,11 @@ async function renderPplBody(c, festival) {
           })}</span>` : ''}
         </div>`)}
     </div>
+    ${hasAttribution ? html`
+      <div class="ppl-attribution-note">
+        <img src="/xp/dlg-info.png" alt="" aria-hidden="true">
+        <span>The gray name in parentheses shows who manually added that person to this festival.</span>
+      </div>` : ''}
   `;
 }
 
@@ -227,7 +239,7 @@ people.post('/f/:id/people/add', async (c) => {
     const name = (body.name || '').toString().trim();
     if (!name) return c.html(await renderPplBody(c, festival));
 
-    const ghost = await createPlaceholder(c, festival.id, name); // creates person + joins fest
+    const ghost = await createPlaceholder(c, festival.id, name, person.id); // creates person + joins fest
     if (ghost) {
         // Adding a ghost creates the person row AND joins them (a membership). Make it
         // undoable from the log like every other create (G9): undo hides the person
@@ -417,7 +429,9 @@ people.post('/f/:id/people/merge', async (c) => {
         // target = the real one (or first-selected if both same kind); source = the other.
         let target = a, source = b;
         if (a.is_placeholder && !b.is_placeholder) { target = b; source = a; }
-        const effects = await mergePeople(db, source.id, target.id);
+        const effects = await mergePeople(db, source.id, target.id, {
+            absorption: !!source.is_placeholder && !target.is_placeholder,
+        });
         await logAction(c, {
             festivalId: festival.id, action: 'merge', entityType: 'people', entityId: target.id,
             effects, reversible: true,

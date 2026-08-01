@@ -6,19 +6,19 @@ export async function loadFestival(c) {
 
 // The idempotent "counts as going" upsert as a bindable statement, so callers
 // can fold it into a db.batch alongside their own writes (one round trip).
-export function membershipStatement(db, festivalId, personId) {
+export function membershipStatement(db, festivalId, personId, addedBy = null) {
     return db.prepare(`
-        INSERT INTO memberships (festival_id, person_id, joined_at) VALUES (?, ?, datetime('now'))
+        INSERT INTO memberships (festival_id, person_id, added_by, joined_at) VALUES (?, ?, ?, datetime('now'))
         ON CONFLICT(festival_id, person_id) DO UPDATE SET bailed_at = NULL
-    `).bind(festivalId, personId);
+    `).bind(festivalId, personId, addedBy || null);
 }
 
 // Mark a specific person as "going" to a fest. Idempotent: creates the membership
 // if missing, and un-bails it if they'd previously bailed. Used both for the
 // signed-in person and for placeholders we add to a car/list on someone's behalf.
-export async function ensureMembershipForPerson(db, festivalId, personId) {
+export async function ensureMembershipForPerson(db, festivalId, personId, addedBy = null) {
     if (!festivalId || !personId) return;
-    await membershipStatement(db, festivalId, personId).run();
+    await membershipStatement(db, festivalId, personId, addedBy).run();
 }
 
 // Mark the signed-in person as "going" to a fest — doing anything on a fest (or

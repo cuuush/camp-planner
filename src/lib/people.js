@@ -8,7 +8,7 @@ import { sqlNow } from './effects.js';
 // FK to them) with is_placeholder=1, a synthetic unique normalized_name (unusable
 // for sign-in, never collides), and placeholder_key = normalized display name,
 // which a real login later matches on to absorb them. Also joins the fest.
-export async function createPlaceholder(c, festivalId, rawName) {
+export async function createPlaceholder(c, festivalId, rawName, rosterAddedBy = null) {
     const db = c.env.DB;
     const name = (rawName || '').toString().trim();
     if (!name) return null;
@@ -18,7 +18,7 @@ export async function createPlaceholder(c, festivalId, rawName) {
         'INSERT INTO people (normalized_name, display_name, is_placeholder, placeholder_key) VALUES (?, ?, 1, ?)'
     ).bind(synthetic, name, key).run();
     const id = result.meta.last_row_id;
-    if (festivalId) await ensureMembershipForPerson(db, festivalId, id);
+    if (festivalId) await ensureMembershipForPerson(db, festivalId, id, rosterAddedBy);
     return { id, display_name: name, placeholder_key: key };
 }
 
@@ -74,7 +74,7 @@ async function reassignAll(db, table, col, fromId, toId, stmts, effects) {
     }
 }
 
-export async function mergePeople(db, fromId, toId) {
+export async function mergePeople(db, fromId, toId, { absorption = false } = {}) {
     if (!fromId || !toId || fromId === toId) return [];
     const stmts = [];
     const effects = [];
@@ -87,6 +87,27 @@ export async function mergePeople(db, fromId, toId) {
         promote: (src, tgt) => (src.bailed_at == null && tgt.bailed_at != null)
             ? [{ col: 'bailed_at', from: tgt.bailed_at, to: null }] : [],
     }, stmts, effects);
+
+    // Manual People-roster provenance belongs to a membership, not a person. A
+    // placeholder absorption consumes it: the real account is now simply going to
+    // that festival. An ordinary merge keeps provenance on membership rows, while
+    // attributions made BY the merged identity follow the survivor. Clear any case
+    // that would become "I added myself". These writes are effects so un-merge puts
+    // the exact per-festival provenance back.
+    const provenanceRows = (await db.prepare(`
+        SELECT id, person_id, added_by FROM memberships
+        WHERE person_id = ? OR added_by = ?
+    `).bind(fromId, fromId).all()).results;
+    for (const row of provenanceRows) {
+        let next = row.added_by;
+        if (absorption && row.person_id === fromId) next = null;
+        else if (row.added_by === fromId) next = row.person_id === toId || row.person_id === fromId ? null : toId;
+        else if (row.person_id === fromId && row.added_by === toId) next = null;
+        if (next !== row.added_by) {
+            stmts.push(db.prepare('UPDATE memberships SET added_by = ? WHERE id = ?').bind(next, row.id));
+            effects.push({ t: 'memberships', id: row.id, col: 'added_by', from: row.added_by, to: next });
+        }
+    }
 
     // seats — natural key car_id+person_id; keep the target's, hide the source's dup.
     await mergeUniqueTable(db, { table: 'seats', key: ['car_id'], softCol: 'deleted_at', fromId, toId, stamp }, stmts, effects);
@@ -236,7 +257,7 @@ export async function absorbPlaceholders(c, personId, normalized) {
         if (g.id === personId) continue;
         const liveFest = await db.prepare('SELECT festival_id FROM memberships WHERE person_id = ? AND bailed_at IS NULL LIMIT 1').bind(g.id).first();
         if (!liveFest) continue; // dead ghost — leave it be
-        const effects = await mergePeople(db, g.id, personId);
+        const effects = await mergePeople(db, g.id, personId, { absorption: true });
         merges.push({
             festivalId: liveFest.festival_id,
             effects,

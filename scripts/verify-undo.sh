@@ -124,6 +124,10 @@ signin ma "Alpha" "/f/1/stuff"
 signin mb "Beta" "/f/1/stuff"
 AID=$(sql "SELECT id FROM people WHERE display_name='Alpha'")
 BID=$(sql "SELECT id FROM people WHERE display_name='Beta'")
+# Beta manually places someone on this festival's roster. That attribution should
+# follow Beta's identity through an ordinary merge, then return on un-merge.
+post mb "/f/1/people/add" --data "name=Gamma"
+GAMMA_MID=$(sql "SELECT m.id FROM memberships m JOIN people p ON p.id=m.person_id WHERE p.display_name='Gamma' AND m.festival_id=1")
 ITEM5=$(sql "SELECT id FROM items WHERE festival_id=1 ORDER BY id LIMIT 1 OFFSET 2")
 post ma "/items/$ITEM5/vote"
 post mb "/items/$ITEM5/vote"
@@ -134,19 +138,23 @@ BDEL=$(sql "SELECT deleted_at FROM people WHERE id=$BID")
 BINTO=$(sql "SELECT merged_into FROM people WHERE id=$BID")
 BVOTE=$(sql "SELECT count(*) FROM votes WHERE person_id=$BID")
 BSESS=$(sql "SELECT count(*) FROM sessions WHERE person_id=$BID")
+GAMMA_ADDER=$(sql "SELECT added_by FROM memberships WHERE id=$GAMMA_MID")
 MERGE_ENTRY=$(sql "SELECT id FROM audit_log WHERE action='merge' AND entity_id=$AID ORDER BY id DESC LIMIT 1")
 [ "$BROW" = "1" ] && ok "Beta's person row still exists (soft-deleted, not destroyed)" || bad "Beta row hard-deleted — G1"
 [ -n "$BDEL" ] && [ "$BINTO" = "$AID" ] && ok "Beta soft-deleted + merged_into=Alpha" || bad "Beta not soft-merged (deleted=$BDEL into=$BINTO)"
 [ "$BVOTE" = "1" ] && ok "Beta's vote row preserved (not destroyed)" || bad "Beta's vote row gone ($BVOTE) — G1"
 [ "$BSESS" = "0" ] && ok "Beta's sessions dropped (device can't be the survivor)" || bad "Beta sessions remain ($BSESS) — G7"
+[ "$GAMMA_ADDER" = "$AID" ] && ok "ordinary merge repointed festival roster provenance" || bad "ordinary merge corrupted roster provenance (adder=$GAMMA_ADDER)"
 [ -n "$MERGE_ENTRY" ] && ok "merge logged with an undo button (reversible)" || bad "merge not logged reversibly"
 # now UN-MERGE
 post ma "/f/1/log/$MERGE_ENTRY/undo"
 BDEL2=$(sql "SELECT deleted_at FROM people WHERE id=$BID")
 BINTO2=$(sql "SELECT merged_into FROM people WHERE id=$BID")
 BVOTE2=$(sql "SELECT count(*) FROM votes WHERE person_id=$BID AND deleted_at IS NULL")
+GAMMA_ADDER2=$(sql "SELECT added_by FROM memberships WHERE id=$GAMMA_MID")
 [ -z "$BDEL2" ] && [ -z "$BINTO2" ] && ok "un-merge: Beta live again (deleted_at & merged_into cleared)" || bad "un-merge left Beta merged (deleted=$BDEL2 into=$BINTO2)"
 [ "$BVOTE2" = "1" ] && ok "un-merge: Beta's vote back on Beta" || bad "un-merge didn't restore Beta's vote ($BVOTE2)"
+[ "$GAMMA_ADDER2" = "$BID" ] && ok "un-merge restored festival roster provenance" || bad "un-merge did not restore roster provenance (adder=$GAMMA_ADDER2)"
 echo
 
 # ── Scenario 9 — Absorb is logged; dead ghosts don't absorb (G8) ─────────────────
@@ -154,11 +162,23 @@ echo "9. Absorb (G8): ghost absorbed+logged; a removed ghost does NOT absorb"
 signin adder "Adder" "/f/1/stuff"
 post adder "/f/1/people/add" --data "name=Casper"
 GID=$(sql "SELECT id FROM people WHERE display_name='Casper' AND is_placeholder=1")
+ADDER_ID=$(sql "SELECT id FROM people WHERE display_name='Adder'")
+MANUAL_BEFORE=$(sql "SELECT added_by FROM memberships WHERE festival_id=1 AND person_id=$GID")
 signin casper "Casper" "/f/1/stuff"    # real Casper signs in → should absorb the ghost
-ABSORB=$(sql "SELECT count(*) FROM audit_log WHERE action='merge' AND summary LIKE '%linked up their pre-added entry%'")
+CASPER_ID=$(sql "SELECT id FROM people WHERE display_name='Casper' AND is_placeholder=0")
+ABSORB_ENTRY=$(sql "SELECT id FROM audit_log WHERE action='merge' AND summary LIKE '%linked up their pre-added entry%' ORDER BY id DESC LIMIT 1")
 GHOST_GONE=$(sql "SELECT deleted_at FROM people WHERE id=$GID")
-[ "$ABSORB" -ge "1" ] && ok "absorb was logged as a reversible merge" || bad "absorb not logged — G8"
+MANUAL_AFTER=$(sql "SELECT count(*) FROM memberships WHERE festival_id=1 AND person_id IN ($GID,$CASPER_ID) AND added_by IS NOT NULL")
+[ "$MANUAL_BEFORE" = "$ADDER_ID" ] && ok "People add recorded festival roster provenance" || bad "People add did not record the adder (adder=$MANUAL_BEFORE)"
+[ -n "$ABSORB_ENTRY" ] && ok "absorb was logged as a reversible merge" || bad "absorb not logged — G8"
 [ -n "$GHOST_GONE" ] && ok "ghost soft-merged into the real Casper" || bad "ghost not merged"
+[ "$MANUAL_AFTER" = "0" ] && ok "absorb consumed manual-add attribution" || bad "manual-add attribution survived absorption ($MANUAL_AFTER rows)"
+post adder "/f/1/log/$ABSORB_ENTRY/undo"
+MANUAL_UNDONE=$(sql "SELECT added_by FROM memberships WHERE festival_id=1 AND person_id=$GID AND bailed_at IS NULL")
+[ "$MANUAL_UNDONE" = "$ADDER_ID" ] && ok "un-merge restored placeholder attribution" || bad "un-merge did not restore placeholder attribution (adder=$MANUAL_UNDONE)"
+post adder "/f/1/log/$ABSORB_ENTRY/undo"
+MANUAL_REDONE=$(sql "SELECT count(*) FROM memberships WHERE festival_id=1 AND person_id IN ($GID,$CASPER_ID) AND added_by IS NOT NULL")
+[ "$MANUAL_REDONE" = "0" ] && ok "redo consumed placeholder attribution again" || bad "redo restored stale attribution ($MANUAL_REDONE rows)"
 # dead ghost: add + delete a ghost, then sign in with its name → NO absorb, fresh acct
 post adder "/f/1/people/add" --data "name=Wisp"
 WID=$(sql "SELECT id FROM people WHERE display_name='Wisp' AND is_placeholder=1")

@@ -44,7 +44,7 @@ const WRITABLE = {
     items: ['deleted_at', 'name', 'emoji', 'needed_qty', 'unit', 'description', 'added_by'],
     schedule_sets: ['deleted_at', 'day', 'stage', 'stage_order', 'artist', 'start_min', 'end_min', 'added_by'],
     set_interests: ['deleted_at', 'person_id'],
-    memberships: ['bailed_at', 'person_id'],
+    memberships: ['bailed_at', 'person_id', 'added_by'],
     // A rename writes all three together: display_name is what everyone sees,
     // normalized_name is the sign-in identity (real accounts), placeholder_key is
     // what a ghost is matched on when they finally log in. See people.js /rename.
