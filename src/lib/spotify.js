@@ -150,6 +150,15 @@ export function parseSpotifyUrl(raw) {
     return `https://open.spotify.com/${m[1]}/${m[2]}`;
 }
 
+// The desktop app registers its own protocol handler, so `spotify:artist:ID`
+// hands a click straight to the installed app instead of opening a browser tab.
+// Only ever called on a URL parseSpotifyUrl has already canonicalized, so the
+// match is strict; anything else (never expected) just yields no URI.
+export function spotifyAppUri(url) {
+    const m = (url || '').toString().match(/^https:\/\/open\.spotify\.com\/(artist|album|track|playlist)\/([A-Za-z0-9]+)$/);
+    return m ? `spotify:${m[1]}:${m[2]}` : null;
+}
+
 // Pin an artist's link by hand, or forget it (url = null) so the next tap looks it
 // up fresh. Writes the same globally-keyed row the search fills, because the link
 // belongs to the artist rather than to whoever fixed it.

@@ -791,6 +791,21 @@ function campIsTouch() {
   return !!(window.matchMedia && window.matchMedia('(hover: none) and (pointer: coarse)').matches);
 }
 
+// Desktop: hand a click on a resolved Spotify link straight to the installed
+// app via its own spotify: URI, instead of opening the web player in a tab.
+// Touch stays on the plain href — its universal-link handoff still falls back
+// to the web page when the app isn't installed, a safety net the spotify: URI
+// doesn't have, so touch keeps the href it already had. Shared by the
+// server-rendered anchor (spotifyLink() in src/routes/schedule.js, called via
+// its inline onclick) and the one campSpotifyPlay builds below.
+function campSpotifyLinkClick(a, e) {
+  var uri = a.getAttribute('data-spotify-uri');
+  if (!uri || campIsTouch()) return true;
+  e.preventDefault();
+  window.location.href = uri;
+  return false;
+}
+
 // "Play on Spotify" for an artist nobody has looked up yet: search, save the URL so
 // every camp gets it for free from here on, and open it. Costs one search, once,
 // for the first person to ever tap that artist.
@@ -800,8 +815,12 @@ function campIsTouch() {
 // the REAL link — never a blank tab we redirect later, which showed the user an
 // about:blank while they waited. Instead:
 //
-//  • Desktop — try window.open once the URL lands. Chrome/Firefox still count the
-//    click as user activation for a few seconds, so a fast search sails through.
+//  • Desktop with a spotify: URI — jump straight there via location.href once
+//    the URL lands, so it hands off to the desktop app instead of a browser tab.
+//    Same activation grace period as window.open, just no popup involved.
+//  • Desktop, no URI (unrecognized link shape) — try window.open once the URL
+//    lands. Chrome/Firefox still count the click as user activation for a few
+//    seconds, so a fast search sails through.
 //  • Touch / a refused popup — a scripted open is both unreliable and won't hand
 //    off to the Spotify app the way a real tap does. So don't fake it: ask for one
 //    more tap on a genuine <a>, which opens the app properly.
@@ -834,8 +853,13 @@ function campSpotifyPlay(btn) {
       var opened = null;
       if (!campIsTouch()) {
         try {
-          opened = window.open(d.url, '_blank');
-          if (opened) { try { opened.opener = null; } catch (e) {} }
+          if (d.uri) {
+            window.location.href = d.uri;
+            opened = true;
+          } else {
+            opened = window.open(d.url, '_blank');
+            if (opened) { try { opened.opener = null; } catch (e) {} }
+          }
         } catch (e) { opened = null; }
       }
       var a = document.createElement('a');
@@ -843,6 +867,11 @@ function campSpotifyPlay(btn) {
       a.href = d.url;
       a.target = '_blank';
       a.rel = 'noopener noreferrer';
+      // Leftover link keeps handing off to the app on a later click too.
+      if (d.uri) {
+        a.setAttribute('data-spotify-uri', d.uri);
+        a.addEventListener('click', function (e) { campSpotifyLinkClick(a, e); });
+      }
       // Opened it for them: leave a plain link behind so a second click still works.
       // Didn't (touch, or the popup was refused): ask for the tap that will.
       if (opened) {

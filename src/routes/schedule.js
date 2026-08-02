@@ -15,7 +15,7 @@ import {
     loadDays, loadDaySets, loadSet, applyInterestRows, buildGrid, stageColor, hasAnyInterest,
 } from '../lib/schedule.js';
 import { parseScheduleImage, normalizeParsedSets } from '../lib/scheduleParse.js';
-import { resolveSpotifyLink, parseSpotifyUrl, setSpotifyLink, splitArtists, attachSpotifyLinks } from '../lib/spotify.js';
+import { resolveSpotifyLink, parseSpotifyUrl, setSpotifyLink, splitArtists, attachSpotifyLinks, spotifyAppUri } from '../lib/spotify.js';
 import { replaceDaySets, publishSchedule, adoptPublication, listPublications } from '../lib/scheduleShare.js';
 
 export const schedule = new Hono();
@@ -195,7 +195,9 @@ schedule.get('/f/:id/schedule/set/:setId/spotify-pick', async (c) => {
 });
 
 function spotifyLink(url) {
-    return html`<a class="btn sched-act-btn sched-spotify" href="${url}" target="_blank" rel="noopener noreferrer">Play on Spotify</a>`;
+    const uri = spotifyAppUri(url);
+    return html`<a class="btn sched-act-btn sched-spotify" href="${url}" target="_blank" rel="noopener noreferrer"
+        ${uri ? html`data-spotify-uri="${uri}" onclick="return campSpotifyLinkClick(this, event)"` : ''}>Play on Spotify</a>`;
 }
 
 function spotifyMissing() {
@@ -449,7 +451,9 @@ schedule.get('/f/:id/schedule/set/:setId/spotify', async (c) => {
     if (!choices.length) return c.json({ status: 'none' });
     const wanted = c.req.query('artist');
     const name = choices.find((a) => a === wanted) || choices[0];
-    return c.json(await resolveSpotifyLink(c.env, name));
+    const result = await resolveSpotifyLink(c.env, name);
+    if (result.url) result.uri = spotifyAppUri(result.url);
+    return c.json(result);
 });
 
 // Toggle interest — mirrors the vote toggle (UNIQUE row, soft-delete reused). Swaps
