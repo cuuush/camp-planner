@@ -9,7 +9,7 @@ import { notify } from '../lib/notify.js';
 import { needsSignin, signinModalResponse } from '../lib/guard.js';
 import { loadComments, handleCommentPost } from '../lib/comments.js';
 import { msnChat, escapeHtml } from '../render/msn.js';
-import { xpCaptionBtns } from '../render/popup.js';
+import { xpCaptionBtns, xpPopup } from '../render/popup.js';
 
 export const items = new Hono();
 
@@ -124,6 +124,68 @@ async function loadItemsWithStats(db, festivalId) {
     return { rows: items, statsById: byItem };
 }
 
+// The two bits of open/closed state only the browser knows, as JS expressions for
+// hx-vals. EVERY control that swaps the whole card has to hand both back or the
+// swap quietly shuts something the user had open (gotcha 17) — including the
+// check-off window's rows, which swap the card from OUTSIDE it, hence one shared
+// pair of expressions rather than a second hand-written copy that can drift.
+// Optional-chained the whole way for that outside caller: #popup-layer lives
+// outside #desktop and so survives a tab switch, which takes the card with it. A
+// missing card must read as "nothing was open" rather than throw — a missing flag
+// should change nothing.
+function cardStateVals(itemId) {
+    return {
+        expanded: `document.getElementById("item-${itemId}")?.querySelector(".item-details")?.open ? "1" : "0"`,
+        chatOpen: `document.getElementById("chat-item-${itemId}")?.open ? "1" : "0"`,
+    };
+}
+
+// Everyone ELSE on this fest's roster, with what they're currently down for on this
+// item. One statement, not one per person: the per-person total rides along as a
+// correlated subquery, and someone with no pledge comes back NULL. Returned as a
+// prepared statement so the window route can batch it with its other read.
+function checkOffCandidates(db, item, actorId) {
+    return db.prepare(`
+        SELECT pe.id, pe.display_name, pe.is_placeholder,
+               (SELECT SUM(p.qty) FROM pledges p
+                 WHERE p.item_id = ? AND p.person_id = pe.id AND p.deleted_at IS NULL) AS qty
+        FROM memberships m
+        JOIN people pe ON pe.id = m.person_id
+        WHERE m.festival_id = ? AND m.bailed_at IS NULL
+          AND pe.id != ? AND pe.deleted_at IS NULL
+        ORDER BY pe.is_placeholder, pe.display_name COLLATE NOCASE
+    `).bind(item.id, item.festival_id, actorId);
+}
+
+// The pick list inside the check-off window. Each row is a live toggle of that
+// person's pledge, drawn with the same XP tick box the card's own header uses,
+// because it means the same thing: that name is down to bring some of this. Both
+// the window route and the pledge route render it — the latter as an out-of-band
+// swap, so a tap updates the row in place instead of closing the window under you.
+function checkOffList(item, candidates) {
+    if (!candidates.length) return html`<p class="pick-empty">There is no one else on this festival's list.</p>`;
+    const { expanded, chatOpen } = cardStateVals(item.id);
+    return html`<div class="pick-list">
+      ${candidates.map((p) => {
+          const qty = Number(p.qty) || 0;
+          // A ticked name posts 0, which takes their whole pledge off however many
+          // they were down for — the card's own rule (unticking never asks). An
+          // unticked one takes the window's Quantity box, or 1 on a one-of item,
+          // where no box is drawn because there is nothing to ask.
+          const qtyExpr = qty ? '0' : `campCheckOffQty(${item.id})`;
+          return html`<button type="button" class="pick-row check-off-row" role="checkbox" aria-checked="${qty ? 'true' : 'false'}"
+              aria-label="${qty ? 'Uncheck' : 'Check off'} ${item.name} for ${p.display_name}"
+              hx-post="/items/${item.id}/pledge"
+              hx-vals='js:{person_id: ${p.id}, qty: ${qtyExpr}, expanded: ${expanded}, chat_open: ${chatOpen}}'
+              hx-target="#item-${item.id}" hx-swap="outerHTML">
+              <span class="xp-checkbox ${qty ? 'checked' : ''}"></span>
+              <span class="pick-name">${p.display_name}${p.is_placeholder ? html`<span class="ghost-badge">added manually</span>` : ''}</span>
+              ${qty ? html`<span class="check-off-qty">${qty} ${item.unit || ''}</span>` : ''}
+            </button>`;
+      })}
+    </div>`;
+}
+
 function itemRow(festival, item, stats, person, expanded = false, chatOpen = false) {
     const { pledges, pledgedQty, voteCount, voterIds, comments, adderName } = stats;
     const pctOf = (q) => (item.needed_qty > 0 ? Math.min(100, Math.round((q / item.needed_qty) * 100)) : 0);
@@ -175,8 +237,7 @@ function itemRow(festival, item, stats, person, expanded = false, chatOpen = fal
     // back the two bits of open/closed state the server can't know: whether the card
     // is expanded and whether its comments window is open. Miss either and liking
     // something slams the comments shut under you.
-    const expandedVal = `document.getElementById("item-${item.id}").querySelector(".item-details").open ? "1" : "0"`;
-    const chatOpenVal = `document.getElementById("chat-item-${item.id}")?.open ? "1" : "0"`;
+    const { expanded: expandedVal, chatOpen: chatOpenVal } = cardStateVals(item.id);
     // The "(n)" after a name in the tally is only worth printing when there's a
     // number to disambiguate: on a one-of item "1/1 chris (1)" says "one" three
     // times. Kept if someone somehow pledged more than the single one asked for.
@@ -274,6 +335,9 @@ function itemRow(festival, item, stats, person, expanded = false, chatOpen = fal
                   <button class="btn btn-danger" type="submit" formaction="/items/${item.id}/delete" hx-post="/items/${item.id}/delete" hx-confirm="Are you sure you want to delete this item?">Delete</button>
                 </div>
               </form>
+
+            <button type="button" class="btn check-off-btn"
+              hx-get="/items/${item.id}/check-off-window" hx-target="#popup-layer" hx-swap="beforeend">Check Off for Someone Else…</button>
 
             ${msnChat({
                 title: `Comments (${comments.length})`,
@@ -516,14 +580,55 @@ async function loadItem(c) {
     return { item, festival };
 }
 
-async function itemRowResponse(c, festival, itemId, expanded = false, chatOpen = false) {
+// `oob` is extra out-of-band markup to ride along with the card — the check-off
+// window's refreshed pick list, which lives outside the card and so can't be
+// reached by the swap's own target.
+async function itemRowResponse(c, festival, itemId, expanded = false, chatOpen = false, oob = '') {
     const db = c.env.DB;
     const person = c.get('person');
     const item = await db.prepare('SELECT * FROM items WHERE id = ?').bind(itemId).first();
     if (!item || item.deleted_at) return c.html('');
     const stats = await itemStats(db, item);
-    return c.html(itemRow(festival, item, stats, person, expanded, chatOpen));
+    return c.html(html`${itemRow(festival, item, stats, person, expanded, chatOpen)}${oob}`);
 }
+
+// "Check Off for Someone Else" — the roster as a pick list, opened from the button
+// under an item's like/edit row. Deliberately a window rather than a picker drawn
+// into every card: the stuff page renders ~80 cards, and a per-card list of a
+// dozen names is a thousand DOM nodes nobody asked for (gotcha 21).
+items.get('/items/:itemId/check-off-window', async (c) => {
+    const loaded = await loadItem(c);
+    if (!loaded) return c.notFound();
+    if (needsSignin(c)) return signinModalResponse(c, { expandId: `item-${loaded.item.id}` });
+    const { item, festival } = loaded;
+    const db = c.env.DB;
+    const actor = c.get('person');
+
+    const [candidatesQ, totalQ] = await db.batch([
+        checkOffCandidates(db, item, actor.id),
+        db.prepare('SELECT COALESCE(SUM(qty), 0) AS pledged FROM pledges WHERE item_id = ? AND deleted_at IS NULL').bind(item.id),
+    ]);
+    const pledged = Number(totalQ.results[0].pledged) || 0;
+    // Same default the card's own dialog offers: whatever is still outstanding, and
+    // one more on an item that's already covered. The box is only drawn when the
+    // item needs more than one of something — on a one-of item there is nothing to
+    // ask, and campCheckOffQty answers 1 when it finds no box.
+    const remaining = Math.max(1, item.needed_qty - pledged);
+
+    return c.html(xpPopup({
+        title: `Check Off - ${item.name}`,
+        id: `check-off-item-${item.id}`,
+        body: html`
+          <p class="popup-hint">Select a camper to put their name down for <b>${item.name}</b>. Select a name that is already ticked to take it back off them.</p>
+          ${item.needed_qty > 1 ? html`
+            <div class="check-off-qty-row">
+              <label class="check-off-qty-label" for="check-off-qty-${item.id}">Quantity:</label>
+              <input id="check-off-qty-${item.id}" class="pledge-modal-input" type="number" name="qty" value="${remaining}" min="0">
+              <span class="check-off-qty-unit">${item.unit || ''}</span>
+            </div>` : ''}
+          <div id="check-off-list-${item.id}">${checkOffList(item, candidatesQ.results)}</div>`,
+    }));
+});
 
 items.post('/items/:itemId/edit', async (c) => {
     const loaded = await loadItem(c);
@@ -633,7 +738,7 @@ items.post('/items/:itemId/pledge', async (c) => {
     const { item, festival } = loaded;
     if (needsSignin(c)) return signinModalResponse(c, { expandId: `item-${item.id}` });
     const db = c.env.DB;
-    const person = c.get('person');
+    const actor = c.get('person');
     const body = await c.req.parseBody();
     const qty = Math.max(0, Math.floor(Number(body.qty) || 0));
     // Both the header check box and the dialog form report the card's current state,
@@ -643,6 +748,31 @@ items.post('/items/:itemId/pledge', async (c) => {
     // the summary) started raising it — every quantity confirm sprang the card open.
     const expanded = body.expanded === '1';
     const chatOpen = body.chat_open === '1';
+
+    // person_id arrives only from the check-off window: the pledge being recorded is
+    // someone else's. Trusted group, same as the ppl tab's check-offs, but the id
+    // still has to be re-checked against the fest's roster here — it came off the
+    // wire, and it decides whose name lands on the item. Anyone not on the list (or
+    // bailed) is refused and the card is simply re-rendered.
+    const targetId = Number(body.person_id) || 0;
+    const onBehalf = !!targetId && targetId !== actor.id;
+    const person = onBehalf
+        ? await db.prepare(`
+            SELECT pe.id, pe.display_name FROM memberships m
+            JOIN people pe ON pe.id = m.person_id
+            WHERE m.festival_id = ? AND m.person_id = ? AND m.bailed_at IS NULL AND pe.deleted_at IS NULL
+        `).bind(festival.id, targetId).first()
+        : actor;
+    // Who did it, for the log line — matching the ppl tab's "(marked by …)" suffix.
+    const byline = onBehalf ? ` (marked by ${actor.display_name})` : '';
+    // The window stays open across a toggle, so every exit re-renders its list from
+    // the state the mutation just left behind. Built per response rather than once
+    // up front for exactly that reason.
+    const respond = async () => itemRowResponse(c, festival, item.id, expanded, chatOpen,
+        onBehalf ? html`<div id="check-off-list-${item.id}" hx-swap-oob="innerHTML">${
+            checkOffList(item, (await checkOffCandidates(db, item, actor.id).all()).results)}</div>` : '');
+
+    if (!person) return respond();
 
     // Re-pledging changes the amount on your existing pledge instead of stacking a second row.
     const existing = await db.prepare('SELECT * FROM pledges WHERE item_id = ? AND person_id = ? AND deleted_at IS NULL').bind(item.id, person.id).first();
@@ -655,13 +785,13 @@ items.post('/items/:itemId/pledge', async (c) => {
         await logAction(c, {
             festivalId: festival.id, action: 'delete', entityType: 'pledges', entityId: existing.id,
             reversible: true, effects: [deleteEffect('pledges', existing.id, stamp)],
-            summary: `${person.display_name} withdrew their pledge on ${item.name}`,
+            summary: `${person.display_name} withdrew their pledge on ${item.name}${byline}`,
         });
-        return itemRowResponse(c, festival, item.id, expanded, chatOpen);
+        return respond();
     }
 
     // Not down for it and asking for 0 — nothing to do, just re-render.
-    if (!existing && qty === 0) return itemRowResponse(c, festival, item.id, expanded, chatOpen);
+    if (!existing && qty === 0) return respond();
 
     if (existing) {
         const newQty = qty;
@@ -670,7 +800,7 @@ items.post('/items/:itemId/pledge', async (c) => {
             festivalId: festival.id, action: 'update', entityType: 'pledges', entityId: existing.id,
             before: { qty: existing.qty }, after: { qty: newQty }, reversible: true,
             effects: fieldEffects('pledges', existing.id, { qty: existing.qty }, { qty: newQty }),
-            summary: `${person.display_name} changed their pledge on ${item.emoji} ${item.name} to ${newQty}`,
+            summary: `${person.display_name} changed their pledge on ${item.emoji} ${item.name} to ${newQty}${byline}`,
         });
     } else {
         const result = await db.prepare('INSERT INTO pledges (item_id, person_id, qty) VALUES (?, ?, ?)')
@@ -678,18 +808,20 @@ items.post('/items/:itemId/pledge', async (c) => {
         await logAction(c, {
             festivalId: festival.id, action: 'create', entityType: 'pledges', entityId: result.meta.last_row_id,
             reversible: true, effects: [createEffect('pledges', result.meta.last_row_id, sqlNow())],
-            summary: `${person.display_name} pledged ${qty} ${item.unit || ''} of ${item.emoji} ${item.name}`,
+            summary: `${person.display_name} pledged ${qty} ${item.unit || ''} of ${item.emoji} ${item.name}${byline}`,
         });
     }
 
     // After the response — the click shouldn't wait on the email provider.
     c.executionCtx.waitUntil(notify(c.env, {
-        festivalId: festival.id, targetPersonId: item.added_by, actorPersonId: person.id,
+        festivalId: festival.id, targetPersonId: item.added_by, actorPersonId: actor.id,
         heading: `${person.display_name} pledged your item`,
-        body: `${person.display_name} pledged ${qty} of ${item.name} on ${festival.name}.`,
+        body: onBehalf
+            ? `${actor.display_name} put ${person.display_name} down for ${qty} of ${item.name} on ${festival.name}.`
+            : `${person.display_name} pledged ${qty} of ${item.name} on ${festival.name}.`,
     }));
 
-    return itemRowResponse(c, festival, item.id, expanded, chatOpen);
+    return respond();
 });
 
 items.post('/items/:itemId/comments', async (c) => {

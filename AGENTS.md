@@ -97,6 +97,15 @@ On a fully covered Stuff item, a person who has not pledged sees no empty box in
 collapsed list; opening the card reveals one in the usual right-hand header position.
 That box means "bring more" and always opens the shared quantity dialog — there is
 no remaining amount for a one-click pledge to infer.
+The one control on a card that acts on **someone else** is "Check Off for Someone
+Else…", its own full-width Luna button under like/edit. It writes an ordinary
+**pledge** for the person you pick, because that is what a tick on a Stuff item has
+always meant; packing (`pledges.packed_at`) stays self-only and stays in the me tab.
+It opens a **window** rather than drawing the roster into every card — 80 cards × a
+dozen names is a thousand nodes for a list nobody has opened (gotcha 21) — and the
+window's rows toggle in place off an out-of-band swap of `#check-off-list-<id>`.
+Copy the ppl tab's vocabulary and its log line when you do this anywhere else:
+`"<them> pledged … (marked by <you>)"`.
 
 Real data beats fake data *inside* the fake chrome: the Streets & Trips map pane is
 a live OpenStreetMap embed; the status bar shows the real lat/lon parsed from the
@@ -110,10 +119,13 @@ the joke — lean into it.
   both scripts `defer`red**, so the render-blocking resource is discovered first and
   a long page doesn't hold its parse open for JS. Freshness is `public/_headers`
   (`no-cache` + ETag), NOT a URL stamp — see Caching.
-- **`scripts/`** — besides the build/seed tooling, four checks worth re-running after
+- **`scripts/`** — besides the build/seed tooling, five checks worth re-running after
   touching the stuff tab or the shell: `check-stuff-controls.mjs` (asserts every item
-  card's check box/like button against the rules, signed in AND out — pass a cookie
-  as argv[2]), `check-stuff-order.mjs` (the three groups are consistent and
+  card's check box/like/check-off button against the rules, signed in AND out — pass
+  a cookie as argv[2]), `check-check-off.mjs` (the check-off window and what it
+  writes: sign-in guard, ticks that agree with the card's tally, the round trip, the
+  log byline, undo — and it puts back what it changed),
+  `check-stuff-order.mjs` (the three groups are consistent and
   partly-pledged items rank first),
   `page-weight.mjs` (ranks what's actually filling a page), `find-dead-frontend.mjs`
   (unreferenced `camp.js` functions + CSS classes nothing emits).

@@ -303,6 +303,18 @@ function campTrackViewport() {
 }
 campTrackViewport();
 
+// How many the check-off window is about to put someone down for: whatever is in
+// its Quantity box. An item that only ever needed one of something draws no box at
+// all (there'd be nothing to ask), so a missing box means one. Garbage or a blank
+// reads as 0, which the server treats as "take their name off it" — the same thing
+// typing 0 into the card's own dialog does.
+function campCheckOffQty(id) {
+  var el = document.getElementById('check-off-qty-' + id);
+  if (!el) return 1;
+  var n = parseInt(el.value, 10);
+  return isNaN(n) || n < 0 ? 0 : n;
+}
+
 // Open an item's "how many are you bringing" dialog with the field already live,
 // so the iOS keyboard comes straight up instead of costing a second tap. The
 // focus() MUST happen synchronously inside the tap handler — iOS only raises the

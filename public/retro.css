@@ -837,6 +837,13 @@
      order:5 puts the panel BELOW the button row but ABOVE the chat button (order:10). */
   .action-buttons > .edit-panel { display: none; flex: 0 0 100%; order: 5; }
   .action-buttons:has(> .edit-toggle-checkbox:checked) > .edit-panel { display: flex; }
+  /* "Check Off for Someone Else…" gets its OWN full-width row directly under
+     like/edit (order:6 = below the edit panel, above the comments button). It is the
+     one control on the card that acts on another camper, so it doesn't share a slot
+     with anything: full width reads as live rather than as more chrome, and it is a
+     thumb-sized target on the phone this is mostly used from. flex: 0 0 100% — a
+     bare flex-basis will NOT wrap next to 0-basis siblings (gotcha 6). */
+  .action-buttons > .check-off-btn { flex: 0 0 100%; order: 6; margin: 0; padding: 6px 15px; }
   /* Collapsed chat = a button sitting to the right of edit, stretched to match.
      order:10 keeps chat below the edit panel (order:5) once editing opens. */
   .action-buttons > .msn-chat { margin: 0; order: 10; }
@@ -1564,6 +1571,22 @@
   .pick-row:hover { background: #eaf2ff; border-color: #7ba7dd; box-shadow: none; }
   .pick-row .pick-emoji { font-size: 1.1em; }
   .pick-row .pick-name { flex: 1; }
+  /* Check-off window rows: a pick-list row carrying a real XP tick box, so the list
+     reads as "who is down for this" rather than as a menu of names, and one tap
+     flips it either way. Taller and roomier than a plain pick row because every one
+     of them is a toggle someone works down with a thumb. */
+  .check-off-row { padding: 9px 10px; gap: 10px; }
+  .check-off-row .xp-checkbox { width: 18px; height: 18px; flex: 0 0 auto; }
+  .check-off-row .xp-checkbox.checked::after {
+    left: 5px; top: 0; width: 5px; height: 11px; border-width: 0 3px 3px 0;
+  }
+  .check-off-row .check-off-qty { color: #4a8697; font-size: 0.85em; }
+  .check-off-qty-row { display: flex; align-items: center; gap: 8px; margin: 0 0 8px; }
+  .check-off-qty-label { font-size: 0.85em; color: #1a1a1a; }
+  /* Borrows the pledge dialog's field (16px, so iOS doesn't zoom on focus) but not
+     its flex:1 — here it's a small box beside a label, not a full-width row. */
+  .check-off-qty-row .pledge-modal-input { flex: 0 0 auto; width: 72px; }
+  .check-off-qty-unit { font-size: 0.85em; color: #4a4a3c; }
   /* Place-search results (Set Meeting Spot): icon rows with a grey address line. */
   .pick-row .pick-ico { width: 16px; height: 16px; flex: 0 0 auto; }
   .pick-row .pick-sub { display: block; color: #5a5a4c; font-size: 0.85em; }

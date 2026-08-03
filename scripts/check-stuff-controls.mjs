@@ -5,6 +5,9 @@
 //   • tapping asks "how many" when more than one is left, or when adding an overage
 //   • a dialog-opening check box always has its modal, and no unreachable modals ship
 //   • like/check controls hand back expanded + chat_open so a tap can't collapse the card
+//   • every card carries one "check off for someone else" button, and no card ships
+//     the roster it picks from
+// The window behind that button, and what it writes, is scripts/check-check-off.mjs.
 // Usage: node scripts/check-stuff-controls.mjs [festivalId] [cookie]
 const fest = process.argv[2] || '1';
 const cookie = process.argv[3] || '';
@@ -12,14 +15,17 @@ const h = await (await fetch(`http://localhost:8787/f/${fest}/stuff`, cookie ? {
 
 const cards = [...h.matchAll(/id="item-(\d+)"([\s\S]*?)(?=<div class="card item-card|<div class="stuff-section|<\/main>)/g)];
 const bad = [];
-const tally = { dialog: 0, post: 0, none: 0, ticked: 0, signin: 0 };
+const tally = { dialog: 0, post: 0, none: 0, ticked: 0, signin: 0, checkOff: 0 };
 
 for (const [, id, seg] of cards) {
     const t = seg.match(/class="item-tally">\s*(\d+)\/(\d+)/);
     if (!t) continue;
     const [pledged, needed] = [+t[1], +t[2]];
     const remaining = Math.max(1, needed - pledged); // mirrors itemRow()
-    const btn = (seg.match(/<button type="button" class="pledge-check"[\s\S]*?<\/button>/) || [null])[0];
+    // The class list is built conditionally (pledge-check-overage), so it may carry
+    // a second class or a trailing space. Matching class="pledge-check" exactly used
+    // to find NOTHING and report every card as having no check box at all.
+    const btn = (seg.match(/<button type="button" class="pledge-check[^"]*"[\s\S]*?<\/button>/) || [null])[0];
     const hasModal = seg.includes(`id="pledge-modal-${id}"`);
     const ticked = !!btn && btn.includes('xp-checkbox checked');
     const opensDialog = !!btn && btn.includes('campOpenPledge');
@@ -61,6 +67,19 @@ for (const [, id, seg] of cards) {
     for (const attr of ['expanded:', 'chat_open:']) {
         if (btn && btn.includes('hx-post') && !btn.includes(attr)) bad.push(`item ${id}: check box drops ${attr.slice(0, -1)} state`);
     }
+
+    // "Check Off for Someone Else…" — one per card, signed in or out (signed out it
+    // still opens; the window route is what pops the sign-in modal). The roster it
+    // picks from is deliberately NOT drawn into the card: 80 cards times a dozen
+    // names is a thousand nodes for a list nobody has opened (gotcha 21).
+    const offBtns = seg.match(/<button type="button" class="btn check-off-btn"[\s\S]*?<\/button>/g) || [];
+    if (offBtns.length !== 1) bad.push(`item ${id}: ${offBtns.length} check-off buttons, expected 1`);
+    else {
+        if (!offBtns[0].includes(`hx-get="/items/${id}/check-off-window"`)) bad.push(`item ${id}: check-off button doesn't open its own window`);
+        if (!offBtns[0].includes('hx-target="#popup-layer"')) bad.push(`item ${id}: check-off button doesn't open into the popup layer`);
+        if (seg.includes(`id="check-off-list-${id}"`)) bad.push(`item ${id}: the check-off roster shipped inside the card`);
+    }
+    tally.checkOff += offBtns.length;
 }
 
 const like = (h.match(/class="btn btn-primary like-btn[\s\S]*?<\/button>/g) || []);
@@ -72,6 +91,6 @@ for (const [i, b] of like.entries()) {
 
 console.log(`${cards.length} cards — ${tally.dialog} ask how many, ${tally.post} tick straight through, `
     + `${tally.signin} prompt sign-in, ${tally.none} have no box, ${tally.ticked} ticked`);
-console.log(`${like.length} like buttons checked`);
+console.log(`${like.length} like buttons checked, ${tally.checkOff} check-off buttons`);
 console.log(bad.length ? `FAIL:\n  ${bad.join('\n  ')}` : 'OK — every control matches the rules');
 process.exit(bad.length ? 1 : 0);
