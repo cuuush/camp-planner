@@ -21,7 +21,9 @@ function hiddenFields({ next, expandId, replayPath, replayBody }) {
 // overwhelmingly common sign-in is a regular who lost their session, and a typo
 // doesn't fail loudly here — it quietly opens a second account (normalized_name IS
 // the credential), which then has to be merged by hand. Picking an existing name is
-// therefore the INTENDED path, which is why nothing here warns you off one.
+// therefore the INTENDED path, which is why nothing here warns you off one. The list
+// (festPeopleFromPath) also includes manually-added placeholders — picking one signs
+// in for real and absorbs the placeholder automatically.
 function nameField(ctx) {
     const names = ctx.festPeople && ctx.festPeople.length ? ctx.festPeople : null;
     return html`

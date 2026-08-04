@@ -92,6 +92,12 @@ async function loadChrome(db, festival, person) {
 function dogAssistant(c, festival, person, passes) {
     let bubble;
     let nag = '';
+    // A stable id for WHICH nag this is, independent of `nag` above (that one only
+    // exists for the schedule case, and means something else — see campDogNag in
+    // camp.js). "Go away" dismissal is per-device (localStorage, like the clock and
+    // confetti prefs) and keyed on this, so blowing off "buy your pass" doesn't also
+    // silence an unrelated "pick your sets" nag that shows up later.
+    let key = '';
     if (!person) {
         // Only nudge on a festival page, where signing in has an obvious point (and
         // also joins you). On the main fest-selection page (root) Rover stays quiet.
@@ -99,6 +105,7 @@ function dogAssistant(c, festival, person, passes) {
         // Bring them back to exactly where they are (and, if it's a fest page,
         // sign-in also joins them). Pop the modal in place rather than navigating.
         const next = encodeURIComponent(c.req.path);
+        key = 'signin';
         bubble = html`
           <span class="dog-title">Hi there, I'm Rover!</span>
           You're just visiting. Sign in and I'll save your spot.
@@ -135,6 +142,7 @@ function dogAssistant(c, festival, person, passes) {
                     ? html`your <b>festival pass</b>`
                     : html`your <b>car pass</b>`;
             const it = both ? 'them' : 'it';
+            key = 'passes';
             bubble = html`
               <span class="dog-title">Hey ${person.display_name}!</span>
               Don't forget ${owed}. Check ${it} off when you've got ${it}.
@@ -144,6 +152,7 @@ function dogAssistant(c, festival, person, passes) {
         } else if (needSchedulePick) {
             // Set times are up but this person hasn't starred anyone.
             nag = 'schedule';
+            key = 'schedule';
             bubble = html`
               <span class="dog-title">Who do you want to see?</span>
               You haven't picked any sets yet.
@@ -163,8 +172,13 @@ function dogAssistant(c, festival, person, passes) {
     // balloon pops out above his head. `aria-expanded` on the button is the real
     // state; camp.js keeps it in sync with the .open class.
     return html`
-    <div class="dog-assistant" id="dog-assistant"${nag ? html` data-dog-nag="${nag}"` : ''}>
-      <div class="dog-bubble" id="dog-bubble" role="status">${bubble}</div>
+    <div class="dog-assistant" id="dog-assistant" data-dog-key="${key}"${nag ? html` data-dog-nag="${nag}"` : ''}>
+      <div class="dog-bubble" id="dog-bubble" role="status">
+        ${bubble}
+        <button type="button" class="dog-go-away">
+          <img class="dog-go-away-ico" src="/xp/logoff.png" alt="">Go away
+        </button>
+      </div>
       <button type="button" class="dog-btn" aria-expanded="false" aria-controls="dog-bubble"
         title="Rover has something to tell you">
         <img class="dog-img" src="/dog.webp" alt="Rover the assistant dog">

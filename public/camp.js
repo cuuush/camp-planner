@@ -1408,6 +1408,40 @@ setInterval(campTickClock, 15000);
 // collapsed, so the click both opens it and (still) counts as a pet: TEN quick
 // ones in a row are an authentic XP Stop error. Any key, click, or tap brings the
 // site back — no harm done, exactly like the real thing except the opposite.
+// "Go away" dismissal, per device (same localStorage shape as the clock/confetti/
+// pixmoji prefs above), keyed on the nag's `data-dog-key` (set server-side in
+// layout.js). The server has no idea a message was dismissed — it keeps sending
+// Rover exactly as before — so every place a dog can appear (initial page load,
+// every #dog-slot OOB swap) has to re-check the set and refuse to show him.
+function campDogDismissedSet() {
+  try { return JSON.parse(localStorage.getItem('campDogDismissed') || '[]'); } catch (e) { return []; }
+}
+function campDogIsDismissed(key) { return !!key && campDogDismissedSet().indexOf(key) > -1; }
+function campDogDismiss(key) {
+  if (!key) return;
+  var set = campDogDismissedSet();
+  if (set.indexOf(key) > -1) return;
+  set.push(key);
+  try { localStorage.setItem('campDogDismissed', JSON.stringify(set)); } catch (e) {}
+}
+// A dog already on the page when the dismissed set is checked (first paint, before
+// any swap has a chance to run) just gets pulled — he was never supposed to pop up.
+document.addEventListener('DOMContentLoaded', function () {
+  var wrap = document.querySelector('#dog-slot .dog-assistant[data-dog-key]');
+  if (wrap && campDogIsDismissed(wrap.getAttribute('data-dog-key'))) wrap.remove();
+});
+document.addEventListener('click', function (e) {
+  var btn = e.target.closest && e.target.closest('.dog-go-away');
+  if (!btn) return;
+  var wrap = btn.closest('.dog-assistant');
+  if (!wrap) return;
+  campDogDismiss(wrap.getAttribute('data-dog-key'));
+  // Same trip he takes when there's nothing left to nag about — except reduced
+  // motion / no WAAPI just drops him, the same fallback every other flight uses.
+  if (campReducedMotion() || typeof wrap.animate !== 'function') { wrap.remove(); return; }
+  campDogDepart(wrap);
+});
+
 var DOG_PETS_TO_BSOD = 10;
 function campToggleDog(open) {
   var wrap = document.getElementById('dog-assistant');
@@ -1658,6 +1692,10 @@ document.addEventListener('htmx:oobBeforeSwap', function (e) {
   if (!d || !d.target || d.target.id !== 'dog-slot' || !d.fragment || !d.fragment.querySelector) return;
   dogArriving = false;
   var incoming = d.fragment.querySelector('.dog-assistant');
+  // The server doesn't know this message was dismissed — it's about to send the
+  // exact same nag again. Drop it from the fragment so the branches below see
+  // "nothing incoming" and, if he's currently parked or in flight, send him home.
+  if (incoming && campDogIsDismissed(incoming.getAttribute('data-dog-key'))) { incoming.remove(); incoming = null; }
   var parked = document.querySelector('#dog-slot .dog-assistant');
   if (campReducedMotion() || !document.body.animate) { campDogVanish(); return; }
 

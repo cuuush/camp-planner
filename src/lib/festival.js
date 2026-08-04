@@ -49,8 +49,9 @@ export async function festNameFromPath(c, path) {
 // the common case for a sign-in is someone who lost their session, not a newcomer,
 // and this saves them retyping (and mistyping, which silently makes a 2nd account).
 // Reveals nothing new: the People tab on a fest is already public to anyone with
-// the link. Real accounts only — a ghost's normalized_name is synthetic and can't be
-// signed in as; they get absorbed on the owner's first real login instead.
+// the link. Placeholders (manually-added ghosts) are included too — picking one
+// signs in under that same display name, which absorbPlaceholders() then folds the
+// ghost into automatically, so suggesting it is the intended path, not a dead end.
 export async function festPeopleFromPath(c, path) {
     const id = festIdFromPath(path);
     if (!id) return [];
@@ -58,7 +59,7 @@ export async function festPeopleFromPath(c, path) {
         SELECT p.display_name FROM people p
         JOIN memberships m ON m.person_id = p.id
         WHERE m.festival_id = ? AND m.bailed_at IS NULL
-          AND p.is_placeholder = 0 AND p.deleted_at IS NULL AND p.merged_into IS NULL
+          AND p.deleted_at IS NULL AND p.merged_into IS NULL
         ORDER BY p.display_name COLLATE NOCASE
     `).bind(id).all();
     return (results || []).map((r) => r.display_name);

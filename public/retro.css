@@ -388,7 +388,19 @@
   .dog-links a::before { content: ''; flex: 0 0 auto; width: 18px; height: 18px; margin-top: 1px;
     background: url(/arrow.png) center/contain no-repeat; }
   .dog-links a:hover { color: #1a52c8; text-decoration: underline; }
-  @media (max-width: 600px) { .dog-img { width: 52px; } .dog-bubble { font-size: 0.85em; } }
+  /* Dismiss, not an action item — set off from the links above with its own
+     border and pushed to the far edge, so it doesn't read as one more thing to do.
+     Padding (not just gap) makes the whole row the tap target, not just the text,
+     which matters here since this is the one dog control a thumb has to hit. */
+  .dog-go-away {
+    display: flex; align-items: center; gap: 8px; width: 100%; margin-top: 10px;
+    padding: 8px 2px 2px; border: 0; border-top: 1px dotted #9fb0d6; background: none;
+    font: inherit; font-size: 0.85em; color: #4a5c85; text-align: left; cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .dog-go-away:hover, .dog-go-away:focus-visible { color: #1a52c8; text-decoration: underline; }
+  .dog-go-away-ico { flex: 0 0 auto; width: 16px; height: 16px; }
+  @media (max-width: 600px) { .dog-img { width: 52px; } .dog-bubble { font-size: 0.85em; } .dog-go-away { padding: 10px 2px; } }
   /* Tapping him toggles the balloon and nothing else. There WAS a wiggle on every
      tap, left over from when petting was only an easter egg — now that the tap has
      a real job, a wobble on top of the balloon popping open is just noise. The pet
