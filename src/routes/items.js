@@ -5,6 +5,7 @@ import { loadFestival } from '../lib/festival.js';
 import { logAction } from '../lib/audit.js';
 import { sqlNow, createEffect, deleteEffect, fieldEffects } from '../lib/effects.js';
 import { getItemMeta } from '../lib/emoji.js';
+import { getItemCategory } from '../lib/category.js';
 import { notify } from '../lib/notify.js';
 import { needsSignin, signinModalResponse } from '../lib/guard.js';
 import { loadComments, handleCommentPost } from '../lib/comments.js';
@@ -331,6 +332,10 @@ function itemRow(festival, item, stats, person, expanded = false, chatOpen = fal
                     <input type="text" name="unit" value="${item.unit || ''}" placeholder="unit">
                   </div>
                 </div>
+                <div class="edit-field">
+                  <label>category</label>
+                  <input type="text" name="category" value="${item.category || ''}" placeholder="e.g. Kitchen Gear">
+                </div>
                 <div class="edit-panel-buttons">
                   <button class="btn btn-danger" type="submit" formaction="/items/${item.id}/delete" hx-post="/items/${item.id}/delete" hx-confirm="Are you sure you want to delete this item?">Delete</button>
                 </div>
@@ -440,6 +445,28 @@ async function itemListFragment(c, festival) {
         ${group.map(row)}
       </div>`;
 
+    // "group by" — same Explorer trick as the three-band split above, but grouped by
+    // the LLM-assigned category instead of progress/freshness. Within a category,
+    // started-but-not-covered items still float up first (byProgress) — the "half-
+    // done beats not-started" rule applies within any grouping, not just the default
+    // one. Uncategorized (pre-backfill items, or a categorizer failure) always sorts
+    // last — it's a fallback bucket, not a real category, so it never wants top billing.
+    if (sort === 'category') {
+        const byCategory = new Map();
+        for (const x of withStats) {
+            const cat = (x.item.category || '').trim() || 'Uncategorized';
+            if (!byCategory.has(cat)) byCategory.set(cat, []);
+            byCategory.get(cat).push(x);
+        }
+        const categories = [...byCategory.keys()].sort((a, b) => {
+            if (a === 'Uncategorized') return 1;
+            if (b === 'Uncategorized') return -1;
+            return a.localeCompare(b);
+        });
+        const slug = (cat) => cat.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'uncategorized';
+        return html`${categories.map((cat) => section(`stuff-cat-${slug(cat)}`, '', cat, byCategory.get(cat).sort(byProgress)))}`;
+    }
+
     return html`
       ${section('stuff-new', 'fresh', 'just added', justAdded)}
       ${section('stuff-incomplete', '', 'still need these', incomplete)}
@@ -465,6 +492,7 @@ async function renderStuffBody(c, festival) {
         <span class="sort-label">sort by:</span>
         <a href="?sort=votes" class="${sort === 'votes' ? 'active' : ''}">votes</a>
         <a href="?sort=name" class="${sort === 'name' ? 'active' : ''}">name</a>
+        <a href="?sort=category" class="${sort === 'category' ? 'active' : ''}">category</a>
       </div>
       <button type="button" class="btn expand-all-btn" onclick="campToggleExpandAll(this)">⊞ Expand All</button>
     </div>
@@ -534,16 +562,21 @@ items.post('/f/:id/items', async (c) => {
     const description = (body.description || '').toString().trim() || null;
     if (!name) return c.html(await itemListFragment(c, festival));
 
-    const { emoji, unit: guessedUnit } = await getItemMeta(c.env, name);
+    // Independent LLM calls — fire together, one wall-clock wait instead of two.
+    const [{ emoji, unit: guessedUnit }, category] = await Promise.all([
+        getItemMeta(c.env, name),
+        getItemCategory(c.env, db, festival.id, name),
+    ]);
     const { qty, unit: typedUnit } = parseQtyText(body.qty_text);
 
     const result = await db.prepare(`
-        INSERT INTO items (festival_id, name, description, emoji, needed_qty, unit, added_by)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO items (festival_id, name, description, emoji, needed_qty, unit, category, added_by)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     `).bind(
         festival.id, name, description, emoji,
         qty,
         typedUnit || guessedUnit || null,
+        category,
         person ? person.id : null,
     ).run();
 
@@ -639,17 +672,18 @@ items.post('/items/:itemId/edit', async (c) => {
     const person = c.get('person');
     const body = await c.req.parseBody();
 
-    const before = { name: item.name, emoji: item.emoji, needed_qty: item.needed_qty, unit: item.unit, description: item.description };
+    const before = { name: item.name, emoji: item.emoji, needed_qty: item.needed_qty, unit: item.unit, description: item.description, category: item.category };
     const after = {
         name: (body.name || '').toString().trim() || item.name,
         emoji: (body.emoji || '').toString().trim() || item.emoji,
         needed_qty: Number(body.needed_qty) || item.needed_qty,
         unit: (body.unit || '').toString() || null,
         description: (body.description || '').toString().trim() || null,
+        category: (body.category || '').toString().trim() || null,
     };
 
-    await db.prepare('UPDATE items SET name=?, emoji=?, needed_qty=?, unit=?, description=? WHERE id=?')
-        .bind(after.name, after.emoji, after.needed_qty, after.unit, after.description, item.id).run();
+    await db.prepare('UPDATE items SET name=?, emoji=?, needed_qty=?, unit=?, description=?, category=? WHERE id=?')
+        .bind(after.name, after.emoji, after.needed_qty, after.unit, after.description, after.category, item.id).run();
 
     // One effect per CHANGED column only — undoing an old edit reverts just what it
     // touched, never blind-clobbering a newer edit (G5).
@@ -661,6 +695,7 @@ items.post('/items/:itemId/edit', async (c) => {
     if (before.emoji !== after.emoji) changes.push(`changed the emoji to ${after.emoji}`);
     if (before.needed_qty !== after.needed_qty) changes.push(`changed how many are needed from ${before.needed_qty} to ${after.needed_qty}`);
     if (before.unit !== after.unit) changes.push(`changed the unit to "${after.unit || '(none)'}"`);
+    if (before.category !== after.category) changes.push(`changed the category to "${after.category || '(none)'}"`);
 
     if (changes.length) {
         // Drop an auto-note into the item's comment thread so the change is
