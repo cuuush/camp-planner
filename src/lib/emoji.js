@@ -1,3 +1,5 @@
+import { takeApiBudget, OPENROUTER_TEXT_MONTHLY_LIMIT } from './budget.js';
+
 const FALLBACK_EMOJI = '📦';
 const FALLBACK_UNIT = '';
 
@@ -13,6 +15,17 @@ export async function getItemMeta(env, itemName) {
         if (cached && cached.emoji !== FALLBACK_EMOJI) return { emoji: cached.emoji, unit: cached.unit || FALLBACK_UNIT };
     } catch (e) {
         // fall through to LLM / fallback
+    }
+
+    // Monthly budget (D1-backed, shared across isolates): once spent, new names
+    // get the fallback until next month. Cache hits above cost nothing.
+    // Never blocks item creation — same philosophy as every other failure here.
+    try {
+        if (env.DB && !await takeApiBudget(env.DB, 'openrouter_text', OPENROUTER_TEXT_MONTHLY_LIMIT)) {
+            return { emoji: FALLBACK_EMOJI, unit: FALLBACK_UNIT };
+        }
+    } catch (e) {
+        return { emoji: FALLBACK_EMOJI, unit: FALLBACK_UNIT };
     }
 
     const meta = await fetchItemMetaFromOpenRouter(env, itemName);

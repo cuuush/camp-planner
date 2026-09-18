@@ -14,6 +14,10 @@
 //   node scripts/backfill-categories.mjs --remote --apply
 //
 // Optional --limit N caps how many items get categorized (testing).
+//
+// Note: this calls fetchCategoryFromOpenRouter directly, bypassing the monthly
+// openrouter_text budget that gates the live add-item flow — intentional, you're
+// the operator watching the count, but keep --limit handy for big lists.
 
 import { readFile, writeFile, mkdtemp } from 'node:fs/promises';
 import { tmpdir } from 'node:os';

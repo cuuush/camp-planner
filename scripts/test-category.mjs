@@ -12,10 +12,14 @@ const key = (await readFile(resolve(root, '.dev.vars'), 'utf8')).match(/^OPENROU
 const { getItemCategory } = await import('../src/lib/category.js');
 
 const fakeDb = (categories) => ({
-    prepare: () => ({
-        bind: () => ({
-            all: async () => ({ results: categories.map((category) => ({ category })) }),
-        }),
+    prepare: (sql) => ({
+        bind: () => (
+            // getItemCategory() spends one openrouter_text budget unit per call —
+            // stub the meter as unspent so the probe still reaches the LLM.
+            sql.includes('api_usage')
+                ? { run: async () => ({}), first: async () => ({ count: 0 }) }
+                : { all: async () => ({ results: categories.map((category) => ({ category })) }) }
+        ),
     }),
 });
 

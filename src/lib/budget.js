@@ -36,6 +36,12 @@ export const PLACES_MONTHLY_LIMIT = 4500;
 // this app does at human speed will ever come near their limit either.)
 export const SPOTIFY_MONTHLY_LIMIT = 2000;
 
+// OpenRouter text calls (item emoji + category on every new stuff item). The
+// cheapest calls in the app (deepseek flash, 40 max_tokens), but the only ones
+// with no per-call cache on the category side — every new item spends two units,
+// so the cap is really ~1000 new items/month, far above a fest's real list.
+export const OPENROUTER_TEXT_MONTHLY_LIMIT = 2000;
+
 // Schedule-image parsing hits Claude Sonnet 5 vision via OpenRouter — the one paid
 // (not free-tier) call in the app, so it's the most important to fence in. Importing
 // a schedule is rare (a few times per fest, ever), so a low monthly cap across all

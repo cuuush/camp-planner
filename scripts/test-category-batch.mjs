@@ -23,10 +23,14 @@ const items = [
 
 let categories = [];
 const db = () => ({
-    prepare: () => ({
-        bind: () => ({
-            all: async () => ({ results: categories.map((category) => ({ category })) }),
-        }),
+    // getItemCategory() spends one openrouter_text budget unit per call —
+    // stub the meter as unspent so the probe still reaches the LLM.
+    prepare: (sql) => ({
+        bind: () => (
+            sql.includes('api_usage')
+                ? { run: async () => ({}), first: async () => ({ count: 0 }) }
+                : { all: async () => ({ results: categories.map((category) => ({ category })) }) }
+        ),
     }),
 });
 

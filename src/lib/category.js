@@ -1,3 +1,5 @@
+import { takeApiBudget, OPENROUTER_TEXT_MONTHLY_LIMIT } from './budget.js';
+
 const FALLBACK_CATEGORY = 'Miscellaneous';
 
 // Never blocks item creation — any failure just falls back to Miscellaneous, same
@@ -16,6 +18,16 @@ export async function getItemCategory(env, db, festivalId, itemName) {
         existing = (results || []).map((r) => r.category);
     } catch (e) {
         // fall through with an empty list — worst case the LLM invents a fresh one
+    }
+
+    // Monthly budget (D1-backed, shared across isolates): once spent, new items
+    // land in Miscellaneous until next month. Never blocks item creation.
+    try {
+        if (db && !await takeApiBudget(db, 'openrouter_text', OPENROUTER_TEXT_MONTHLY_LIMIT)) {
+            return FALLBACK_CATEGORY;
+        }
+    } catch (e) {
+        return FALLBACK_CATEGORY;
     }
 
     const category = await fetchCategoryFromOpenRouter(env, name, existing);
